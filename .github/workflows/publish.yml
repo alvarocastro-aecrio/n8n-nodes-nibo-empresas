@@ -32,13 +32,18 @@ jobs:
 
       - run: npm run lint
 
+      # The real gate: the same rules the post-publish scanner checks, but
+      # run BEFORE publishing — the scanner exits 0 even when they fail.
+      - run: npm run lint:community
+
       - run: npm run build
 
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # Official n8n scanner — keeps the package compatible with the
-      # verification program without submitting to it.
+      # Official n8n scanner — second net, checks provenance (which lint
+      # cannot see). It is NOT the gate: it exits 0 even on lint findings,
+      # which is why lint:community runs before publish above.
       - name: Scan published package
         run: npx @n8n/scan-community-package n8n-nodes-nibo-empresas

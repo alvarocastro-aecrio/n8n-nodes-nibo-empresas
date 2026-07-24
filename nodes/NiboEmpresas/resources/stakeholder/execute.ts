@@ -1,5 +1,5 @@
 import type { IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 import { niboListRequest } from '../../transport/paginate';
 
@@ -52,7 +52,12 @@ export async function executeStakeholder(
 				});
 				continue;
 			}
-			throw error;
+			// The transport already wraps HTTP failures in NodeApiError — rethrow
+			// it whole so no status/response context is lost; anything else gets
+			// the NodeOperationError treatment the scanner requires.
+			throw error instanceof NodeApiError
+				? error
+				: new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
 		}
 	}
 

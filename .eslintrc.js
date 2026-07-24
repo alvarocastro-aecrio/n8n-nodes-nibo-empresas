@@ -41,7 +41,15 @@ module.exports = {
 			files: ['./nodes/**/*.ts'],
 			plugins: ['eslint-plugin-n8n-nodes-base'],
 			extends: ['plugin:n8n-nodes-base/nodes'],
-			rules: {},
+			rules: {
+				// These two demand the string literal 'main', but the official
+				// scanner (@n8n/eslint-plugin-community-nodes, run by
+				// `npm run lint:community`) demands the opposite —
+				// NodeConnectionTypes.Main. The enum is the current n8n
+				// convention, so the scanner wins and these are off.
+				'n8n-nodes-base/node-class-description-inputs-wrong-regular-node': 'off',
+				'n8n-nodes-base/node-class-description-outputs-wrong': 'off',
+			},
 		},
 	],
 };

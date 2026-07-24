@@ -2,6 +2,7 @@ import type {
 	IAuthenticateGeneric,
 	ICredentialTestRequest,
 	ICredentialType,
+	Icon,
 	INodeProperties,
 } from 'n8n-workflow';
 
@@ -9,6 +10,8 @@ export class NiboEmpresasApi implements ICredentialType {
 	name = 'niboEmpresasApi';
 
 	displayName = 'Nibo Empresas API';
+
+	icon: Icon = { light: 'file:nibo.svg', dark: 'file:nibo.dark.svg' };
 
 	documentationUrl = 'https://github.com/alvarocastro-aecrio/n8n-nodes-nibo-empresas#credentials';
 

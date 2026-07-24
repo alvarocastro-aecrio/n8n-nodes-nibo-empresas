@@ -4,6 +4,7 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
+import { NodeConnectionTypes } from 'n8n-workflow';
 
 import { stakeholderFields, stakeholderOperations } from './resources/stakeholder/description';
 import { executeStakeholder } from './resources/stakeholder/execute';
@@ -15,7 +16,7 @@ export class NiboEmpresas implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Nibo Empresas',
 		name: 'niboEmpresas',
-		icon: 'file:nibo.svg',
+		icon: { light: 'file:nibo.svg', dark: 'file:nibo.dark.svg' },
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
@@ -23,8 +24,9 @@ export class NiboEmpresas implements INodeType {
 		defaults: {
 			name: 'Nibo Empresas',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		usableAsTool: true,
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'niboEmpresasApi',
