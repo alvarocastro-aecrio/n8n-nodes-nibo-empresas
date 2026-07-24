@@ -1,0 +1,26 @@
+# Disposable n8n instance for the real-install test (see PLAN-v0.1.0.md).
+#
+# ALWAYS target it explicitly — never a bare `docker compose` command:
+#
+#   docker compose -f docker-compose.dev.yml -p n8ndev up -d
+#   docker compose -f docker-compose.dev.yml -p n8ndev down
+#
+# Reach the UI through an SSH tunnel (nothing is exposed to the internet):
+#
+#   ssh -L 5679:localhost:5679 <user>@<host>   →   http://localhost:5679
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.18.5 # same version as the production target
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:5679:5678' # loopback only
+    environment:
+      - N8N_SECURE_COOKIE=false # plain-HTTP access through the SSH tunnel
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PERSONALIZATION_ENABLED=false
+    volumes:
+      - n8ndev_data:/home/node/.n8n # named volume: disposable, no host paths
+    mem_limit: 1536m # hard cap: this container must never squeeze the host
+
+volumes:
+  n8ndev_data:

@@ -62,8 +62,9 @@ A pendência "instalar Node 22" (CLAUDE §7) já está resolvida.
 2. **`Limit` sem `Return All`.** Return All de verdade exige paginação com `$skip` — é a
    entrega da 0.2.0. Se o linter oficial exigir o par `returnAll`+`limit`, desabilito a
    regra pontualmente com comentário apontando o roteiro, em vez de implementar às pressas.
-3. **Ícone placeholder genérico** no código. A escolha logo Nibo × genérico (risco 2 do
-   DESIGN §10) é sua e trava só a **publicação**, não a construção — gate G1 da seção 4.
+3. ~~Ícone placeholder genérico~~ → **decidido em 2026-07-24: usa o logo do Nibo**
+   (aprovação do Alvaro; risco 2 do DESIGN §10 encerrado). SVG vetorizado a partir do
+   símbolo oficial do site, cor `#002d72`. O gate G1 da seção 4 está fechado.
 4. **Sem testes unitários na 0.1.0.** A validação desta versão é linter + scanner +
    instalação real (o que ela existe para provar). Unit tests entram na 0.2.0, junto com a
    lógica transversal que merece teste (DESIGN §8, camada 1).
@@ -94,8 +95,7 @@ A pendência "instalar Node 22" (CLAUDE §7) já está resolvida.
 
 **Gates antes da tag** (nesta ordem):
 
-- **G1 · Ícone** — sua decisão: mantém o placeholder genérico ou troca pelo logo Nibo
-  (risco 2, DESIGN §10). Trocar é substituir um arquivo `.svg`.
+- **G1 · Ícone** — ✅ **fechado (2026-07-24)**: logo do Nibo, por decisão do Alvaro.
 - **G2 · Autorização de publicação** — Trusted Publisher configurado no npm apontando para
   este repo + `publish.yml`, **ou** secret `NPM_TOKEN` no GitHub (DESIGN §6). Nos dois
   casos o token do npm nunca chega à VPS.
