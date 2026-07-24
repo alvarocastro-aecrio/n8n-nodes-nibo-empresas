@@ -59,6 +59,7 @@ Add the **Nibo Empresas** node to a workflow, select the credential, and run **C
 |---|---|
 | 0.1.1 | Package skeleton, `niboEmpresasApi` credential, Customer: Get Many (single page, `$orderby=id`). First working release — 0.1.0 was published under a scoped name (`@alvarocastro.tech/…`) that n8n turned out to be unable to load |
 | 0.1.2 | Clean bill from the official n8n scanner (themed light/dark icons, credential icon, `usableAsTool`, `NodeConnectionTypes` enum, safe error rethrow) and a real pre-publish gate in CI (`lint:community`). No behavior changes |
+| 0.1.3 | Dark-theme logo tone changed from white to light blue (`#9db9de`), picked against a live preview of the n8n dark canvas. Icon-only release |
 | 0.2.0 *(planned)* | Envelope/pagination internals, Return All, error normalization |
 | 0.3.0 *(planned)* | Per-item API token mode (multi-organization loops) |
 | 0.4.0 *(planned)* | Customer: Get, Create, Update (safe merge), Delete |
