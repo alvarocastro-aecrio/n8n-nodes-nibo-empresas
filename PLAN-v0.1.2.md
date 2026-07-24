@@ -132,10 +132,16 @@ verde após as correções).
 e o `Get Many` ainda devolve os itens**. Não repete a bateria inteira da 0.1.1 — só garante
 que o polimento não quebrou o que já passou.
 
-| ☐ | `npx @n8n/scan-community-package n8n-nodes-nibo-empresas` → **0 achados** |
-| ☐ | `npm run lint` e `npm run lint:community` verdes |
-| ☐ | Node instala e carrega na instância limpa; ícone aparece |
-| ☐ | `Get Many` devolve itens como na 0.1.1 (sem regressão) |
+| ☑ | `npx @n8n/scan-community-package n8n-nodes-nibo-empresas` → **0 achados** — "passed all security checks", provenance incluída (2026-07-24) |
+| ☑ | `npm run lint` e `npm run lint:community` verdes — e o gate **provado**: com um erro proposital, `lint:community` sai com código 1 |
+| ☑ | Node instala e carrega na instância limpa; ícone claro/escuro servido para node e credencial (Alvaro confirmou na UI) |
+| ☑ | `Get Many` devolve itens como na 0.1.1 (sem regressão) — confirmado pelo Alvaro com Limit 5 |
+
+**Fechado em 2026-07-24 — 4/4, entregue como v0.1.2** (publicada via Trusted Publishing,
+primeira versão pelo caminho sem token). Dois desvios de execução, ambos registrados no
+commit e nos próprios arquivos: o config flat virou `eslint.community.mjs` (o nome
+`eslint.config.mjs` faz o ESLint 8 trocar de modo sozinho e quebrar os lints legados) e
+entrou um `.npmrc` com `legacy-peer-deps` (o plugin novo declara ESLint 9 como peer).
 
 ## 7. Pendências que a v0.1.2 encosta (não bloqueiam)
 
