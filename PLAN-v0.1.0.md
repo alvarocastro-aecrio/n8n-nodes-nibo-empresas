@@ -1,5 +1,13 @@
 # PLANO DE IMPLEMENTAÇÃO — v0.1.0
 
+> ⚠️ **Adendo (2026-07-24, após o 1º teste da regra 7):** a "4ª porta" do nome com ponto
+> no escopo **falhou no teste real** — o carregador de tipos do n8n faz
+> `fullNodeType.split('.')` e quebra o nome no primeiro ponto (`load-nodes-and-credentials`,
+> confirmado também no master). O pacote foi **renomeado para `n8n-nodes-nibo-empresas`**
+> (sem escopo, decisão do Alvaro) e republicado como **v0.1.1**, conforme a regra deste
+> próprio plano ("falhou → corrige → v0.1.1"). Onde este documento citar o nome com
+> escopo, vale o nome novo. Detalhes no `STATUS-v0.1.0.md` do repo de planejamento.
+
 > **Este plano não é spec.** A spec é o `DESIGN.md` do repositório de planejamento
 > (pasta irmã `../claude-n8n/community_node_nibo/`); as regras são o `CLAUDE.md` de lá.
 > Referências abaixo no formato *DESIGN §n* / *CLAUDE §n* apontam para eles, não os recontam.
@@ -113,8 +121,8 @@ A pendência "instalar Node 22" (CLAUDE §7) já está resolvida.
 3. **Túnel no seu PC**: `ssh -L 5679:localhost:5679 <usuario>@<vps>` → abrir
    `http://localhost:5679` → criar a conta owner descartável do dev.
 4. **Instalar de verdade**: Settings → Community Nodes → Install →
-   `@alvarocastro.tech/n8n-nodes-nibo-empresas` → aceitar o aviso de risco.
-   ✅ *É aqui que a 4ª porta do nome com ponto no escopo se prova (CLAUDE §3).*
+   `n8n-nodes-nibo-empresas` → aceitar o aviso de risco.
+   *(A 4ª porta do nome com ponto no escopo foi provada aqui — e reprovou; ver o adendo.)*
 5. **Node na paleta**: "Nibo Empresas" aparece na busca, com ícone.
 6. **Credencial**: criar "Nibo Empresas API"; você cola **na hora** um ApiToken (leitura —
    permitido pela regra 3; nada de token é pedido antes disso, e ele não toca arquivo

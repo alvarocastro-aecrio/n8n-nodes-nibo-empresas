@@ -13,8 +13,12 @@ This is an [n8n](https://n8n.io/) community node. It lets you use the **Nibo Emp
 Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes/installation/) in the n8n community nodes documentation. The package name is:
 
 ```
-@alvarocastro.tech/n8n-nodes-nibo-empresas
+n8n-nodes-nibo-empresas
 ```
+
+> Note: n8n cannot load community packages whose npm scope contains a dot (the
+> node-type resolver splits type names on `.`), so this package is published
+> unscoped.
 
 ## Operations
 
@@ -53,7 +57,7 @@ Add the **Nibo Empresas** node to a workflow, select the credential, and run **C
 
 | Version | Delivered |
 |---|---|
-| 0.1.0 | Package skeleton, `niboEmpresasApi` credential, Customer: Get Many (single page, `$orderby=id`) |
+| 0.1.1 | Package skeleton, `niboEmpresasApi` credential, Customer: Get Many (single page, `$orderby=id`). First working release — 0.1.0 was published under a scoped name (`@alvarocastro.tech/…`) that n8n turned out to be unable to load |
 | 0.2.0 *(planned)* | Envelope/pagination internals, Return All, error normalization |
 | 0.3.0 *(planned)* | Per-item API token mode (multi-organization loops) |
 | 0.4.0 *(planned)* | Customer: Get, Create, Update (safe merge), Delete |

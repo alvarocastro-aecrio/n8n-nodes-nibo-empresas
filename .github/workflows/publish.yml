@@ -41,4 +41,4 @@ jobs:
       # Official n8n scanner — keeps the package compatible with the
       # verification program without submitting to it.
       - name: Scan published package
-        run: npx @n8n/scan-community-package @alvarocastro.tech/n8n-nodes-nibo-empresas
+        run: npx @n8n/scan-community-package n8n-nodes-nibo-empresas
