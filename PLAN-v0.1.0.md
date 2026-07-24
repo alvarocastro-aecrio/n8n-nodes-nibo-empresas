@@ -136,14 +136,19 @@ A pendência "instalar Node 22" (CLAUDE §7) já está resolvida.
 
 | ✔ | Critério |
 |---|---|
-| ☐ | Instalação pela UI conclui sem erro de validação de nome (ponto no escopo) |
-| ☐ | Node visível na paleta, com ícone |
-| ☐ | Teste da credencial verde (bate em `/categories?$top=1`) |
-| ☐ | List devolve **um item n8n por cliente** (5 com Limit 5, ou o total se menor) |
-| ☐ | Acentuação dos nomes intacta na saída (spot-check UTF-8 de leitura) |
-| ☐ | Sem token válido, o erro exibido é o 401 da API com corpo preservado — nada engolido |
+| ☑ | Instalação pela UI conclui sem erro de validação de nome |
+| ☑ | Node visível na paleta, com ícone |
+| ☑ | Teste da credencial verde (bate em `/categories?$top=1`) |
+| ☑ | List devolve **um item n8n por cliente** (5 com Limit 5, ou o total se menor) |
+| ☑ | Acentuação dos nomes intacta na saída (spot-check UTF-8 de leitura) |
+| ☑ | Sem token válido, o erro exibido é o 401 da API com corpo preservado — nada engolido |
 
 Falhou qualquer um → corrige → `v0.1.1`. O roteiro só avança para a 0.2.0 com a tabela cheia.
+
+> ✅ **Tabela fechada em 2026-07-24, 6/6, com a v0.1.1** (o nome com escopo da 0.1.0
+> reprovou o critério 1 — ver adendo no topo). O teste negativo do 401 foi feito com uma
+> credencial de token inválido importada via `n8n import:credentials` (a UI bloqueia
+> salvar credencial reprovada no teste). **A entrega da v0.1.0 está PRONTA (regra 7).**
 
 ---
 
