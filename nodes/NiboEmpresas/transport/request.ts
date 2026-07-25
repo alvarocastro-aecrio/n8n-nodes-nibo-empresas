@@ -41,11 +41,13 @@ export async function niboApiRequest(
 	body?: IDataObject,
 ): Promise<unknown> {
 	// Nodes saved before this parameter existed have no value for it, and the
-	// fallback is what keeps them on the behavior they were built with.
-	const authentication = this.getNodeParameter('authentication', itemIndex, 'credential');
+	// fallback is what keeps them on the behavior they were built with. The
+	// name is `authMode`, not `authentication` — see the node description for
+	// why that exact name is unusable here.
+	const authMode = this.getNodeParameter('authMode', itemIndex, 'credential');
 
 	try {
-		return authentication === 'field'
+		return authMode === 'field'
 			? await requestWithItemToken.call(this, itemIndex, method, endpoint, qs, body)
 			: await requestWithCredential.call(this, method, endpoint, qs, body);
 	} catch (error) {

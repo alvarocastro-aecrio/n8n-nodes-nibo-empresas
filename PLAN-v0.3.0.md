@@ -199,6 +199,26 @@ dentro de um `catch`** — que era exatamente como o despachante ia deixar passa
 (`throw error instanceof X ? error : …`), que expressa a mesma intenção numa forma que a
 regra enxerga.
 
+**0. O nome `authentication` é reservado pelo editor do n8n — e isso só apareceu na tela.**
+A decisão 1 travou `name: 'authentication'` (e o DESIGN §3.2 diz o mesmo). Publicada assim,
+a 0.3.0 tinha o campo na tela e **o clique não fazia nada**: era impossível chegar ao modo
+por item pela interface. Causa, lida no fonte do editor (`nodeTypesUtils.ts` e
+`useNodeSettingsParameters.ts`, n8n 2.18.5): qualquer parâmetro chamado exatamente
+`authentication` vira o *main auth field* do node, é **removido da lista de parâmetros**
+(`shouldDisplayNodeParameter` devolve `false` para ele) e redesenhado dentro do bloco de
+credenciais — onde **cada opção precisa ter uma credencial por trás**. O modo por item não
+tem credencial nenhuma; é justamente o que ele é. Nenhum node oficial cai nisso porque
+todos têm credencial para cada modo de autenticação.
+
+Corrigido na **0.3.1**: o parâmetro passa a se chamar `authMode`. Rótulo (`Authentication`),
+opções e valores seguem idênticos — muda só o nome interno, que é o que o n8n reserva. O
+`description.test.ts` trava a regra para o nome não voltar. **Custo real:** um node salvo
+no modo por item pela 0.3.0 precisa ter o modo escolhido de novo.
+
+A lição vale mais que a correção: as duas primeiras armadilhas foram achadas por linter, e
+esta **nenhum teste unitário pegaria** — só a regra 7 pega. Ela apareceu no primeiro clique
+de quem foi usar.
+
 **3. A descrição do campo `API Token` não pode citar a expressão.** O linter
 `n8n-nodes-base` reescreve "json" como "JSON" em descrição de parâmetro
 (`node-param-description-miscased-json`), o que transformaria `{{ $json.apiToken }}` em

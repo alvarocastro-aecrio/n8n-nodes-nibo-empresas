@@ -56,7 +56,7 @@ async function failureFrom(
 	parameters: IDataObject = {},
 ): Promise<NodeApiError> {
 	const helpers =
-		parameters.authentication === 'field'
+		parameters.authMode === 'field'
 			? { httpRequest: helper }
 			: { httpRequestWithAuthentication: helper };
 
@@ -111,7 +111,7 @@ describe('niboApiRequest — per-item token mode', () => {
 		await niboApiRequest.call(
 			context(
 				{ httpRequest: helper, httpRequestWithAuthentication: withCredential },
-				{ authentication: 'field', apiToken: 'token-of-item-0' },
+				{ authMode: 'field', apiToken: 'token-of-item-0' },
 			),
 			0,
 			'GET',
@@ -131,7 +131,7 @@ describe('niboApiRequest — per-item token mode', () => {
 		const ctx = context(
 			{ httpRequest: helper },
 			{
-				authentication: 'field',
+				authMode: 'field',
 				apiToken: ['token-of-item-0', 'token-of-item-1', 'token-of-item-2'],
 			},
 		);
@@ -147,7 +147,7 @@ describe('niboApiRequest — per-item token mode', () => {
 		const helper = jest.fn();
 
 		const failure = niboApiRequest.call(
-			context({ httpRequest: helper }, { authentication: 'field', apiToken: '   ' }),
+			context({ httpRequest: helper }, { authMode: 'field', apiToken: '   ' }),
 			3,
 			'GET',
 			'/customers',
@@ -164,7 +164,7 @@ describe('niboApiRequest — per-item token mode', () => {
 		});
 
 		const error = await failureFrom(helper, {
-			authentication: 'field',
+			authMode: 'field',
 			apiToken: 'token-of-item-0',
 		});
 

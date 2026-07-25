@@ -47,7 +47,7 @@ export class NiboEmpresas implements INodeType {
 				// shown, and the token comes from the parameter below instead.
 				displayOptions: {
 					show: {
-						authentication: ['credential'],
+						authMode: ['credential'],
 					},
 				},
 			},
@@ -55,7 +55,14 @@ export class NiboEmpresas implements INodeType {
 		properties: [
 			{
 				displayName: 'Authentication',
-				name: 'authentication',
+				// NOT named `authentication`: the n8n editor reserves that exact
+				// name as the "main auth field", removes it from the parameter
+				// list and redraws it inside the credentials block, where every
+				// option has to be backed by a credential. The per-item mode is
+				// backed by none — that is its whole point — so under that name
+				// the option is there but selecting it does nothing. Measured
+				// against n8n 2.18.5, in shouldDisplayNodeParameter().
+				name: 'authMode',
 				type: 'options',
 				noDataExpression: true,
 				options: [
@@ -83,7 +90,7 @@ export class NiboEmpresas implements INodeType {
 					'The organization API token to use for this item. Normally an expression reading it from the incoming item, which is what lets a single node walk a whole portfolio of organizations. In this API the token is the organization: each item reads the books of its own token.',
 				displayOptions: {
 					show: {
-						authentication: ['field'],
+						authMode: ['field'],
 					},
 				},
 			},
