@@ -32,8 +32,12 @@ export async function executeStakeholder(
 			if (operation === 'list') {
 				const returnAll = this.getNodeParameter('returnAll', i, false) as boolean;
 
+				// `i` is handed to the transport, not just used to read parameters:
+				// in the per-item token mode it is what makes this iteration read
+				// the books of this item's own organization.
 				const { records, warning } = await niboListRequest.call(
 					this,
+					i,
 					endpoint,
 					STAKEHOLDER_ORDER_BY,
 					{

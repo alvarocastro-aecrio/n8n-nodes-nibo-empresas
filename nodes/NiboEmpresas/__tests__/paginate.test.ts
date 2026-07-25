@@ -31,9 +31,9 @@ function page(size: number, from: number, count: number) {
 	};
 }
 
-/** The query string of the nth call to the API (method, endpoint, qs) */
+/** The query string of the nth call to the API (itemIndex, method, endpoint, qs) */
 function queryOf(callIndex: number): IDataObject {
-	return apiRequest.mock.calls[callIndex][2] as IDataObject;
+	return apiRequest.mock.calls[callIndex][3] as IDataObject;
 }
 
 beforeEach(() => {
@@ -45,7 +45,7 @@ describe('niboListRequest — envelope', () => {
 	it('unwraps { items, count } into plain records', async () => {
 		apiRequest.mockResolvedValueOnce(page(3, 1, 3));
 
-		const result = await niboListRequest.call(CONTEXT, '/customers', 'id', {
+		const result = await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 			returnAll: false,
 			limit: 50,
 		});
@@ -61,7 +61,7 @@ describe('niboListRequest — envelope', () => {
 	it('accepts the bare array that /employees returns instead of an envelope', async () => {
 		apiRequest.mockResolvedValueOnce([{ id: 'employee-1' }, { id: 'employee-2' }]);
 
-		const result = await niboListRequest.call(CONTEXT, '/employees', 'id', {
+		const result = await niboListRequest.call(CONTEXT, 0, '/employees', 'id', {
 			returnAll: true,
 			limit: 50,
 		});
@@ -73,7 +73,7 @@ describe('niboListRequest — envelope', () => {
 	it('returns nothing when the envelope carries no items', async () => {
 		apiRequest.mockResolvedValueOnce({ count: 0 });
 
-		const result = await niboListRequest.call(CONTEXT, '/customers', 'id', {
+		const result = await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 			returnAll: false,
 			limit: 50,
 		});
@@ -86,7 +86,7 @@ describe('niboListRequest — paging', () => {
 	it('always sends the sort key, because $skip without $orderby is an HTTP 500', async () => {
 		apiRequest.mockResolvedValueOnce(page(1, 1, 1));
 
-		await niboListRequest.call(CONTEXT, '/customers', 'id', { returnAll: false, limit: 50 });
+		await niboListRequest.call(CONTEXT, 0, '/customers', 'id', { returnAll: false, limit: 50 });
 
 		expect(queryOf(0).$orderby).toBe('id');
 	});
@@ -98,7 +98,7 @@ describe('niboListRequest — paging', () => {
 			.mockResolvedValueOnce(page(500, 1001, 1620))
 			.mockResolvedValueOnce(page(120, 1501, 1620));
 
-		const result = await niboListRequest.call(CONTEXT, '/customers', 'id', {
+		const result = await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 			returnAll: true,
 			limit: 50,
 		});
@@ -112,10 +112,18 @@ describe('niboListRequest — paging', () => {
 		expect(result.warning).toBeUndefined();
 	});
 
+	it('hands the same item index to the transport on every page of the scan', async () => {
+		apiRequest.mockResolvedValueOnce(page(500, 1, 600)).mockResolvedValueOnce(page(100, 501, 600));
+
+		await niboListRequest.call(CONTEXT, 7, '/customers', 'id', { returnAll: true, limit: 50 });
+
+		expect(apiRequest.mock.calls.map((call) => call[0])).toEqual([7, 7]);
+	});
+
 	it('asks for exactly the limit and stops there when Return All is off', async () => {
 		apiRequest.mockResolvedValueOnce(page(5, 1, 14194));
 
-		const result = await niboListRequest.call(CONTEXT, '/customers', 'id', {
+		const result = await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 			returnAll: false,
 			limit: 5,
 		});
@@ -130,7 +138,7 @@ describe('niboListRequest — paging', () => {
 			.mockResolvedValueOnce(page(500, 1, 14194))
 			.mockResolvedValueOnce(page(200, 501, 14194));
 
-		const result = await niboListRequest.call(CONTEXT, '/customers', 'id', {
+		const result = await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 			returnAll: false,
 			limit: 700,
 		});
@@ -148,7 +156,7 @@ describe('niboListRequest — pagination drift', () => {
 			.mockResolvedValueOnce(page(500, 1, 600))
 			.mockResolvedValueOnce(page(90, 501, 590));
 
-		const result = await niboListRequest.call(CONTEXT, '/customers', 'id', {
+		const result = await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 			returnAll: true,
 			limit: 50,
 		});
@@ -164,7 +172,7 @@ describe('niboListRequest — pagination drift', () => {
 			.mockResolvedValueOnce(page(500, 1, 600))
 			.mockResolvedValueOnce(page(100, 501, 600));
 
-		const result = await niboListRequest.call(CONTEXT, '/customers', 'id', {
+		const result = await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 			returnAll: true,
 			limit: 50,
 		});
@@ -176,7 +184,7 @@ describe('niboListRequest — pagination drift', () => {
 	it('warns when fewer records arrive than the server reported', async () => {
 		apiRequest.mockResolvedValueOnce(page(400, 1, 600));
 
-		const result = await niboListRequest.call(CONTEXT, '/customers', 'id', {
+		const result = await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 			returnAll: true,
 			limit: 50,
 		});
@@ -191,7 +199,7 @@ describe('niboListRequest — pagination drift', () => {
 			.mockResolvedValueOnce(page(90, 501, 590));
 
 		await expect(
-			niboListRequest.call(CONTEXT, '/customers', 'id', {
+			niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 				returnAll: true,
 				limit: 50,
 				failOnIncomplete: true,
@@ -204,7 +212,7 @@ describe('niboListRequest — OData filter', () => {
 	it('passes the filter expression through to the API', async () => {
 		apiRequest.mockResolvedValueOnce(page(2, 1, 2));
 
-		await niboListRequest.call(CONTEXT, '/customers', 'id', {
+		await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 			returnAll: false,
 			limit: 50,
 			filter: "contains(name,'SERVIÇOS')",
@@ -216,7 +224,7 @@ describe('niboListRequest — OData filter', () => {
 	it('sends no $filter at all when the field is left empty', async () => {
 		apiRequest.mockResolvedValueOnce(page(2, 1, 2));
 
-		await niboListRequest.call(CONTEXT, '/customers', 'id', {
+		await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
 			returnAll: false,
 			limit: 50,
 			filter: '   ',

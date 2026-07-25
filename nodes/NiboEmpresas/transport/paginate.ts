@@ -54,9 +54,14 @@ const PAGE_SIZE = 500;
  * compare the server count at the start and at the end of the scan, and to
  * warn when the result may be incomplete instead of handing back a partial
  * list that looks whole.
+ *
+ * Every page of a scan belongs to one input item, so `itemIndex` travels down
+ * to the transport untouched — in the per-item token mode it is what decides
+ * whose token the whole scan runs with.
  */
 export async function niboListRequest(
 	this: IExecuteFunctions,
+	itemIndex: number,
 	endpoint: string,
 	orderBy: string,
 	options: INiboListOptions,
@@ -82,7 +87,7 @@ export async function niboListRequest(
 			query.$filter = filter;
 		}
 
-		const response = (await niboApiRequest.call(this, 'GET', endpoint, query)) as
+		const response = (await niboApiRequest.call(this, itemIndex, 'GET', endpoint, query)) as
 			| INiboListEnvelope
 			| IDataObject[];
 

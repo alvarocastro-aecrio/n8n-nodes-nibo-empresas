@@ -16,9 +16,9 @@ const NODE: INode = {
 	parameters: {},
 };
 
-function context(parameters: IDataObject) {
+function context(parameters: IDataObject, itemCount = 1) {
 	return {
-		getInputData: () => [{ json: {} }],
+		getInputData: () => Array.from({ length: itemCount }, () => ({ json: {} })),
 		getNodeParameter: (name: string, _index: number, fallback?: unknown) =>
 			parameters[name] ?? fallback,
 		getNode: () => NODE,
@@ -26,9 +26,9 @@ function context(parameters: IDataObject) {
 	} as unknown as IExecuteFunctions;
 }
 
-/** The options object the handler handed to the transport */
+/** The options object the handler handed to the transport (itemIndex, endpoint, orderBy, options) */
 function optionsSentToTransport(): IDataObject {
-	return listRequest.mock.calls[0][2] as unknown as IDataObject;
+	return listRequest.mock.calls[0][3] as unknown as IDataObject;
 }
 
 beforeEach(() => {
@@ -44,8 +44,8 @@ describe('executeStakeholder — list', () => {
 			'list',
 		);
 
-		expect(listRequest.mock.calls[0][0]).toBe('/customers');
-		expect(listRequest.mock.calls[0][1]).toBe('id');
+		expect(listRequest.mock.calls[0][1]).toBe('/customers');
+		expect(listRequest.mock.calls[0][2]).toBe('id');
 		expect(optionsSentToTransport()).toMatchObject({
 			returnAll: true,
 			filter: "contains(name,'LTDA')",
@@ -57,6 +57,15 @@ describe('executeStakeholder — list', () => {
 		await executeStakeholder.call(context({ returnAll: false, limit: 5 }), 'customer', 'list');
 
 		expect(optionsSentToTransport()).toMatchObject({ returnAll: false, limit: 5 });
+	});
+
+	// Reading a parameter at index `i` is not enough: the index has to reach the
+	// transport, or every item of the run would authenticate as the first one.
+	it('hands each input item its own index down to the transport', async () => {
+		await executeStakeholder.call(context({ returnAll: true }, 4), 'customer', 'list');
+
+		expect(listRequest).toHaveBeenCalledTimes(4);
+		expect(listRequest.mock.calls.map((call) => call[0])).toEqual([0, 1, 2, 3]);
 	});
 
 	it('flags the last item when the result may be incomplete', async () => {
