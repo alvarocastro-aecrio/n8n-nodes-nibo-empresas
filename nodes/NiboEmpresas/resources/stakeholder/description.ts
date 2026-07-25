@@ -1,5 +1,7 @@
 import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
+import type { ODataFieldType } from '../../transport/odata';
+
 /**
  * Customer, Supplier, Employee and Partner are one family: the API gives the
  * four an identical contract, so they share one handler and this one
@@ -265,6 +267,174 @@ function byDisplayName(fields: INodeProperties[]): INodeProperties[] {
 	return [...fields].sort((one, other) => one.displayName.localeCompare(other.displayName));
 }
 
+/**
+ * A field the assisted filter can be built on: what the editor calls it, where
+ * the API keeps it, and what kind of value it holds.
+ *
+ * The type is not decoration — it is what decides the literal. Text goes
+ * between quotes, boolean and date go bare, and the builder in
+ * `transport/odata.ts` is what writes each one.
+ */
+interface IFilterField {
+	label: string;
+	/** The path as the API names it, e.g. `document/number` */
+	path: string;
+	type: ODataFieldType;
+}
+
+/**
+ * The menu is closed, and every path in it answered HTTP 200 on 2026-07-25 —
+ * in all four collections. Two absences are the point of it:
+ *
+ * - **The document type is not here.** `document/type eq 'Cpf'` is a 500: the
+ *   enum does not compare. Whoever needs it filters by `document/number`.
+ * - **No free-typed field name.** That would only trade one way of getting a
+ *   500 for another, which is what this version exists to stop.
+ *
+ * Alphabetical by label: the order the editor shows and the one the n8n linter
+ * requires of an options list.
+ */
+const FILTER_FIELDS: IFilterField[] = [
+	{ label: 'City', path: 'address/city', type: 'text' },
+	{ label: 'Document Number', path: 'document/number', type: 'text' },
+	{ label: 'Email', path: 'email', type: 'text' },
+	{ label: 'Is Archived', path: 'isArchived', type: 'boolean' },
+	{ label: 'Is Company', path: 'isCompany', type: 'boolean' },
+	{ label: 'Name', path: 'name', type: 'text' },
+	{ label: 'Phone', path: 'phone', type: 'text' },
+	{ label: 'State', path: 'address/state', type: 'text' },
+	{ label: 'Trading Name', path: 'companyInformation/companyName', type: 'text' },
+	{ label: 'Updated At', path: 'updateDate', type: 'date' },
+];
+
+function pathsOf(type: ODataFieldType): string[] {
+	return FILTER_FIELDS.filter((field) => field.type === type).map((field) => field.path);
+}
+
+/**
+ * What kind of value each path holds, for the handler that turns the rows of
+ * the editor into conditions. The menu is UI and lives here; the builder knows
+ * nothing about Nibo and is told the type.
+ */
+export const stakeholderFilterFieldTypes: Record<string, ODataFieldType> = Object.fromEntries(
+	FILTER_FIELDS.map((field) => [field.path, field.type]),
+);
+
+/**
+ * One row of the builder: which field, which operator, which value.
+ *
+ * Operator and value are declared once per type rather than once each. The
+ * editor shows the declaration whose `field` list holds the chosen path, so a
+ * date is never offered `contains` — an expression the API answers 500 to — and
+ * a yes-or-no is collected as a checkbox rather than as the text `true`.
+ *
+ * Each `default` is a literal on purpose: the n8n linter reads defaults straight
+ * from the source, and a value it cannot see is one it reports as missing.
+ */
+const filterConditionFields: INodeProperties[] = [
+	{
+		displayName: 'Field',
+		name: 'field',
+		type: 'options',
+		options: FILTER_FIELDS.map((field) => ({ name: field.label, value: field.path })),
+		default: 'name',
+		description: 'The field the condition is about',
+	},
+	{
+		displayName: 'Operator',
+		name: 'operator',
+		type: 'options',
+		options: [
+			{ name: 'Contains', value: 'contains' },
+			{
+				name: 'Contains (Ignoring Case)',
+				value: 'containsIgnoreCase',
+				description: 'Matches however the record was typed, in capitals or not',
+			},
+			{ name: 'Ends With', value: 'endswith' },
+			{ name: 'Equals', value: 'eq' },
+			{ name: 'Not Equals', value: 'ne' },
+			{ name: 'Starts With', value: 'startswith' },
+		],
+		default: 'contains',
+		displayOptions: {
+			show: {
+				field: pathsOf('text'),
+			},
+		},
+	},
+	{
+		displayName: 'Operator',
+		name: 'operator',
+		type: 'options',
+		options: [
+			{ name: 'Is', value: 'eq' },
+			{ name: 'Is Not', value: 'ne' },
+		],
+		default: 'eq',
+		displayOptions: {
+			show: {
+				field: pathsOf('boolean'),
+			},
+		},
+	},
+	{
+		displayName: 'Operator',
+		name: 'operator',
+		type: 'options',
+		options: [
+			{ name: 'After', value: 'gt' },
+			{ name: 'Before', value: 'lt' },
+			{ name: 'On or After', value: 'ge' },
+			{ name: 'On or Before', value: 'le' },
+		],
+		default: 'gt',
+		displayOptions: {
+			show: {
+				field: pathsOf('date'),
+			},
+		},
+	},
+	{
+		displayName: 'Value',
+		name: 'value',
+		type: 'string',
+		default: '',
+		placeholder: 'ACME',
+		description:
+			'What to look for. It is quoted and escaped for you, so a name carrying an apostrophe works as typed. A condition left empty here is ignored.',
+		displayOptions: {
+			show: {
+				field: pathsOf('text'),
+			},
+		},
+	},
+	{
+		displayName: 'Value',
+		name: 'booleanValue',
+		type: 'boolean',
+		default: true,
+		description: 'Whether the condition looks for the records where this is true or for the others',
+		displayOptions: {
+			show: {
+				field: pathsOf('boolean'),
+			},
+		},
+	},
+	{
+		displayName: 'Value',
+		name: 'dateValue',
+		type: 'dateTime',
+		default: '',
+		description: 'The moment to compare with. A condition left empty here is ignored.',
+		displayOptions: {
+			show: {
+				field: pathsOf('date'),
+			},
+		},
+	},
+];
+
 export const stakeholderFields: INodeProperties[] = [
 	// One ID field per type, each named after itself
 	...TYPES.map(
@@ -410,17 +580,96 @@ export const stakeholderFields: INodeProperties[] = [
 		},
 	},
 	{
+		displayName: 'Filter Type',
+		name: 'filterType',
+		type: 'options',
+		noDataExpression: true,
+		options: [
+			{
+				name: 'Conditions',
+				value: 'conditions',
+				description: 'Pick a field, an operator and a value, and let the node write the expression',
+			},
+			{
+				name: 'OData Expression',
+				value: 'odata',
+				description: 'Write the expression yourself, for what the conditions cannot say',
+			},
+		],
+		default: 'conditions',
+		description:
+			'How the results are narrowed on the server. Conditions writes the expression for you, quoting each value and escaping the apostrophes an expression written by hand trips over. OData Expression stays for everything the conditions do not cover, such as nested groups. A node saved before this field existed keeps filtering by the expression it already had — switch to OData Expression to see it.',
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['list'],
+			},
+		},
+	},
+	{
+		displayName: 'Filters',
+		name: 'filters',
+		type: 'fixedCollection',
+		typeOptions: {
+			multipleValues: true,
+		},
+		placeholder: 'Add Condition',
+		default: {},
+		description: 'The conditions a record has to meet to be returned',
+		options: [
+			{
+				displayName: 'Condition',
+				name: 'conditions',
+				values: filterConditionFields,
+			},
+		],
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['list'],
+				filterType: ['conditions'],
+			},
+		},
+	},
+	{
+		displayName: 'Combine Conditions',
+		name: 'filterCombine',
+		type: 'options',
+		options: [
+			{ name: 'And', value: 'and', description: 'Return only the records that meet every condition' },
+			{
+				name: 'Or',
+				value: 'or',
+				description: 'Return the records that meet at least one of the conditions',
+			},
+		],
+		default: 'and',
+		description:
+			'How the conditions above are joined. One operator for all of them: a mix of the two, such as (A or B) and C, is what the OData Expression mode stays for.',
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['list'],
+				filterType: ['conditions'],
+			},
+		},
+	},
+	// Unchanged since 0.2.0, on purpose: same name, same type, same behavior.
+	// It is a permanent escape hatch, not a deprecated field — all that changed
+	// in 0.5.0 is that it is shown in its own mode.
+	{
 		displayName: 'Filter (OData)',
 		name: 'filter',
 		type: 'string',
 		default: '',
 		placeholder: "contains(name,'LTDA')",
 		description:
-			"OData expression sent as $filter, to narrow the results on the server. Accented text needs no special treatment, e.g. contains(name,'SERVIÇOS').",
+			"OData expression sent as $filter, to narrow the results on the server. Accented text needs no special treatment, e.g. contains(name,'SERVIÇOS'). An apostrophe does: it has to be doubled, as in contains(name,'D''ALESSANDRO').",
 		displayOptions: {
 			show: {
 				resource: EVERY_TYPE,
 				operation: ['list'],
+				filterType: ['odata'],
 			},
 		},
 	},

@@ -338,3 +338,170 @@ describe('NiboEmpresas — the Customer operations', () => {
 		}
 	});
 });
+
+/**
+ * The assisted filter of 0.5.0. Until then the expression went to the API
+ * exactly as it was typed, and a name with an apostrophe was an HTTP 500 that
+ * said nothing about the quote.
+ */
+describe('NiboEmpresas — the assisted filter', () => {
+	const TYPES = ['customer', 'employee', 'partner', 'supplier'];
+
+	/** The fields of one row of the condition builder */
+	function conditionFields(): INodeProperties[] {
+		const collections = (property('filters')?.options ?? []) as Array<{
+			name: string;
+			values: INodeProperties[];
+		}>;
+		const row = collections.find((collection) => collection.name === 'conditions');
+
+		expect(row).toBeDefined();
+		return row?.values ?? [];
+	}
+
+	/** Every declaration of one field of a row, since one name can have several */
+	function inRow(name: string): INodeProperties[] {
+		return conditionFields().filter((field) => field.name === name);
+	}
+
+	function optionValues(field: INodeProperties | undefined): string[] {
+		return ((field?.options ?? []) as INodePropertyOptions[]).map((option) => option.value as string);
+	}
+
+	function optionNames(field: INodeProperties | undefined): string[] {
+		return ((field?.options ?? []) as INodePropertyOptions[]).map((option) => option.name);
+	}
+
+	it('starts assisted, and keeps the raw expression as the other mode', () => {
+		expect(optionValues(property('filterType'))).toEqual(['conditions', 'odata']);
+		expect(property('filterType')?.default).toBe('conditions');
+	});
+
+	// Zero breaking change: the published parameter keeps its name, its type and
+	// its behavior. All that changes is where it is shown.
+	it('leaves the published OData field exactly where it was, only shown in its own mode', () => {
+		const filter = property('filter');
+
+		expect(filter?.type).toBe('string');
+		expect(filter?.default).toBe('');
+		expect(filter?.displayOptions?.show?.filterType).toEqual(['odata']);
+	});
+
+	it('offers the four filter parameters on Get Many of all four types', () => {
+		for (const name of ['filterType', 'filters', 'filterCombine', 'filter']) {
+			expect(property(name)?.displayOptions?.show?.operation).toEqual(['list']);
+			expect(property(name)?.displayOptions?.show?.resource).toEqual(TYPES);
+		}
+	});
+
+	it('shows the builder and its combine only in the assisted mode', () => {
+		for (const name of ['filters', 'filterCombine']) {
+			expect(property(name)?.displayOptions?.show?.filterType).toEqual(['conditions']);
+		}
+	});
+
+	it('combines the conditions with and unless someone chooses or', () => {
+		expect(optionValues(property('filterCombine'))).toEqual(['and', 'or']);
+		expect(property('filterCombine')?.default).toBe('and');
+	});
+
+	it('takes more than one condition', () => {
+		expect(property('filters')?.type).toBe('fixedCollection');
+		expect(property('filters')?.typeOptions?.multipleValues).toBe(true);
+	});
+
+	/**
+	 * The menu is closed and measured: every path in it answered 200 on
+	 * 2026-07-25. Letting a field name be typed would only trade one way of
+	 * getting a 500 for another.
+	 */
+	it('offers only paths the API was measured to filter on', () => {
+		expect(optionValues(inRow('field')[0]).sort()).toEqual(
+			[
+				'address/city',
+				'address/state',
+				'companyInformation/companyName',
+				'document/number',
+				'email',
+				'isArchived',
+				'isCompany',
+				'name',
+				'phone',
+				'updateDate',
+			].sort(),
+		);
+	});
+
+	// `document/type eq 'Cpf'` is an HTTP 500: the enum does not compare. So it
+	// is not on the menu at all — whoever needs it filters by the number.
+	it('never offers the document type, which the API answers 500 for', () => {
+		expect(optionValues(inRow('field')[0])).not.toContain('document/type');
+		expect(optionNames(inRow('field')[0]).join(' ')).not.toMatch(/document type/i);
+	});
+
+	it('starts the row on a field, so a row added and untouched is a whole condition', () => {
+		expect(inRow('field')[0]?.default).toBe('name');
+	});
+
+	/** Which operator values are offered for a given field path */
+	function operatorsFor(path: string): string[] {
+		const declaration = inRow('operator').find((field) =>
+			((field.displayOptions?.show?.field ?? []) as string[]).includes(path),
+		);
+
+		return optionValues(declaration);
+	}
+
+	it('offers a text field the six text operators, tolower included', () => {
+		expect(operatorsFor('name').sort()).toEqual(
+			['contains', 'containsIgnoreCase', 'endswith', 'eq', 'ne', 'startswith'].sort(),
+		);
+	});
+
+	it('offers a yes-or-no field only is and is not', () => {
+		expect(operatorsFor('isCompany').sort()).toEqual(['eq', 'ne']);
+	});
+
+	it('offers a date field only the four comparisons', () => {
+		expect(operatorsFor('updateDate').sort()).toEqual(['ge', 'gt', 'le', 'lt'].sort());
+	});
+
+	// A text operator on a date is an expression the API answers 500 to, so the
+	// menu never offers one.
+	it('never offers contains for a date or a yes-or-no', () => {
+		for (const path of ['updateDate', 'isCompany', 'isArchived']) {
+			expect(operatorsFor(path)).not.toContain('contains');
+		}
+	});
+
+	/** Which value box is drawn for a given field path */
+	function valueBoxFor(path: string): INodeProperties | undefined {
+		return conditionFields().find(
+			(field) =>
+				field.displayName === 'Value' &&
+				((field.displayOptions?.show?.field ?? []) as string[]).includes(path),
+		);
+	}
+
+	// Each type has its own box, so the value is collected as what it is — which
+	// is what lets the builder write the right literal for it.
+	it.each([
+		['name', 'string'],
+		['document/number', 'string'],
+		['isCompany', 'boolean'],
+		['isArchived', 'boolean'],
+		['updateDate', 'dateTime'],
+	])('collects the value of %s as a %s', (path, type) => {
+		expect(valueBoxFor(path)?.type).toBe(type);
+	});
+
+	// The editor lists options in the order they are declared, and the n8n
+	// linter requires that order to be alphabetical by name.
+	it('keeps every menu of the builder alphabetical', () => {
+		for (const field of [...inRow('field'), ...inRow('operator'), property('filterType')!, property('filterCombine')!]) {
+			const names = optionNames(field);
+
+			expect(names).toEqual([...names].sort());
+		}
+	});
+});
