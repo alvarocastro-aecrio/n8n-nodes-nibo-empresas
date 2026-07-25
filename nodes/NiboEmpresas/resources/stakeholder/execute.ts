@@ -39,10 +39,7 @@ export async function executeStakeholder(
 
 	for (let i = 0; i < items.length; i++) {
 		try {
-			// Kept in step with the default declared on the node: one item per
-			// organization means a portfolio loop fires hundreds of calls in a
-			// row, and the defense has to be the default behavior.
-			const interval = this.getNodeParameter('requestInterval', i, 1000) as number;
+			const interval = requestInterval.call(this, i);
 			if (i > 0 && interval > 0) {
 				await sleep(interval);
 			}
@@ -206,6 +203,25 @@ function writePayload(fields: IDataObject): IDataObject {
 	}
 
 	return payload;
+}
+
+/**
+ * How long to wait between two calls, in milliseconds.
+ *
+ * A second by default, and on purpose: one item per organization means a
+ * portfolio loop fires hundreds of calls in a row, so the defense has to be
+ * what happens when nobody chose anything.
+ *
+ * Until 0.4.1 it was a field of its own. A node saved back then still carries
+ * it there and its author still means it, so that value is read when the
+ * option was not set.
+ */
+function requestInterval(this: IExecuteFunctions, itemIndex: number): number {
+	const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
+
+	return typeof options.requestInterval === 'number'
+		? options.requestInterval
+		: (this.getNodeParameter('requestInterval', itemIndex, 1000) as number);
 }
 
 /**

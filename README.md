@@ -79,9 +79,9 @@ Takes the customer ID and removes it. The API answers 204 with no body, so the n
 
 ### Interval between requests
 
-**Interval Between Requests** is how long the node waits between two calls to the API, in milliseconds. It defaults to **1000** and applies both between input items and between the pages of a single scan — never before the first call.
+Under **Options**, at the end of the node, **Interval Between Requests** is how long the node waits between two calls to the API, in milliseconds. It applies both between input items and between the pages of a single scan — never before the first call.
 
-The default is deliberately conservative: one node looping over a portfolio of organizations fires hundreds of calls back to back, and that has to be handled by default rather than remembered by whoever builds the workflow. Set it to `0` to send the calls with no gap at all.
+Leave it out and the node waits **1000 ms**. That default is deliberately conservative: one node looping over a portfolio of organizations fires hundreds of calls back to back, and that has to be handled by default rather than remembered by whoever builds the workflow. Add the option and set it to `0` to send the calls with no gap at all.
 
 ### Incomplete results
 
@@ -165,6 +165,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.3.1 | Fix: in 0.3.0 the **Authentication** switch could not actually be moved to *API Token (Per Item)* in the editor. n8n reserves the parameter name `authentication` for its "main auth field", which it hides from the parameter list and redraws inside the credentials block — where every option must be backed by a credential, and the per-item mode is backed by none. The parameter is now named `authMode` internally; the field, its label and its options are unchanged. **A node saved in per-item mode under 0.3.0 must have the mode picked again** |
 | 0.4.0 | **The first writes**: Customer **Create**, **Update**, **Delete** and **Get**. Update is a safe cycle — read, merge, write, then read back to confirm the change took — because this API's `PUT` zeroes every field left out of the body and answers a payload it cannot read with `{"Messages":[""]}`, HTTP 200 and nothing written. Fields you do not add are not touched; a field added and left empty is erased on purpose. ⚠️ **Visible change:** `document.type` now comes out as `CNPJ`/`CPF` on every operation, Get Many included, where reads used to answer `Cnpj`/`Cpf` |
 | 0.4.1 | Fix, found by 0.4.0's own confirmation step on the first real run: **Update wrote nothing**. A read answers `phone` and `email` twice — once inside `communication`, once mirrored at the root of the record — and sending both back makes the root copy, which still carries the old value, win. The node now drops the two mirrors from the body it writes, and the API fills them back in. Also: the confirmation no longer reports a change as refused when the API pads the value it stored (`zipCode` comes back with a trailing space) |
+| 0.4.2 | The node reads in the order it is filled in: **Authentication** now comes above the credential picker, **Interval Between Requests** moved into **Options** at the end (still 1000 ms when left out — a node that set it before keeps its value), **Document Type** is asked before **Document Number**, and **Company Name** is no longer offered for a CPF, since a person has no trading name |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer

@@ -45,9 +45,21 @@ export class NiboEmpresas implements INodeType {
 				// A credential cannot be chosen per item — the field takes no
 				// expression — so in the per-item mode it is neither required nor
 				// shown, and the token comes from the parameter below instead.
+				//
+				// `resource` is named here for a second reason, and it is not
+				// decoration: the editor draws the credential picker immediately
+				// before the LAST parameter any credential names in its
+				// displayOptions.show (ParameterInputList.vue, indexToShowSlotAt,
+				// n8n 2.18.5). With `authMode` alone the picker landed above the
+				// very field that decides whether a credential is used at all.
+				// Naming `resource` puts it under Authentication, where the node
+				// reads in order. Every resource has to be listed — one missing
+				// would be a resource with no credential — and a test keeps the
+				// two in step.
 				displayOptions: {
 					show: {
 						authMode: ['credential'],
+						resource: ['customer'],
 					},
 				},
 			},
@@ -95,17 +107,6 @@ export class NiboEmpresas implements INodeType {
 				},
 			},
 			{
-				displayName: 'Interval Between Requests',
-				name: 'requestInterval',
-				type: 'number',
-				typeOptions: {
-					minValue: 0,
-				},
-				default: 1000,
-				description:
-					'How long to wait, in milliseconds, between two calls to the API. It applies between input items and between the pages of one scan, never before the first call. Set it to 0 to send the calls back to back.',
-			},
-			{
 				displayName: 'Resource',
 				name: 'resource',
 				type: 'options',
@@ -120,6 +121,26 @@ export class NiboEmpresas implements INodeType {
 			},
 			...stakeholderOperations,
 			...stakeholderFields,
+			{
+				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				placeholder: 'Add option',
+				default: {},
+				options: [
+					{
+						displayName: 'Interval Between Requests',
+						name: 'requestInterval',
+						type: 'number',
+						typeOptions: {
+							minValue: 0,
+						},
+						default: 1000,
+						description:
+							'How long to wait, in milliseconds, between two calls to the API. It applies between input items and between the pages of one scan, never before the first call. Leave it out and the node waits a second; set it to 0 to send the calls back to back.',
+					},
+				],
+			},
 		],
 	};
 

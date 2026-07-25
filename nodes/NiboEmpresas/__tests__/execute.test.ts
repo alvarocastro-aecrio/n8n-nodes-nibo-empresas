@@ -118,7 +118,7 @@ describe('executeStakeholder — list', () => {
 
 	it('leaves one interval between items, and none before the first', async () => {
 		await executeStakeholder.call(
-			context({ returnAll: true, requestInterval: 500 }, 3),
+			context({ returnAll: true, options: { requestInterval: 500 } }, 3),
 			'customer',
 			'list',
 		);
@@ -129,7 +129,7 @@ describe('executeStakeholder — list', () => {
 
 	it('hands the interval to the transport, which spaces the pages of each item', async () => {
 		await executeStakeholder.call(
-			context({ returnAll: true, requestInterval: 500 }),
+			context({ returnAll: true, options: { requestInterval: 500 } }),
 			'customer',
 			'list',
 		);
@@ -139,13 +139,31 @@ describe('executeStakeholder — list', () => {
 
 	it('never waits when the interval is zero', async () => {
 		await executeStakeholder.call(
-			context({ returnAll: true, requestInterval: 0 }, 3),
+			context({ returnAll: true, options: { requestInterval: 0 } }, 3),
 			'customer',
 			'list',
 		);
 
 		expect(listRequest).toHaveBeenCalledTimes(3);
 		expect(wait).not.toHaveBeenCalled();
+	});
+
+	it('waits a second between items when nobody asked for anything', async () => {
+		await executeStakeholder.call(context({ returnAll: true }, 2), 'customer', 'list');
+
+		expect(wait).toHaveBeenCalledWith(1000);
+	});
+
+	// The interval used to be a field of its own. A node saved back then still
+	// carries it there, and its author still means it.
+	it('still honours the interval of a node saved before it became an option', async () => {
+		await executeStakeholder.call(
+			context({ returnAll: true, requestInterval: 250 }, 2),
+			'customer',
+			'list',
+		);
+
+		expect(wait).toHaveBeenCalledWith(250);
 	});
 
 	it('leaves the records untouched when the scan was consistent', async () => {

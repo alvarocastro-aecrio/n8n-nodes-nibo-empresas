@@ -50,7 +50,54 @@ describe('NiboEmpresas — the mode switch as the editor sees it', () => {
 
 		expect(credential.name).toBe('niboEmpresasApi');
 		expect(credential.required).toBe(true);
-		expect(credential.displayOptions?.show).toEqual({ authMode: ['credential'] });
+		expect(credential.displayOptions?.show?.authMode).toEqual(['credential']);
+	});
+
+	/**
+	 * Where the credential picker is drawn is not ours to set directly. The
+	 * editor puts it immediately **before the last parameter any credential
+	 * names in its `displayOptions.show`** (ParameterInputList.vue,
+	 * `indexToShowSlotAt`, n8n 2.18.5). Naming only `authMode` there drew the
+	 * picker above the Authentication field — the field that decides whether a
+	 * credential is used at all. Naming `resource` too moves the picker below
+	 * it, which is the order the node is read in.
+	 */
+	it('names a later parameter in the credential, so the picker is drawn under Authentication', () => {
+		const [credential] = description.credentials ?? [];
+		const named = Object.keys(credential.displayOptions?.show ?? {});
+		const order = description.properties.map((prop) => prop.name);
+
+		expect(order.indexOf('authMode')).toBeLessThan(
+			Math.max(...named.map((name) => order.indexOf(name))),
+		);
+	});
+
+	// And the cost of that: a resource missing from the list would have no
+	// credential at all. This is the only thing keeping the two in step.
+	it('lists every resource the node offers in the credential', () => {
+		const [credential] = description.credentials ?? [];
+		const resources = (property('resource')?.options as INodePropertyOptions[]).map(
+			(option) => option.value,
+		);
+
+		expect(credential.displayOptions?.show?.resource).toEqual(resources);
+	});
+
+	/**
+	 * The interval is a defense that costs a second per item, so it is offered
+	 * where a defense belongs: under Options, at the end, opt-in — and still
+	 * 1000 ms the moment it is added.
+	 */
+	it('offers the interval as an option at the end, not as a field of its own', () => {
+		const options = description.properties[description.properties.length - 1];
+		const interval = ((options?.options ?? []) as INodeProperties[]).find(
+			(field) => field.name === 'requestInterval',
+		);
+
+		expect(property('requestInterval')).toBeUndefined();
+		expect(options?.name).toBe('options');
+		expect(options?.type).toBe('collection');
+		expect(interval?.default).toBe(1000);
 	});
 
 	it('shows the token field only in the per-item mode, and masks it', () => {
@@ -101,6 +148,31 @@ describe('NiboEmpresas — the Customer operations', () => {
 
 		const type = property('documentType')?.options as INodePropertyOptions[];
 		expect(type.map((option) => option.value)).toEqual(['CNPJ', 'CPF']);
+	});
+
+	// The type decides what the number has to be, and what else the form asks
+	// for — so it is answered first.
+	it('asks which document it is before asking for its number', () => {
+		const order = description.properties.map((prop) => prop.name);
+
+		expect(order.indexOf('documentType')).toBeLessThan(order.indexOf('documentNumber'));
+	});
+
+	// A person has no trading name. The field is not merely useless there: this
+	// API keeps it, and a workflow could fill a person's record with one.
+	it('drops Company Name from the menu when the document is a CPF', () => {
+		expect(fieldOf('additionalFields', 'companyName')?.displayOptions?.hide).toEqual({
+			'/documentType': ['CPF'],
+		});
+	});
+
+	// In an update the document type is a field of the same menu, and it is
+	// usually not filled in at all — so the rule can only fire when the person
+	// says, in that same form, that this is a CPF.
+	it('does the same inside Update Fields, where the type is a sibling field', () => {
+		expect(fieldOf('updateFields', 'companyName')?.displayOptions?.hide).toEqual({
+			documentType: ['CPF'],
+		});
 	});
 
 	// Same menu on both sides: what can be set when creating can be changed
