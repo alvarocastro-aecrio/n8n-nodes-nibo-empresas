@@ -17,6 +17,10 @@ export default [
 	{
 		...n8nCommunityNodesPlugin.configs.recommended,
 		files: ['package.json', 'nodes/**/*.ts', 'credentials/**/*.ts'],
+		// Tests never reach the published tarball, which is what the official
+		// scanner actually inspects — keep the two passes looking at the same
+		// set of files.
+		ignores: ['**/__tests__/**'],
 		languageOptions: {
 			parser: tsParser,
 			parserOptions: {

@@ -15,7 +15,10 @@ module.exports = {
 		extraFileExtensions: ['.json'],
 	},
 
-	ignorePatterns: ['.eslintrc.js', '**/*.js', '**/node_modules/**', '**/dist/**'],
+	// Unit tests are excluded on purpose: they are not part of the published
+	// package (`files: ["dist"]`, and the build tsconfig skips them), so the
+	// rules that guard the published surface have nothing to say about them.
+	ignorePatterns: ['.eslintrc.js', '**/*.js', '**/node_modules/**', '**/dist/**', '**/__tests__/**'],
 
 	overrides: [
 		{

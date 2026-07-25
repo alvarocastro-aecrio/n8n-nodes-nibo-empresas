@@ -1,0 +1,168 @@
+/**
+ * Error classification for the Nibo Empresas API.
+ *
+ * The API answers **HTTP 500 for invalid requests too** — a malformed
+ * `$filter`, a sort field that does not exist, a business rule that was
+ * broken. The only reliable discriminator is the `error` field of the
+ * response body:
+ *
+ *   { "error": "validation_error",      "error_description": "..." }  -> the request is wrong
+ *   { "error": "internal_server_error", "error_description": "..." }  -> the server failed
+ *
+ * Treating both as "server error, try again" is wrong for the first one:
+ * retrying never fixes a bad request, and the useful text is in
+ * `error_description`. A missing or invalid token is a plain 401.
+ *
+ * This module is deliberately pure — no `this`, no network — so it can be
+ * tested in isolation and used from a single place in the transport.
+ */
+
+export type NiboErrorKind = 'auth' | 'validation' | 'server' | 'unknown';
+
+export interface INiboErrorInfo {
+	kind: NiboErrorKind;
+	/** Ready to show to the user, in English */
+	message: string;
+	/** Longer hint, including whether retrying makes sense */
+	description?: string;
+	httpCode?: string;
+	/** The response body exactly as the API sent it, for the caller to preserve */
+	body?: unknown;
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+// Where the body and the status code hide, depending on who wrapped the
+// failure. `httpRequestWithAuthentication` throws a NodeApiError built from
+// the axios error: that wrapper keeps the response body in `context.data` and
+// the status in `httpCode`, while `this.helpers.request` instead augments the
+// error with `error` (the body) and `statusCode`. Both are covered here so
+// classification never depends on which helper raised the failure.
+const CONTAINER_KEYS = [
+	'error',
+	'body',
+	'data',
+	'response',
+	'context',
+	'cause',
+	'errorResponse',
+];
+const STATUS_KEYS = ['statusCode', 'httpCode', 'status'];
+const MAX_DEPTH = 5;
+
+const RETRY_HINT_VALIDATION =
+	'The Nibo API answers HTTP 500 for invalid requests as well. Retrying will not help: fix the request itself (the filter expression or the sort field, for example).';
+const RETRY_HINT_SERVER =
+	'This one is a genuine server-side failure, so retrying can help — turn on "Retry On Fail" in the node settings if it keeps happening.';
+const AUTH_HINT =
+	'Check the API token in the Nibo Empresas credential. In this API the token selects the organization, so a token that belongs to another organization fails exactly like an expired one.';
+
+function asRecord(value: unknown): UnknownRecord | undefined {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		return undefined;
+	}
+	return value as UnknownRecord;
+}
+
+/** Depth-first search for the object carrying the API's `error` discriminator */
+function findBody(value: unknown, depth = 0): UnknownRecord | undefined {
+	const record = asRecord(value);
+	if (record === undefined || depth > MAX_DEPTH) {
+		return undefined;
+	}
+
+	if (typeof record.error === 'string') {
+		return record;
+	}
+
+	for (const key of CONTAINER_KEYS) {
+		const found = findBody(record[key], depth + 1);
+		if (found !== undefined) {
+			return found;
+		}
+	}
+
+	return undefined;
+}
+
+function findStatus(value: unknown, depth = 0): string | undefined {
+	const record = asRecord(value);
+	if (record === undefined || depth > MAX_DEPTH) {
+		return undefined;
+	}
+
+	for (const key of STATUS_KEYS) {
+		const status = record[key];
+		if (typeof status === 'number' || (typeof status === 'string' && status !== '')) {
+			return String(status);
+		}
+	}
+
+	for (const key of CONTAINER_KEYS) {
+		const found = findStatus(record[key], depth + 1);
+		if (found !== undefined) {
+			return found;
+		}
+	}
+
+	return undefined;
+}
+
+function originalMessage(error: unknown): string {
+	if (error instanceof Error && error.message) {
+		return error.message;
+	}
+	const record = asRecord(error);
+	if (record !== undefined && typeof record.message === 'string' && record.message !== '') {
+		return record.message;
+	}
+	return 'The Nibo Empresas API request failed';
+}
+
+function describedBy(body: UnknownRecord | undefined, fallback: string): string {
+	for (const key of ['error_description', 'errorDescription', 'Message', 'message']) {
+		const value = body?.[key];
+		if (typeof value === 'string' && value !== '') {
+			return value;
+		}
+	}
+	return fallback;
+}
+
+export function classifyNiboError(error: unknown): INiboErrorInfo {
+	const body = findBody(error);
+	const httpCode = findStatus(error);
+	const fallback = originalMessage(error);
+
+	if (httpCode === '401') {
+		return {
+			kind: 'auth',
+			message: 'The Nibo Empresas API rejected the token (HTTP 401)',
+			description: AUTH_HINT,
+			httpCode,
+			body,
+		};
+	}
+
+	if (body?.error === 'validation_error') {
+		return {
+			kind: 'validation',
+			message: `Nibo rejected the request: ${describedBy(body, fallback)}`,
+			description: RETRY_HINT_VALIDATION,
+			httpCode,
+			body,
+		};
+	}
+
+	if (body?.error === 'internal_server_error') {
+		return {
+			kind: 'server',
+			message: `The Nibo Empresas API failed: ${describedBy(body, fallback)}`,
+			description: RETRY_HINT_SERVER,
+			httpCode,
+			body,
+		};
+	}
+
+	return { kind: 'unknown', message: fallback, httpCode, body };
+}
