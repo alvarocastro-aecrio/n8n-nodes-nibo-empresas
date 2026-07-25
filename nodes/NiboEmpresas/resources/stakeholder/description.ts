@@ -19,6 +19,12 @@ export const stakeholderOperations: INodeProperties[] = [
 		// the editor shows in this exact order.
 		options: [
 			{
+				name: 'Create',
+				value: 'create',
+				action: 'Create a customer',
+				description: 'Add a customer to the organization',
+			},
+			{
 				name: 'Delete',
 				value: 'delete',
 				action: 'Delete a customer',
@@ -36,10 +42,156 @@ export const stakeholderOperations: INodeProperties[] = [
 				action: 'Get many customers',
 				description: 'Retrieve customers of the organization',
 			},
+			{
+				name: 'Update',
+				value: 'update',
+				action: 'Update a customer',
+				description:
+					'Change the fields given below, leaving every other field of the customer as it is',
+			},
 		],
 		default: 'list',
 	},
 ];
+
+// The menu shared by Create and Update. Create adds it under Additional
+// Fields, Update under Update Fields, and both are built from this one list so
+// they cannot drift apart. Alphabetical by display name, as the linter asks.
+const writableFields: INodeProperties[] = [
+	{
+		displayName: 'Address City',
+		name: 'addressCity',
+		type: 'string',
+		default: '',
+	},
+	{
+		displayName: 'Address Country',
+		name: 'addressCountry',
+		type: 'string',
+		default: '',
+	},
+	{
+		displayName: 'Address District',
+		name: 'addressDistrict',
+		type: 'string',
+		default: '',
+	},
+	{
+		displayName: 'Address Line 1',
+		name: 'addressLine1',
+		type: 'string',
+		default: '',
+		description: 'Street name',
+	},
+	{
+		displayName: 'Address Line 2',
+		name: 'addressLine2',
+		type: 'string',
+		default: '',
+		description: 'Whatever completes the address, such as a floor or a unit',
+	},
+	{
+		displayName: 'Address Number',
+		name: 'addressNumber',
+		type: 'number',
+		default: 0,
+		description: 'House or building number, which this API keeps as a number',
+	},
+	{
+		displayName: 'Address State',
+		name: 'addressState',
+		type: 'string',
+		default: '',
+		placeholder: 'RJ',
+	},
+	{
+		displayName: 'Address Zip Code',
+		name: 'addressZipCode',
+		type: 'string',
+		default: '',
+		placeholder: '20000000',
+	},
+	{
+		displayName: 'Cell Phone',
+		name: 'cellPhone',
+		type: 'string',
+		default: '',
+	},
+	{
+		displayName: 'Company Name',
+		name: 'companyName',
+		type: 'string',
+		default: '',
+		description: 'The trading name, when it differs from the registered name',
+	},
+	{
+		displayName: 'Contact Name',
+		name: 'contactName',
+		type: 'string',
+		default: '',
+	},
+	{
+		displayName: 'Email',
+		name: 'email',
+		type: 'string',
+		default: '',
+		placeholder: 'billing@example.com,accounts@example.com',
+		description:
+			'One string holding every address, separated by commas. This API keeps the e-mails of a customer in a single field, not in a list.',
+	},
+	{
+		displayName: 'Phone',
+		name: 'phone',
+		type: 'string',
+		default: '',
+	},
+	{
+		displayName: 'Website',
+		name: 'webSite',
+		type: 'string',
+		default: '',
+	},
+];
+
+// The name and the document, which Update takes as ordinary optional fields
+// and Create asks for up front.
+const identityFields: INodeProperties[] = [
+	{
+		displayName: 'Document Number',
+		name: 'documentNumber',
+		type: 'string',
+		default: '',
+		description: 'Digits only, with no dots, slashes or dashes',
+	},
+	{
+		displayName: 'Document Type',
+		name: 'documentType',
+		type: 'options',
+		options: [
+			{
+				name: 'CNPJ',
+				value: 'CNPJ',
+			},
+			{
+				name: 'CPF',
+				value: 'CPF',
+			},
+		],
+		default: 'CNPJ',
+	},
+	{
+		displayName: 'Name',
+		name: 'name',
+		type: 'string',
+		default: '',
+		description: 'The registered name of the customer',
+	},
+];
+
+/** The editor lists a menu in the order it is declared, and alphabetical is the convention */
+function byDisplayName(fields: INodeProperties[]): INodeProperties[] {
+	return [...fields].sort((one, other) => one.displayName.localeCompare(other.displayName));
+}
 
 export const stakeholderFields: INodeProperties[] = [
 	{
@@ -52,7 +204,89 @@ export const stakeholderFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: ['customer'],
-				operation: ['delete', 'get'],
+				operation: ['delete', 'get', 'update'],
+			},
+		},
+	},
+	{
+		displayName: 'Name',
+		name: 'name',
+		type: 'string',
+		required: true,
+		default: '',
+		description: 'The registered name of the customer',
+		displayOptions: {
+			show: {
+				resource: ['customer'],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Document Number',
+		name: 'documentNumber',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: '00000000000000',
+		description: 'Digits only, with no dots, slashes or dashes',
+		displayOptions: {
+			show: {
+				resource: ['customer'],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Document Type',
+		name: 'documentType',
+		type: 'options',
+		required: true,
+		options: [
+			{
+				name: 'CNPJ',
+				value: 'CNPJ',
+			},
+			{
+				name: 'CPF',
+				value: 'CPF',
+			},
+		],
+		default: 'CNPJ',
+		displayOptions: {
+			show: {
+				resource: ['customer'],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Additional Fields',
+		name: 'additionalFields',
+		type: 'collection',
+		placeholder: 'Add Field',
+		default: {},
+		options: byDisplayName(writableFields),
+		displayOptions: {
+			show: {
+				resource: ['customer'],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Update Fields',
+		name: 'updateFields',
+		type: 'collection',
+		placeholder: 'Add Field',
+		default: {},
+		description:
+			'The fields to change. A field left out is not touched: the customer keeps whatever is stored in Nibo. A field added and left empty is written empty, which is how a value is erased on purpose.',
+		options: byDisplayName([...writableFields, ...identityFields]),
+		displayOptions: {
+			show: {
+				resource: ['customer'],
+				operation: ['update'],
 			},
 		},
 	},

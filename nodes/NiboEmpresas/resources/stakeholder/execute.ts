@@ -3,6 +3,8 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
+import { niboCreate, niboSafeUpdate } from '../../transport/save';
+import { normalizeStakeholder } from './normalize';
 
 // One handler for the four stakeholder types — their API contract is
 // identical. Only `customer` is routed to it in v0.1.0.
@@ -68,11 +70,13 @@ export async function executeStakeholder(
 				records.forEach((record, index) => {
 					// A result that may be incomplete says so on its last item, so a
 					// workflow reading only the data still sees it. Every field of the
-					// API is left untouched.
+					// API is passed on as it came, but for the document type — see
+					// normalize.ts.
+					const normalized = normalizeStakeholder(record);
 					const json =
 						warning !== undefined && index === records.length - 1
-							? { ...record, _niboPaginationWarning: warning }
-							: record;
+							? { ...normalized, _niboPaginationWarning: warning }
+							: normalized;
 
 					returnData.push({ json, pairedItem: { item: i } });
 				});
@@ -85,7 +89,39 @@ export async function executeStakeholder(
 					`${endpoint}/${encodeURIComponent(id)}`,
 				);
 
-				returnData.push({ json: readRecord.call(this, record, id, i), pairedItem: { item: i } });
+				returnData.push({
+					json: normalizeStakeholder(readRecord.call(this, record, id, i)),
+					pairedItem: { item: i },
+				});
+			} else if (operation === 'create') {
+				const created = await niboCreate.call(
+					this,
+					i,
+					endpoint,
+					writePayload({
+						name: this.getNodeParameter('name', i) as string,
+						documentNumber: this.getNodeParameter('documentNumber', i) as string,
+						documentType: this.getNodeParameter('documentType', i) as string,
+						...(this.getNodeParameter('additionalFields', i, {}) as IDataObject),
+					}),
+				);
+
+				returnData.push({ json: normalizeStakeholder(created), pairedItem: { item: i } });
+			} else if (operation === 'update') {
+				// Only what the user added travels: everything else keeps whatever is
+				// stored in Nibo, which is what the safe cycle in the transport is for.
+				const changes = writePayload(this.getNodeParameter('updateFields', i, {}) as IDataObject);
+
+				const updated = await niboSafeUpdate.call(
+					this,
+					i,
+					endpoint,
+					recordId.call(this, resource, i),
+					changes,
+					{ normalize: normalizeStakeholder },
+				);
+
+				returnData.push({ json: normalizeStakeholder(updated), pairedItem: { item: i } });
 			} else if (operation === 'delete') {
 				const id = recordId.call(this, resource, i);
 				await niboApiRequest.call(this, i, 'DELETE', `${endpoint}/${encodeURIComponent(id)}`);
@@ -118,6 +154,58 @@ export async function executeStakeholder(
 	}
 
 	return returnData;
+}
+
+// Where each field of the editor lives in the API's payload. Flat for whoever
+// fills the form, nested on the wire — and declared once, so Create and Update
+// cannot drift apart.
+const WRITE_FIELD_PATHS: Record<string, string[]> = {
+	name: ['name'],
+	documentNumber: ['document', 'number'],
+	documentType: ['document', 'type'],
+	companyName: ['companyInformation', 'companyName'],
+	contactName: ['communication', 'contactName'],
+	cellPhone: ['communication', 'cellPhone'],
+	phone: ['communication', 'phone'],
+	email: ['communication', 'email'],
+	webSite: ['communication', 'webSite'],
+	addressLine1: ['address', 'line1'],
+	addressLine2: ['address', 'line2'],
+	addressNumber: ['address', 'number'],
+	addressDistrict: ['address', 'district'],
+	addressCity: ['address', 'city'],
+	addressState: ['address', 'state'],
+	addressZipCode: ['address', 'zipCode'],
+	addressCountry: ['address', 'country'],
+};
+
+/**
+ * Turns what the editor collected into the payload the API keeps.
+ *
+ * A field that was not filled in is not in `fields` and does not reach the
+ * payload — on an Update that is the whole promise of "the node does not touch
+ * what you did not add". A field that is there but empty **does** reach it:
+ * adding a field and leaving it blank is how a stored value is erased.
+ */
+function writePayload(fields: IDataObject): IDataObject {
+	const payload: IDataObject = {};
+
+	for (const [parameter, path] of Object.entries(WRITE_FIELD_PATHS)) {
+		const value = fields[parameter];
+		if (value === undefined) {
+			continue;
+		}
+
+		const branch = path
+			.slice(0, -1)
+			.reduce<IDataObject>(
+				(parent, key) => ((parent[key] as IDataObject) ??= {}) as IDataObject,
+				payload,
+			);
+		branch[path[path.length - 1]] = value;
+	}
+
+	return payload;
 }
 
 /**

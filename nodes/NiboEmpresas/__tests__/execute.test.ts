@@ -1,12 +1,15 @@
-import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions, INode, INodePropertyOptions } from 'n8n-workflow';
 import { sleep } from 'n8n-workflow';
 
+import { NiboEmpresas } from '../NiboEmpresas.node';
 import { executeStakeholder } from '../resources/stakeholder/execute';
 import { niboListRequest } from '../transport/paginate';
 import { niboApiRequest } from '../transport/request';
+import { niboCreate, niboSafeUpdate } from '../transport/save';
 
 jest.mock('../transport/paginate');
 jest.mock('../transport/request');
+jest.mock('../transport/save');
 
 // Only `sleep` is replaced, so the tests run instantly while still proving how
 // many gaps the handler leaves between items.
@@ -17,6 +20,8 @@ jest.mock('n8n-workflow', () => ({
 
 const listRequest = niboListRequest as jest.MockedFunction<typeof niboListRequest>;
 const apiRequest = niboApiRequest as jest.MockedFunction<typeof niboApiRequest>;
+const create = niboCreate as jest.MockedFunction<typeof niboCreate>;
+const safeUpdate = niboSafeUpdate as jest.MockedFunction<typeof niboSafeUpdate>;
 const wait = sleep as jest.MockedFunction<typeof sleep>;
 
 const NODE: INode = {
@@ -54,6 +59,10 @@ beforeEach(() => {
 	listRequest.mockResolvedValue({ records: [], count: 0 });
 	apiRequest.mockReset();
 	apiRequest.mockResolvedValue({});
+	create.mockReset();
+	create.mockResolvedValue({ id: 'not-a-real-id' });
+	safeUpdate.mockReset();
+	safeUpdate.mockResolvedValue({ id: 'not-a-real-id' });
 	wait.mockClear();
 });
 
@@ -201,5 +210,227 @@ describe('executeStakeholder — delete', () => {
 		await expect(failure).rejects.toThrow(/ID/);
 		await expect(failure).rejects.toMatchObject({ context: { itemIndex: 0 } });
 		expect(apiRequest).not.toHaveBeenCalled();
+	});
+});
+
+describe('executeStakeholder — create', () => {
+	/** The payload the handler built out of the UI fields */
+	function payloadSent(): IDataObject {
+		return create.mock.calls[0][2];
+	}
+
+	it('sends the first-class fields as the document payload the API expects', async () => {
+		await executeStakeholder.call(
+			context({ name: 'ACME LTDA', documentNumber: '00000000000000', documentType: 'CNPJ' }),
+			'customer',
+			'create',
+		);
+
+		expect(create.mock.calls[0][0]).toBe(0);
+		expect(create.mock.calls[0][1]).toBe('/customers');
+		expect(payloadSent()).toEqual({
+			name: 'ACME LTDA',
+			document: { number: '00000000000000', type: 'CNPJ' },
+		});
+	});
+
+	it('files each additional field under the branch the API keeps it in', async () => {
+		await executeStakeholder.call(
+			context({
+				name: 'ACME LTDA',
+				documentNumber: '00000000000000',
+				documentType: 'CNPJ',
+				additionalFields: {
+					companyName: 'Acme',
+					contactName: 'Ada',
+					email: 'billing@example.com,ap@example.com',
+					phone: '2130000000',
+					addressLine1: 'R EXAMPLE',
+					addressNumber: 100,
+					addressState: 'RJ',
+				},
+			}),
+			'customer',
+			'create',
+		);
+
+		expect(payloadSent()).toEqual({
+			name: 'ACME LTDA',
+			document: { number: '00000000000000', type: 'CNPJ' },
+			companyInformation: { companyName: 'Acme' },
+			communication: {
+				contactName: 'Ada',
+				email: 'billing@example.com,ap@example.com',
+				phone: '2130000000',
+			},
+			address: { line1: 'R EXAMPLE', number: 100, state: 'RJ' },
+		});
+	});
+
+	it('leaves out the branches nobody filled in', async () => {
+		await executeStakeholder.call(
+			context({
+				name: 'ACME LTDA',
+				documentNumber: '00000000000000',
+				documentType: 'CNPJ',
+				additionalFields: {},
+			}),
+			'customer',
+			'create',
+		);
+
+		expect(payloadSent()).not.toHaveProperty('communication');
+		expect(payloadSent()).not.toHaveProperty('address');
+	});
+
+	it('returns the record the API stored, with the document type normalized', async () => {
+		create.mockResolvedValue({
+			id: 'not-a-real-id',
+			name: 'ACME LTDA',
+			document: { number: '00000000000000', type: 'Cnpj' },
+		});
+
+		const items = await executeStakeholder.call(
+			context({ name: 'ACME LTDA', documentNumber: '00000000000000', documentType: 'CNPJ' }),
+			'customer',
+			'create',
+		);
+
+		expect(items[0].json.document).toEqual({ number: '00000000000000', type: 'CNPJ' });
+	});
+});
+
+describe('executeStakeholder — update', () => {
+	/** (itemIndex, endpoint, id, changes, options) — the transport's own signature */
+	function updateCall() {
+		const [itemIndex, endpoint, id, changes, options] = safeUpdate.mock.calls[0];
+		return { itemIndex, endpoint, id, changes, options };
+	}
+
+	it('asks the safe cycle to change only the fields that were added', async () => {
+		await executeStakeholder.call(
+			context({ customerId: 'not-a-real-id', updateFields: { phone: '2199999999' } }),
+			'customer',
+			'update',
+		);
+
+		expect(updateCall()).toMatchObject({
+			itemIndex: 0,
+			endpoint: '/customers',
+			id: 'not-a-real-id',
+			changes: { communication: { phone: '2199999999' } },
+		});
+	});
+
+	// Adding a field and leaving it blank is the documented way to erase a
+	// stored value, so an empty string has to survive the trip to the payload.
+	it('keeps a field that was added and left blank, which is how a value is erased', async () => {
+		await executeStakeholder.call(
+			context({ customerId: 'not-a-real-id', updateFields: { phone: '' } }),
+			'customer',
+			'update',
+		);
+
+		expect(updateCall().changes).toEqual({ communication: { phone: '' } });
+	});
+
+	it('can change the document without being told the type again', async () => {
+		await executeStakeholder.call(
+			context({ customerId: 'not-a-real-id', updateFields: { documentNumber: '11111111111' } }),
+			'customer',
+			'update',
+		);
+
+		expect(updateCall().changes).toEqual({ document: { number: '11111111111' } });
+	});
+
+	// Without it the confirmation would read the API's own `Cnpj` as proof that
+	// a document change of `CNPJ` never took.
+	it('hands the safe cycle the normalizer, so the confirmation compares like for like', async () => {
+		await executeStakeholder.call(
+			context({ customerId: 'not-a-real-id', updateFields: { phone: '2199999999' } }),
+			'customer',
+			'update',
+		);
+
+		const normalize = updateCall().options?.normalize;
+
+		expect(normalize?.({ document: { type: 'Cnpj' } })).toEqual({
+			document: { type: 'CNPJ' },
+		});
+	});
+
+	it('returns the record as the confirmation read it, normalized', async () => {
+		safeUpdate.mockResolvedValue({
+			id: 'not-a-real-id',
+			document: { number: '00000000000000', type: 'Cnpj' },
+		});
+
+		const items = await executeStakeholder.call(
+			context({ customerId: 'not-a-real-id', updateFields: { phone: '2199999999' } }),
+			'customer',
+			'update',
+		);
+
+		expect(items[0].json.document).toEqual({ number: '00000000000000', type: 'CNPJ' });
+	});
+});
+
+// Decision 5 of the v0.4.0 plan, and the one visible change of the release:
+// every operation hands out the same spelling, Get Many included.
+describe('executeStakeholder — the document type on the way out', () => {
+	it('normalizes the records of a scan', async () => {
+		listRequest.mockResolvedValue({
+			records: [{ id: 'a', document: { type: 'Cnpj' } }, { id: 'b', document: { type: 'Cpf' } }],
+			count: 2,
+		});
+
+		const items = await executeStakeholder.call(context({ returnAll: true }), 'customer', 'list');
+
+		expect(items.map((item) => (item.json.document as IDataObject).type)).toEqual(['CNPJ', 'CPF']);
+	});
+
+	it('normalizes a record read by ID', async () => {
+		apiRequest.mockResolvedValue({ id: 'not-a-real-id', document: { type: 'Cnpj' } });
+
+		const items = await executeStakeholder.call(
+			context({ customerId: 'not-a-real-id' }),
+			'customer',
+			'get',
+		);
+
+		expect(items[0].json.document).toEqual({ type: 'CNPJ' });
+	});
+});
+
+/**
+ * 0.3.1 was a release about a field the editor offered and nothing was behind.
+ * This is the same class of bug one level up: an operation listed in the menu
+ * that the handler does not route answers "not supported" at run time, and
+ * only at run time.
+ */
+describe('the operations the editor offers and the handler routes', () => {
+	const offered = (
+		(new NiboEmpresas().description.properties.find((prop) => prop.name === 'operation')?.options ??
+			[]) as INodePropertyOptions[]
+	).map((option) => option.value as string);
+
+	it.each(offered)('routes "%s"', async (operation) => {
+		apiRequest.mockResolvedValue({ id: 'not-a-real-id' });
+
+		const items = await executeStakeholder.call(
+			context({
+				customerId: 'not-a-real-id',
+				name: 'ACME LTDA',
+				documentNumber: '00000000000000',
+				documentType: 'CNPJ',
+				updateFields: { phone: '2199999999' },
+				limit: 1,
+			}),
+			'customer',
+			operation,
+		);
+
+		expect(items).toBeDefined();
 	});
 });

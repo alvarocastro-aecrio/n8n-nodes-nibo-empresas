@@ -1,4 +1,4 @@
-import type { INodePropertyOptions } from 'n8n-workflow';
+import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
 import { NiboEmpresas } from '../NiboEmpresas.node';
 
@@ -6,6 +6,17 @@ const description = new NiboEmpresas().description;
 
 function property(name: string) {
 	return description.properties.find((prop) => prop.name === name);
+}
+
+/** The fields offered inside a collection, e.g. Additional Fields */
+function collectionFields(collection: string): string[] {
+	return ((property(collection)?.options ?? []) as INodeProperties[]).map((field) => field.name);
+}
+
+function fieldOf(collection: string, name: string): INodeProperties | undefined {
+	return ((property(collection)?.options ?? []) as INodeProperties[]).find(
+		(field) => field.name === name,
+	);
 }
 
 describe('NiboEmpresas — the mode switch as the editor sees it', () => {
@@ -58,8 +69,8 @@ describe('NiboEmpresas — the Customer operations', () => {
 		);
 	}
 
-	it('offers the read operations, with Get Many as the default', () => {
-		expect(operationValues()).toEqual(expect.arrayContaining(['delete', 'get', 'list']));
+	it('offers the five operations, with Get Many as the default', () => {
+		expect(operationValues().sort()).toEqual(['create', 'delete', 'get', 'list', 'update']);
 		expect(property('operation')?.default).toBe('list');
 	});
 
@@ -78,7 +89,58 @@ describe('NiboEmpresas — the Customer operations', () => {
 
 		expect(customerId?.required).toBe(true);
 		expect(customerId?.displayOptions?.show?.operation).toEqual(
-			expect.arrayContaining(['delete', 'get']),
+			expect.arrayContaining(['delete', 'get', 'update']),
 		);
+	});
+
+	it('asks for a name and a document up front when creating', () => {
+		for (const name of ['name', 'documentNumber', 'documentType']) {
+			expect(property(name)?.required).toBe(true);
+			expect(property(name)?.displayOptions?.show?.operation).toEqual(['create']);
+		}
+
+		const type = property('documentType')?.options as INodePropertyOptions[];
+		expect(type.map((option) => option.value)).toEqual(['CNPJ', 'CPF']);
+	});
+
+	// Same menu on both sides: what can be set when creating can be changed
+	// later, and nothing in Update is mandatory.
+	it('offers under Update Fields everything Create offers, plus the first-class fields', () => {
+		const inCreate = collectionFields('additionalFields');
+		const inUpdate = collectionFields('updateFields');
+
+		expect(inUpdate).toEqual(
+			expect.arrayContaining([...inCreate, 'name', 'documentNumber', 'documentType']),
+		);
+	});
+
+	it('warns that the e-mail field is one string with several addresses', () => {
+		const email = fieldOf('additionalFields', 'email');
+
+		expect(email?.type).toBe('string');
+		expect(email?.description).toMatch(/comma/i);
+	});
+
+	/**
+	 * The address is offered one field at a time rather than as a block. A
+	 * fixedCollection would submit every field it contains, with its default,
+	 * the moment the block is added — so changing a ZIP code would send an
+	 * empty street and a house number of 0, and the API's PUT would write
+	 * exactly that. One field at a time is what keeps "the node does not touch
+	 * what you did not add" true for the address as well.
+	 */
+	it('offers the address field by field, so adding one never rewrites the others', () => {
+		for (const collection of ['additionalFields', 'updateFields']) {
+			expect(collectionFields(collection)).toEqual(
+				expect.arrayContaining([
+					'addressLine1',
+					'addressNumber',
+					'addressCity',
+					'addressState',
+					'addressZipCode',
+				]),
+			);
+			expect(fieldOf(collection, 'address')).toBeUndefined();
+		}
 	});
 });
