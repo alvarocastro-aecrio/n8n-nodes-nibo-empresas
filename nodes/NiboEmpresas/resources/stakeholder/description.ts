@@ -29,6 +29,19 @@ export const stakeholderOperations: INodeProperties[] = [
 
 export const stakeholderFields: INodeProperties[] = [
 	{
+		displayName: 'Return All',
+		name: 'returnAll',
+		type: 'boolean',
+		default: false,
+		description: 'Whether to return all results or only up to a given limit',
+		displayOptions: {
+			show: {
+				resource: ['customer'],
+				operation: ['list'],
+			},
+		},
+	},
+	{
 		displayName: 'Limit',
 		name: 'limit',
 		type: 'number',
@@ -37,11 +50,42 @@ export const stakeholderFields: INodeProperties[] = [
 		},
 		default: 50,
 		description: 'Max number of results to return',
-		hint: 'The API caps every page at 500 records',
+		hint: 'The API caps every page at 500 records, so a higher limit is collected in several pages',
 		displayOptions: {
 			show: {
 				resource: ['customer'],
 				operation: ['list'],
+				returnAll: [false],
+			},
+		},
+	},
+	{
+		displayName: 'Filter (OData)',
+		name: 'filter',
+		type: 'string',
+		default: '',
+		placeholder: "contains(name,'LTDA')",
+		description:
+			"OData expression sent as $filter, to narrow the results on the server. Accented text needs no special treatment, e.g. contains(name,'SERVIÇOS').",
+		displayOptions: {
+			show: {
+				resource: ['customer'],
+				operation: ['list'],
+			},
+		},
+	},
+	{
+		displayName: 'Fail on Incomplete Results',
+		name: 'failOnIncomplete',
+		type: 'boolean',
+		default: false,
+		description:
+			'Whether to fail when the result may be incomplete, instead of returning the records with a warning. Records written while the pages are being read can slip past the cursor, which shows up as a record count that changes mid-scan or as fewer records than the server reported.',
+		displayOptions: {
+			show: {
+				resource: ['customer'],
+				operation: ['list'],
+				returnAll: [true],
 			},
 		},
 	},

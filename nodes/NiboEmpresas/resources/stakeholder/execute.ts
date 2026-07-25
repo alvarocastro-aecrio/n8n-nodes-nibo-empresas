@@ -30,16 +30,31 @@ export async function executeStakeholder(
 	for (let i = 0; i < items.length; i++) {
 		try {
 			if (operation === 'list') {
-				const limit = this.getNodeParameter('limit', i) as number;
+				const returnAll = this.getNodeParameter('returnAll', i, false) as boolean;
 
-				const { records } = await niboListRequest.call(this, endpoint, STAKEHOLDER_ORDER_BY, {
-					returnAll: false,
-					limit,
+				const { records, warning } = await niboListRequest.call(
+					this,
+					endpoint,
+					STAKEHOLDER_ORDER_BY,
+					{
+						returnAll,
+						limit: returnAll ? 0 : (this.getNodeParameter('limit', i) as number),
+						filter: this.getNodeParameter('filter', i, '') as string,
+						failOnIncomplete: this.getNodeParameter('failOnIncomplete', i, false) as boolean,
+					},
+				);
+
+				records.forEach((record, index) => {
+					// A result that may be incomplete says so on its last item, so a
+					// workflow reading only the data still sees it. Every field of the
+					// API is left untouched.
+					const json =
+						warning !== undefined && index === records.length - 1
+							? { ...record, _niboPaginationWarning: warning }
+							: record;
+
+					returnData.push({ json, pairedItem: { item: i } });
 				});
-
-				for (const record of records) {
-					returnData.push({ json: record, pairedItem: { item: i } });
-				}
 			} else {
 				throw new NodeOperationError(
 					this.getNode(),
