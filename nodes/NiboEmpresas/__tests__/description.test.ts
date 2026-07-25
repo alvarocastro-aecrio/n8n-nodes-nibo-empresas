@@ -50,3 +50,35 @@ describe('NiboEmpresas — the mode switch as the editor sees it', () => {
 		expect(apiToken?.required).toBe(true);
 	});
 });
+
+describe('NiboEmpresas — the Customer operations', () => {
+	function operationValues(): string[] {
+		return (property('operation')?.options as INodePropertyOptions[]).map(
+			(option) => option.value as string,
+		);
+	}
+
+	it('offers the read operations, with Get Many as the default', () => {
+		expect(operationValues()).toEqual(expect.arrayContaining(['delete', 'get', 'list']));
+		expect(property('operation')?.default).toBe('list');
+	});
+
+	// The editor lists options in the order they are declared, and the n8n
+	// linter requires that order to be alphabetical by name.
+	it('lists the operations in alphabetical order', () => {
+		const names = (property('operation')?.options as INodePropertyOptions[]).map(
+			(option) => option.name,
+		);
+
+		expect(names).toEqual([...names].sort());
+	});
+
+	it('asks for the customer ID on every operation that works on one record', () => {
+		const customerId = property('customerId');
+
+		expect(customerId?.required).toBe(true);
+		expect(customerId?.displayOptions?.show?.operation).toEqual(
+			expect.arrayContaining(['delete', 'get']),
+		);
+	});
+});

@@ -1,12 +1,20 @@
-import type { IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboListRequest } from '../../transport/paginate';
+import { niboApiRequest } from '../../transport/request';
 
 // One handler for the four stakeholder types — their API contract is
 // identical. Only `customer` is routed to it in v0.1.0.
 const STAKEHOLDER_ENDPOINTS: Record<string, string> = {
 	customer: '/customers',
+};
+
+// A parameter name is a contract: renaming one breaks every workflow already
+// built on it. So each stakeholder type gets its own ID field, named after
+// itself, and the three still outside the UI enter with theirs.
+const STAKEHOLDER_ID_PARAMETERS: Record<string, string> = {
+	customer: 'customerId',
 };
 
 // `id` is the only stakeholder field measured to be unique and immutable
@@ -68,6 +76,23 @@ export async function executeStakeholder(
 
 					returnData.push({ json, pairedItem: { item: i } });
 				});
+			} else if (operation === 'get') {
+				const id = recordId.call(this, resource, i);
+				const record = await niboApiRequest.call(
+					this,
+					i,
+					'GET',
+					`${endpoint}/${encodeURIComponent(id)}`,
+				);
+
+				returnData.push({ json: readRecord.call(this, record, id, i), pairedItem: { item: i } });
+			} else if (operation === 'delete') {
+				const id = recordId.call(this, resource, i);
+				await niboApiRequest.call(this, i, 'DELETE', `${endpoint}/${encodeURIComponent(id)}`);
+
+				// The API answers 204 with no body at all, so the confirmation the
+				// workflow reads has to be built here — there is nothing to pass on.
+				returnData.push({ json: { id, deleted: true }, pairedItem: { item: i } });
 			} else {
 				throw new NodeOperationError(
 					this.getNode(),
@@ -93,4 +118,40 @@ export async function executeStakeholder(
 	}
 
 	return returnData;
+}
+
+/**
+ * The ID this item works on, refused while it is still cheap to refuse.
+ *
+ * An empty ID would otherwise be sent as `/customers/` — the collection
+ * endpoint — which on a DELETE is a request no one wants to find out the
+ * answer to.
+ */
+function recordId(this: IExecuteFunctions, resource: string, itemIndex: number): string {
+	const parameter = STAKEHOLDER_ID_PARAMETERS[resource];
+	const id = String(this.getNodeParameter(parameter, itemIndex, '') ?? '').trim();
+
+	if (id === '') {
+		throw new NodeOperationError(this.getNode(), 'This item carries no record ID', {
+			itemIndex,
+			description: `The ${parameter} field is empty. It is usually an expression reading the ID from the incoming item.`,
+		});
+	}
+
+	return id;
+}
+
+function readRecord(
+	this: IExecuteFunctions,
+	value: unknown,
+	id: string,
+	itemIndex: number,
+): IDataObject {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		throw new NodeOperationError(this.getNode(), `Nibo returned no record for the ID "${id}"`, {
+			itemIndex,
+		});
+	}
+
+	return value as IDataObject;
 }

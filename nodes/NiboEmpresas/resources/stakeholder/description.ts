@@ -15,7 +15,21 @@ export const stakeholderOperations: INodeProperties[] = [
 				resource: ['customer'],
 			},
 		},
+		// Alphabetical by name, which is what the n8n linter requires and what
+		// the editor shows in this exact order.
 		options: [
+			{
+				name: 'Delete',
+				value: 'delete',
+				action: 'Delete a customer',
+				description: 'Remove a customer from the organization',
+			},
+			{
+				name: 'Get',
+				value: 'get',
+				action: 'Get a customer',
+				description: 'Retrieve one customer by ID',
+			},
 			{
 				name: 'Get Many',
 				value: 'list',
@@ -28,6 +42,20 @@ export const stakeholderOperations: INodeProperties[] = [
 ];
 
 export const stakeholderFields: INodeProperties[] = [
+	{
+		displayName: 'Customer ID',
+		name: 'customerId',
+		type: 'string',
+		required: true,
+		default: '',
+		description: 'The ID of the customer to work on, as Nibo returns it in the ID field',
+		displayOptions: {
+			show: {
+				resource: ['customer'],
+				operation: ['delete', 'get'],
+			},
+		},
+	},
 	{
 		displayName: 'Return All',
 		name: 'returnAll',

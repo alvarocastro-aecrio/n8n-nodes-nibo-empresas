@@ -3,8 +3,10 @@ import { sleep } from 'n8n-workflow';
 
 import { executeStakeholder } from '../resources/stakeholder/execute';
 import { niboListRequest } from '../transport/paginate';
+import { niboApiRequest } from '../transport/request';
 
 jest.mock('../transport/paginate');
+jest.mock('../transport/request');
 
 // Only `sleep` is replaced, so the tests run instantly while still proving how
 // many gaps the handler leaves between items.
@@ -14,6 +16,7 @@ jest.mock('n8n-workflow', () => ({
 }));
 
 const listRequest = niboListRequest as jest.MockedFunction<typeof niboListRequest>;
+const apiRequest = niboApiRequest as jest.MockedFunction<typeof niboApiRequest>;
 const wait = sleep as jest.MockedFunction<typeof sleep>;
 
 const NODE: INode = {
@@ -40,9 +43,17 @@ function optionsSentToTransport(): IDataObject {
 	return listRequest.mock.calls[0][3] as unknown as IDataObject;
 }
 
+/** (itemIndex, method, endpoint, qs, body) — the transport's own signature */
+function apiCall(index: number) {
+	const [itemIndex, method, endpoint] = apiRequest.mock.calls[index];
+	return { itemIndex, method, endpoint };
+}
+
 beforeEach(() => {
 	listRequest.mockReset();
 	listRequest.mockResolvedValue({ records: [], count: 0 });
+	apiRequest.mockReset();
+	apiRequest.mockResolvedValue({});
 	wait.mockClear();
 });
 
@@ -134,5 +145,61 @@ describe('executeStakeholder — list', () => {
 		const items = await executeStakeholder.call(context({ returnAll: true }), 'customer', 'list');
 
 		expect(items[0].json).toEqual({ id: 'a' });
+	});
+});
+
+describe('executeStakeholder — get', () => {
+	it('reads one record by ID and returns it as a single item', async () => {
+		apiRequest.mockResolvedValue({ id: 'not-a-real-id', name: 'ACME LTDA' });
+
+		const items = await executeStakeholder.call(
+			context({ customerId: 'not-a-real-id' }),
+			'customer',
+			'get',
+		);
+
+		expect(apiCall(0)).toMatchObject({
+			itemIndex: 0,
+			method: 'GET',
+			endpoint: '/customers/not-a-real-id',
+		});
+		expect(items).toHaveLength(1);
+		expect(items[0].json).toMatchObject({ id: 'not-a-real-id', name: 'ACME LTDA' });
+	});
+
+	it('fails the item when no ID was given', async () => {
+		const failure = executeStakeholder.call(context({ customerId: '  ' }), 'customer', 'get');
+
+		await expect(failure).rejects.toThrow(/ID/);
+		await expect(failure).rejects.toMatchObject({ context: { itemIndex: 0 } });
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+});
+
+describe('executeStakeholder — delete', () => {
+	// The API answers 204 with no body at all, so the confirmation the workflow
+	// gets has to be built here — there is nothing to pass through.
+	it('deletes by ID and says so, since the API answers no content', async () => {
+		apiRequest.mockResolvedValue(undefined);
+
+		const items = await executeStakeholder.call(
+			context({ customerId: 'not-a-real-id' }),
+			'customer',
+			'delete',
+		);
+
+		expect(apiCall(0)).toMatchObject({
+			method: 'DELETE',
+			endpoint: '/customers/not-a-real-id',
+		});
+		expect(items[0].json).toEqual({ id: 'not-a-real-id', deleted: true });
+	});
+
+	it('fails the item when no ID was given', async () => {
+		const failure = executeStakeholder.call(context({ customerId: '' }), 'customer', 'delete');
+
+		await expect(failure).rejects.toThrow(/ID/);
+		await expect(failure).rejects.toMatchObject({ context: { itemIndex: 0 } });
+		expect(apiRequest).not.toHaveBeenCalled();
 	});
 });
