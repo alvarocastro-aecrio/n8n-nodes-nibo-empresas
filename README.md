@@ -6,7 +6,7 @@ This is an [n8n](https://n8n.io/) community node. It lets you use the **Nibo Emp
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-> **Status: early development (v0.3.x).** The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
+> **Status: early development (v0.4.x).** The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
 
 ## Installation
 
@@ -24,7 +24,13 @@ n8n-nodes-nibo-empresas
 
 | Resource | Operation | Notes |
 |---|---|---|
+| Customer | Create | Adds a customer and returns it as Nibo stored it |
+| Customer | Delete | Removes a customer and returns `{ id, deleted: true }` |
+| Customer | Get | Returns one customer by ID |
 | Customer | Get Many | Returns customers, paging through the collection when needed. A stable sort (`$orderby=id`) is always applied. |
+| Customer | Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
+
+> **The document type has one spelling.** The API takes `CNPJ`/`CPF` when you write and answers `Cnpj`/`Cpf` when you read. Since 0.4.0 the node hands out the first spelling on **every** operation, Get Many included. If a workflow of yours compares `document.type` with `'Cnpj'`, that comparison has to become `'CNPJ'`.
 
 **Get Many** takes:
 
@@ -34,6 +40,42 @@ n8n-nodes-nibo-empresas
 | **Limit** | How many records to return when *Return All* is off. The API caps every page at 500 records silently, so a higher limit is collected in several pages |
 | **Filter (OData)** | An OData expression sent as `$filter`, for example `contains(name,'LTDA')`. Accented text needs no special treatment |
 | **Fail on Incomplete Results** | Off by default. See *Incomplete results* below |
+
+### Create
+
+**Name**, **Document Number** and **Document Type** are asked for up front; everything else lives under **Additional Fields**, and only the fields you add are sent. The customer comes back as Nibo stored it, with the fields the API fills in on its own (`personType`, `isCompany`, `initialsName`) already there.
+
+Two details of this API worth knowing before you fill the form in:
+
+- **Document Number takes digits only** — no dots, slashes or dashes.
+- **Email is one string holding every address, separated by commas** (`billing@example.com,accounts@example.com`). This API keeps a customer's e-mails in a single field, not in a list.
+
+### Update
+
+The API's `PUT` takes the **whole** record: every field left out of the body is **zeroed**, silently and with HTTP 200. Worse, a payload it cannot read is answered with `{"Messages":[""]}` — HTTP 200, no error, and nothing written. It is the kind of failure nobody notices until someone asks why a customer lost its address.
+
+So this operation never sends a bare `PUT`. For each item it:
+
+1. reads the customer as it is stored;
+2. merges the fields you added onto it;
+3. writes the complete record back;
+4. **reads it again and checks that the fields you changed really changed.**
+
+Three calls where one would do, on purpose. If the API answers with `Messages`, or if the confirmation finds a field that did not take, the item fails and says which field — it never reports a write that did not happen as a success.
+
+What that gives you:
+
+| | |
+|---|---|
+| A field you **do not add** | Is not touched. The customer keeps whatever is in Nibo |
+| A field you add and **leave empty** | Is written empty. That is how a stored value is erased on purpose |
+| **Update Fields left empty** | The item fails instead of rewriting the record with itself |
+
+The address is offered field by field (**Address City**, **Address Line 1**, …) rather than as one block, for the same reason: a block would submit every field it contains the moment you opened it, and this API would write exactly that.
+
+### Delete
+
+Takes the customer ID and removes it. The API answers 204 with no body, so the node returns `{ id, deleted: true }` as the confirmation. It is an ordinary operation with no extra guard rail — whoever builds the workflow answers for what it does.
 
 ### Interval between requests
 
@@ -57,7 +99,7 @@ The Nibo API answers **HTTP 500 for invalid requests too**, which makes a plain 
 | `validation_error` (bad filter, unknown sort field, broken business rule) | Shows the API's own description of the problem | **No** — retrying repeats the same invalid request |
 | `internal_server_error` | Shows the failure with the original body preserved | **Yes** — this one is a genuine server-side failure |
 
-Write operations are on the roadmap — see [Version history](#version-history).
+A write can also fail without the API saying so — see [Update](#update) for how that one is caught.
 
 ## Authentication
 
@@ -100,6 +142,8 @@ Developed and tested against n8n **2.18.5** (self-hosted), on a clean instance, 
 
 Add the **Nibo Empresas** node to a workflow, select the credential, and run **Customer → Get Many**. Each customer becomes one n8n item.
 
+Writing works the same way: **Create** takes a name and a document, **Update** takes the ID of a customer and only the fields you want changed, and **Delete** takes an ID. Each input item is one operation, and each answers with the record as Nibo has it.
+
 To read several organizations in a single node, switch **Authentication** to *API Token (Per Item)*, point the **API Token** field at the token carried by each input item, and send one item per organization — see [Authentication](#authentication).
 
 ## Resources
@@ -119,7 +163,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.2.1 | Dark-theme logo tone changed from light blue (`#9db9de`) to `#0653cd`. Icon-only release |
 | 0.3.0 | **Per-item API token**: *Authentication* chooses between the stored credential and a token read from each input item, so one node can walk a whole portfolio of organizations in a loop. An item with no token fails alone, carrying its index, leaving the rest of the run untouched. **Interval Between Requests** (1000 ms by default), applied between items and between pages, never before the first call |
 | 0.3.1 | Fix: in 0.3.0 the **Authentication** switch could not actually be moved to *API Token (Per Item)* in the editor. n8n reserves the parameter name `authentication` for its "main auth field", which it hides from the parameter list and redraws inside the credentials block — where every option must be backed by a credential, and the per-item mode is backed by none. The parameter is now named `authMode` internally; the field, its label and its options are unchanged. **A node saved in per-item mode under 0.3.0 must have the mode picked again** |
-| 0.4.0 *(planned)* | Customer: Get, Create, Update (safe merge), Delete |
+| 0.4.0 | **The first writes**: Customer **Create**, **Update**, **Delete** and **Get**. Update is a safe cycle — read, merge, write, then read back to confirm the change took — because this API's `PUT` zeroes every field left out of the body and answers a payload it cannot read with `{"Messages":[""]}`, HTTP 200 and nothing written. Fields you do not add are not touched; a field added and left empty is erased on purpose. ⚠️ **Visible change:** `document.type` now comes out as `CNPJ`/`CPF` on every operation, Get Many included, where reads used to answer `Cnpj`/`Cpf` |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
