@@ -87,6 +87,7 @@ Add the **Nibo Empresas** node to a workflow, select the credential, and run **C
 | 0.1.3 | Dark-theme logo tone changed from white to light blue (`#9db9de`), picked against a live preview of the n8n dark canvas. Icon-only release |
 | 0.1.4 | Load fix: tolerate stray old `n8n-workflow` copies that other community packages install into `~/.n8n/nodes` — they shadowed the real library and crashed class loading with "Class could not be found" (regression introduced by the scanner-mandated enum in 0.1.2) |
 | 0.2.0 | Real pagination: **Return All** walks the collection with `$skip` past the silent 500-record cap, and a limit above 500 is collected in several pages. **Filter (OData)**. Warning when a scan may be incomplete, with an opt-in strict mode. Readable errors that tell an invalid request apart from a server failure. First unit tests (jest, no network), now part of the release gate |
+| 0.2.1 | Dark-theme logo tone changed from light blue (`#9db9de`) to `#0653cd`. Icon-only release |
 | 0.3.0 *(planned)* | Per-item API token mode (multi-organization loops) |
 | 0.4.0 *(planned)* | Customer: Get, Create, Update (safe merge), Delete |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |

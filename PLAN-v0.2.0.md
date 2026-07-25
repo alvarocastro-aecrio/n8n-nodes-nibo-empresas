@@ -114,12 +114,17 @@ de cobertura da UI.
 
 **Teste de instalação real (regra 7), completo,** contra a instância limpa:
 
-| ☐ | `Return All` ligado traz **mais de 500** clientes numa empresa de grande volume (prova a paginação; §5.2 mediu 14.194) |
-| ☐ | `Return All` desligado com `Limit 5` traz exatamente 5 |
-| ☐ | `Filter` `contains(name,'…')` restringe o resultado (acento incluso) |
-| ☐ | Token inválido → erro **401 legível** (não 500 genérico) |
-| ☐ | Consulta malformada (ex.: filtro inválido) → mensagem de **validação legível**, sem retry |
-| ☐ | `npm test` verde no CI; scanner oficial sem achados |
+| ☑ | `Return All` ligado traz **mais de 500** clientes numa empresa de grande volume (prova a paginação; §5.2 mediu 14.194) |
+| ☑ | `Return All` desligado com `Limit 5` traz exatamente 5 |
+| ☑ | `Filter` `contains(name,'…')` restringe o resultado (acento incluso) |
+| ☑ | Token inválido → erro **401 legível** (não 500 genérico) |
+| ☑ | Consulta malformada (ex.: filtro inválido) → mensagem de **validação legível**, sem retry |
+| ☑ | `npm test` verde no CI; scanner oficial sem achados |
+
+**Tabela fechada em 2026-07-25 — 6/6.** Os cinco primeiros o Alvaro rodou na instância
+limpa contra a 0.2.0 instalada pela tela Community Nodes (regra 7 cumprida). O sexto:
+CI verde ponta a ponta e `npx @n8n/scan-community-package n8n-nodes-nibo-empresas@0.2.0`
+aprovando tudo, *provenance* inclusa.
 
 **Complemento read-only opcional** (DESIGN §8.1): comparar o `count` de duas empresas reais
 diferentes — leitura, não fere a regra 3. Só se você quiser.
@@ -164,7 +169,13 @@ seria silenciosamente ignorado. O transporte remonta o erro a partir do corpo �
 embrulho preserva em `context.data` — em vez de re-embrulhar. Sem isso a §5.1 não sairia
 do papel.
 
-### Falta para fechar a versão
+### Versão fechada
 
-O **teste de instalação real (regra 7)** e a tabela de aceite da seção 6, que só rodam
-depois de publicar. Publicação e tag seguem esperando o OK do Alvaro.
+Publicada no npm em 2026-07-25 pela tag `v0.2.0` (Trusted Publishing, com *provenance*),
+instalada de verdade na instância limpa e aprovada nos seis itens da seção 6. **A v0.2.0
+está pronta** — o roteiro pode seguir para a 0.3.0.
+
+Um defeito do processo apareceu nessa release e já foi corrigido: o passo do scanner no
+CI rodava sem versão, e segundos depois do publish o npm ainda responde a versão
+**anterior** em `latest` — ele escaneou a 0.1.4 e reportou uma falha que não era de
+pacote nenhum (quebra interna do próprio scanner). O passo agora fixa a versão da tag.
