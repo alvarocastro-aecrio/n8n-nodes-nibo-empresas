@@ -351,19 +351,4 @@ export const stakeholderFields: INodeProperties[] = [
 			},
 		},
 	},
-	{
-		displayName: 'Fail on Incomplete Results',
-		name: 'failOnIncomplete',
-		type: 'boolean',
-		default: false,
-		description:
-			'Whether to fail when the result may be incomplete, instead of returning the records with a warning. Records written while the pages are being read can slip past the cursor, which shows up as a record count that changes mid-scan or as fewer records than the server reported.',
-		displayOptions: {
-			show: {
-				resource: ['customer'],
-				operation: ['list'],
-				returnAll: [true],
-			},
-		},
-	},
 ];

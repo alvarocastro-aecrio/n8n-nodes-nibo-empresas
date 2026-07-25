@@ -88,16 +88,32 @@ describe('NiboEmpresas — the mode switch as the editor sees it', () => {
 	 * where a defense belongs: under Options, at the end, opt-in — and still
 	 * 1000 ms the moment it is added.
 	 */
-	it('offers the interval as an option at the end, not as a field of its own', () => {
+	function option(name: string): INodeProperties | undefined {
 		const options = description.properties[description.properties.length - 1];
-		const interval = ((options?.options ?? []) as INodeProperties[]).find(
-			(field) => field.name === 'requestInterval',
-		);
-
-		expect(property('requestInterval')).toBeUndefined();
 		expect(options?.name).toBe('options');
 		expect(options?.type).toBe('collection');
-		expect(interval?.default).toBe(1000);
+
+		return ((options?.options ?? []) as INodeProperties[]).find((field) => field.name === name);
+	}
+
+	it('offers the interval as an option at the end, not as a field of its own', () => {
+		expect(property('requestInterval')).toBeUndefined();
+		expect(option('requestInterval')?.default).toBe(1000);
+	});
+
+	/**
+	 * A scan that may have missed records is a bad answer to build on — the sort
+	 * of thing a workflow deletes by. So the strict reading is what happens when
+	 * nobody chose anything, and tolerating an incomplete result is the decision
+	 * that has to be taken on purpose.
+	 */
+	it('refuses a possibly incomplete scan by default, and says so only under Options', () => {
+		expect(property('failOnIncomplete')).toBeUndefined();
+		expect(option('failOnIncomplete')?.default).toBe(true);
+	});
+
+	it('offers that option only where it can happen — a scan of everything', () => {
+		expect(option('failOnIncomplete')?.displayOptions?.show).toEqual({ '/returnAll': [true] });
 	});
 
 	it('shows the token field only in the per-item mode, and masks it', () => {

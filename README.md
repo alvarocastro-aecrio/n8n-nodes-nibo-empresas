@@ -39,7 +39,8 @@ n8n-nodes-nibo-empresas
 | **Return All** | Reads the whole collection instead of stopping at a limit |
 | **Limit** | How many records to return when *Return All* is off. The API caps every page at 500 records silently, so a higher limit is collected in several pages |
 | **Filter (OData)** | An OData expression sent as `$filter`, for example `contains(name,'LTDA')`. Accented text needs no special treatment |
-| **Fail on Incomplete Results** | Off by default. See *Incomplete results* below |
+
+Under **Options**, at the end of the node, *Return All* also brings **Fail on Incomplete Results** — see *Incomplete results* below.
 
 ### Create
 
@@ -87,7 +88,11 @@ Leave it out and the node waits **1000 ms**. That default is deliberately conser
 
 Paging by `$skip` cannot see records written while the scan runs: they land at an arbitrary position in the ordering and can fall behind the point already read, disappearing with no error at all. The node watches the record count the server reports at the start and at the end of the scan, and checks that at least as many records arrived as it announced.
 
-When something does not add up, the records are still returned — they are valid, just possibly incomplete — and the last item carries a `_niboPaginationWarning` field describing what happened (the same text is logged as a warning). Turn on **Fail on Incomplete Results** to make the node stop with an error instead.
+When something does not add up, the scan **fails**, saying what it saw. That is the default and it is deliberate: a list that quietly lost two records is exactly the sort of thing a workflow deletes by, and there is no way to tell from the data that anything is missing.
+
+For a read where that does not matter — a report, a spreadsheet, a lookup — add **Fail on Incomplete Results** under **Options** and turn it off. The records are then returned anyway (they are valid, just possibly incomplete) and the last item carries a `_niboPaginationWarning` field describing what happened; the same text is logged as a warning.
+
+One honest limit: the check reads what the record count denounces, not every possible gap. If one customer is created and another deleted mid-scan, the count matches at both ends and the swap goes unnoticed. It is a good net, not a guarantee — for a guarantee, scan when nobody is writing.
 
 ### Errors
 
@@ -166,6 +171,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.4.0 | **The first writes**: Customer **Create**, **Update**, **Delete** and **Get**. Update is a safe cycle — read, merge, write, then read back to confirm the change took — because this API's `PUT` zeroes every field left out of the body and answers a payload it cannot read with `{"Messages":[""]}`, HTTP 200 and nothing written. Fields you do not add are not touched; a field added and left empty is erased on purpose. ⚠️ **Visible change:** `document.type` now comes out as `CNPJ`/`CPF` on every operation, Get Many included, where reads used to answer `Cnpj`/`Cpf` |
 | 0.4.1 | Fix, found by 0.4.0's own confirmation step on the first real run: **Update wrote nothing**. A read answers `phone` and `email` twice — once inside `communication`, once mirrored at the root of the record — and sending both back makes the root copy, which still carries the old value, win. The node now drops the two mirrors from the body it writes, and the API fills them back in. Also: the confirmation no longer reports a change as refused when the API pads the value it stored (`zipCode` comes back with a trailing space) |
 | 0.4.2 | The node reads in the order it is filled in: **Authentication** now comes above the credential picker, **Interval Between Requests** moved into **Options** at the end (still 1000 ms when left out — a node that set it before keeps its value), **Document Type** is asked before **Document Number**, and **Company Name** is no longer offered for a CPF, since a person has no trading name |
+| 0.4.3 | **Fail on Incomplete Results** moves into **Options** and is now **on by default**: a scan that may have missed records fails instead of handing back a list that looks whole. Add the option and turn it off for reads where that does not matter. A node saved while it was a field of its own keeps the choice its author made |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer

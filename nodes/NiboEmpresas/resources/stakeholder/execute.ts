@@ -39,7 +39,8 @@ export async function executeStakeholder(
 
 	for (let i = 0; i < items.length; i++) {
 		try {
-			const interval = requestInterval.call(this, i);
+			const options = this.getNodeParameter('options', i, {}) as IDataObject;
+			const interval = requestInterval.call(this, i, options);
 			if (i > 0 && interval > 0) {
 				await sleep(interval);
 			}
@@ -59,7 +60,7 @@ export async function executeStakeholder(
 						returnAll,
 						limit: returnAll ? 0 : (this.getNodeParameter('limit', i) as number),
 						filter: this.getNodeParameter('filter', i, '') as string,
-						failOnIncomplete: this.getNodeParameter('failOnIncomplete', i, false) as boolean,
+						failOnIncomplete: failOnIncomplete.call(this, i, options),
 						interval,
 					},
 				);
@@ -216,12 +217,35 @@ function writePayload(fields: IDataObject): IDataObject {
  * it there and its author still means it, so that value is read when the
  * option was not set.
  */
-function requestInterval(this: IExecuteFunctions, itemIndex: number): number {
-	const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
-
+function requestInterval(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	options: IDataObject,
+): number {
 	return typeof options.requestInterval === 'number'
 		? options.requestInterval
 		: (this.getNodeParameter('requestInterval', itemIndex, 1000) as number);
+}
+
+/**
+ * Whether a scan that may have missed records fails instead of being handed
+ * back with a warning.
+ *
+ * On unless someone says otherwise, for the same reason as the interval: the
+ * defense has to be what happens by default. A list that quietly lost two
+ * records is exactly what a workflow deletes by.
+ *
+ * Until 0.4.2 it was a field of its own, off by default — a node saved back
+ * then made that choice, and keeps it.
+ */
+function failOnIncomplete(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	options: IDataObject,
+): boolean {
+	return typeof options.failOnIncomplete === 'boolean'
+		? options.failOnIncomplete
+		: (this.getNodeParameter('failOnIncomplete', itemIndex, true) as boolean);
 }
 
 /**

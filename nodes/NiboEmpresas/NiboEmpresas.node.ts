@@ -129,6 +129,21 @@ export class NiboEmpresas implements INodeType {
 				default: {},
 				options: [
 					{
+						displayName: 'Fail on Incomplete Results',
+						name: 'failOnIncomplete',
+						type: 'boolean',
+						default: true,
+						description:
+							'Whether to fail when the result may be incomplete, instead of returning the records with a warning on the last item. Records written while the pages are being read can slip past the cursor, which shows up as a record count that changes mid-scan or as fewer records than the server reported. Left out, the scan fails: a list that may have lost records is the sort of thing a workflow deletes by.',
+						// The only way records can slip past the cursor is a scan of
+						// the whole collection, page after page.
+						displayOptions: {
+							show: {
+								'/returnAll': [true],
+							},
+						},
+					},
+					{
 						displayName: 'Interval Between Requests',
 						name: 'requestInterval',
 						type: 'number',

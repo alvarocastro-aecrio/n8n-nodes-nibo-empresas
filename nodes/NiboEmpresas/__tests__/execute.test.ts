@@ -67,9 +67,9 @@ beforeEach(() => {
 });
 
 describe('executeStakeholder — list', () => {
-	it('forwards Return All, the filter and the strict flag to the transport', async () => {
+	it('forwards Return All and the filter to the transport', async () => {
 		await executeStakeholder.call(
-			context({ returnAll: true, filter: "contains(name,'LTDA')", failOnIncomplete: true }),
+			context({ returnAll: true, filter: "contains(name,'LTDA')" }),
 			'customer',
 			'list',
 		);
@@ -79,8 +79,37 @@ describe('executeStakeholder — list', () => {
 		expect(optionsSentToTransport()).toMatchObject({
 			returnAll: true,
 			filter: "contains(name,'LTDA')",
-			failOnIncomplete: true,
 		});
+	});
+
+	// A scan that may have missed records is a bad answer to build on, so the
+	// node refuses it unless someone says otherwise.
+	it('refuses a possibly incomplete scan when nobody said anything', async () => {
+		await executeStakeholder.call(context({ returnAll: true }), 'customer', 'list');
+
+		expect(optionsSentToTransport()).toMatchObject({ failOnIncomplete: true });
+	});
+
+	it('tolerates one when the option says so', async () => {
+		await executeStakeholder.call(
+			context({ returnAll: true, options: { failOnIncomplete: false } }),
+			'customer',
+			'list',
+		);
+
+		expect(optionsSentToTransport()).toMatchObject({ failOnIncomplete: false });
+	});
+
+	// It used to be a field of its own, and off by default. A node saved back
+	// then chose that, even by not touching it.
+	it('keeps the choice of a node saved before it became an option', async () => {
+		await executeStakeholder.call(
+			context({ returnAll: true, failOnIncomplete: false }),
+			'customer',
+			'list',
+		);
+
+		expect(optionsSentToTransport()).toMatchObject({ failOnIncomplete: false });
 	});
 
 	it('forwards the limit when Return All is off', async () => {
