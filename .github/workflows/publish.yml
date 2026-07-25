@@ -52,5 +52,19 @@ jobs:
       # Pinned to the version just published: without it the scanner resolves
       # "latest", which seconds after publish is still the PREVIOUS release —
       # on v0.2.0 it scanned 0.1.4 and reported on the wrong package.
+      #
+      # Retried because the scan runs seconds after publish and depends on two
+      # things that need a moment to settle: npm serving the new version, and
+      # GitHub serving the source the provenance attests to (on v0.2.1 that
+      # fetch answered 404, and the very same scan passed minutes later).
       - name: Scan published package
-        run: npx @n8n/scan-community-package "n8n-nodes-nibo-empresas@${GITHUB_REF_NAME#v}"
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for delay in 20 40 60; do
+            sleep "$delay"
+            if npx @n8n/scan-community-package "n8n-nodes-nibo-empresas@$version"; then
+              exit 0
+            fi
+            echo "::notice::scan not conclusive yet — retrying"
+          done
+          echo "::warning::the official scan did not pass here; run it by hand before trusting this release"
