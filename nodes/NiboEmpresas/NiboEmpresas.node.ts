@@ -42,9 +42,51 @@ export class NiboEmpresas implements INodeType {
 			{
 				name: 'niboEmpresasApi',
 				required: true,
+				// A credential cannot be chosen per item — the field takes no
+				// expression — so in the per-item mode it is neither required nor
+				// shown, and the token comes from the parameter below instead.
+				displayOptions: {
+					show: {
+						authentication: ['credential'],
+					},
+				},
 			},
 		],
 		properties: [
+			{
+				displayName: 'Authentication',
+				name: 'authentication',
+				type: 'options',
+				noDataExpression: true,
+				options: [
+					{
+						name: 'Credential',
+						value: 'credential',
+						description: 'Use one stored credential for the whole node',
+					},
+					{
+						name: 'API Token (Per Item)',
+						value: 'field',
+						description: 'Read the token from the field below, resolved for each input item',
+					},
+				],
+				default: 'credential',
+			},
+			{
+				displayName: 'API Token',
+				name: 'apiToken',
+				type: 'string',
+				typeOptions: { password: true },
+				required: true,
+				default: '',
+				description:
+					'The organization API token to use for this item. Normally an expression reading it from the incoming item, which is what lets a single node walk a whole portfolio of organizations. In this API the token is the organization: each item reads the books of its own token.',
+				displayOptions: {
+					show: {
+						authentication: ['field'],
+					},
+				},
+			},
 			{
 				displayName: 'Resource',
 				name: 'resource',
