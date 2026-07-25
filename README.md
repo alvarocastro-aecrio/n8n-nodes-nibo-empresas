@@ -6,7 +6,7 @@ This is an [n8n](https://n8n.io/) community node. It lets you use the **Nibo Emp
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-> **Status: early development (v0.1.x).** The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
+> **Status: early development (v0.2.x).** The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
 
 ## Installation
 
@@ -24,9 +24,34 @@ n8n-nodes-nibo-empresas
 
 | Resource | Operation | Notes |
 |---|---|---|
-| Customer | Get Many | Returns up to one page of customers (the API caps every page at 500 records). A stable sort (`$orderby=id`) is always applied. |
+| Customer | Get Many | Returns customers, paging through the collection when needed. A stable sort (`$orderby=id`) is always applied. |
 
-Full pagination ("Return All"), richer error handling, per-item token authentication, and write operations are on the roadmap — see [Version history](#version-history).
+**Get Many** takes:
+
+| Field | What it does |
+|---|---|
+| **Return All** | Reads the whole collection instead of stopping at a limit |
+| **Limit** | How many records to return when *Return All* is off. The API caps every page at 500 records silently, so a higher limit is collected in several pages |
+| **Filter (OData)** | An OData expression sent as `$filter`, for example `contains(name,'LTDA')`. Accented text needs no special treatment |
+| **Fail on Incomplete Results** | Off by default. See *Incomplete results* below |
+
+### Incomplete results
+
+Paging by `$skip` cannot see records written while the scan runs: they land at an arbitrary position in the ordering and can fall behind the point already read, disappearing with no error at all. The node watches the record count the server reports at the start and at the end of the scan, and checks that at least as many records arrived as it announced.
+
+When something does not add up, the records are still returned — they are valid, just possibly incomplete — and the last item carries a `_niboPaginationWarning` field describing what happened (the same text is logged as a warning). Turn on **Fail on Incomplete Results** to make the node stop with an error instead.
+
+### Errors
+
+The Nibo API answers **HTTP 500 for invalid requests too**, which makes a plain "the service failed" message useless. The node reads the response body and says which one it got:
+
+| What happened | What the node does | Is *Retry On Fail* useful? |
+|---|---|---|
+| Token missing, expired or from another organization (HTTP 401) | Says the token was rejected | No — fix the credential |
+| `validation_error` (bad filter, unknown sort field, broken business rule) | Shows the API's own description of the problem | **No** — retrying repeats the same invalid request |
+| `internal_server_error` | Shows the failure with the original body preserved | **Yes** — this one is a genuine server-side failure |
+
+Per-item token authentication and write operations are on the roadmap — see [Version history](#version-history).
 
 ## Credentials
 
@@ -61,7 +86,7 @@ Add the **Nibo Empresas** node to a workflow, select the credential, and run **C
 | 0.1.2 | Clean bill from the official n8n scanner (themed light/dark icons, credential icon, `usableAsTool`, `NodeConnectionTypes` enum, safe error rethrow) and a real pre-publish gate in CI (`lint:community`). No behavior changes |
 | 0.1.3 | Dark-theme logo tone changed from white to light blue (`#9db9de`), picked against a live preview of the n8n dark canvas. Icon-only release |
 | 0.1.4 | Load fix: tolerate stray old `n8n-workflow` copies that other community packages install into `~/.n8n/nodes` — they shadowed the real library and crashed class loading with "Class could not be found" (regression introduced by the scanner-mandated enum in 0.1.2) |
-| 0.2.0 *(planned)* | Envelope/pagination internals, Return All, error normalization |
+| 0.2.0 | Real pagination: **Return All** walks the collection with `$skip` past the silent 500-record cap, and a limit above 500 is collected in several pages. **Filter (OData)**. Warning when a scan may be incomplete, with an opt-in strict mode. Readable errors that tell an invalid request apart from a server failure. First unit tests (jest, no network), now part of the release gate |
 | 0.3.0 *(planned)* | Per-item API token mode (multi-organization loops) |
 | 0.4.0 *(planned)* | Customer: Get, Create, Update (safe merge), Delete |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
