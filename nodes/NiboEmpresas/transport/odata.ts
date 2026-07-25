@@ -1,0 +1,134 @@
+/**
+ * The `$filter` expression builder behind the assisted filter.
+ *
+ * Until 0.5.0 the expression went to the API exactly as it was typed, so a name
+ * with an apostrophe — `D'ALESSANDRO` — closed the literal early and the API
+ * answered HTTP 500 `validation_error`, *unterminated literal*, with nothing in
+ * the answer pointing at the quote. That is the defect this module exists for.
+ *
+ * Two rules make it correct, both measured against the API on 2026-07-25:
+ *
+ * - **An apostrophe is escaped by doubling it.** `D''ALESSANDRO` answers 200.
+ * - **Each type carries its own literal.** Text goes between single quotes;
+ *   boolean and date go bare. Quoting a boolean (`isCompany eq 'true'`) is a
+ *   500, and so is the OData v2 spelling of a date (`datetime'2020-01-01'`).
+ *
+ * Pure by design — no `this`, no network, no idea that Nibo exists. It takes a
+ * field path, an operator, a value and the value's type, and answers text. That
+ * is what lets the resources still to come (schedules, payments, NFS-e) filter
+ * through it without a line of it changing.
+ */
+
+/** What the value is, which is what decides how the literal is written */
+export type ODataFieldType = 'text' | 'boolean' | 'date';
+
+export interface IODataCondition {
+	/** The field path as the API names it, e.g. `name` or `document/number` */
+	field: string;
+	/** One of the operators below, as the UI stores it */
+	operator: string;
+	/** The value as the editor collected it */
+	value: unknown;
+	type: ODataFieldType;
+}
+
+/** Operators written as `f(field,'value')` — the API's own function syntax */
+const FUNCTION_OPERATORS = ['contains', 'startswith', 'endswith'];
+
+/**
+ * `contains` under `tolower()`, which the API accepts and which is what almost
+ * everybody means by "find this name".
+ */
+const CONTAINS_IGNORING_CASE = 'containsIgnoreCase';
+
+/**
+ * Which operators each type can be asked for. The UI offers exactly these, so
+ * anything else is a node saved with an operator this version does not have —
+ * see `writeCondition` for why that fails rather than being ignored.
+ */
+const OPERATORS_OF: Record<ODataFieldType, string[]> = {
+	text: [CONTAINS_IGNORING_CASE, ...FUNCTION_OPERATORS, 'eq', 'ne'],
+	boolean: ['eq', 'ne'],
+	date: ['gt', 'ge', 'lt', 'le'],
+};
+
+/**
+ * Turns the conditions the editor collected into one `$filter` expression.
+ *
+ * Answers `''` when there is nothing to filter by, which is what the transport
+ * reads as "send no `$filter` at all".
+ *
+ * The conditions are joined by a single operator, chosen once, so there is no
+ * precedence to parenthesize away. Nested groups — `(A or B) and C` — are what
+ * the raw OData field stays for.
+ */
+export function buildODataFilter(
+	conditions: IODataCondition[] | undefined,
+	combine: string,
+): string {
+	const joiner = combine === 'or' ? 'or' : 'and';
+
+	return (conditions ?? [])
+		.map(writeCondition)
+		.filter((written): written is string => written !== undefined)
+		.join(` ${joiner} `);
+}
+
+/**
+ * One condition, or `undefined` when there is nothing to write.
+ *
+ * A row added and left blank is an unfinished row, not "match everything", so
+ * it is skipped. An operator that is not on the menu is a different thing: it
+ * cannot be written, and dropping it would silently widen the result — the
+ * direction a workflow deletes by — so it fails instead, and the handler turns
+ * it into an error carrying the index of the item it happened on.
+ */
+function writeCondition(condition: IODataCondition): string | undefined {
+	const field = String(condition.field ?? '').trim();
+	const operator = String(condition.operator ?? '').trim();
+
+	if (field === '' || operator === '') {
+		return undefined;
+	}
+
+	if (!OPERATORS_OF[condition.type]?.includes(operator)) {
+		throw new Error(
+			`The filter operator "${operator}" is not one this node can write for a ${condition.type} field`,
+		);
+	}
+
+	if (condition.type === 'boolean') {
+		// Never skipped: `false` is an answer, not a blank. And written bare —
+		// `isCompany eq 'true'` is a 500.
+		const yes = condition.value === true || condition.value === 'true';
+
+		return `${field} ${operator} ${yes ? 'true' : 'false'}`;
+	}
+
+	if (condition.type === 'date') {
+		const date = String(condition.value ?? '').trim();
+
+		// Every form the editor's date field produces was measured and accepted:
+		// bare, with a Z, with milliseconds, with an offset. So it travels as it
+		// came — bare, because quoting it is a 500.
+		return date === '' ? undefined : `${field} ${operator} ${date}`;
+	}
+
+	const text = String(condition.value ?? '');
+	if (text === '') {
+		return undefined;
+	}
+
+	if (operator === CONTAINS_IGNORING_CASE) {
+		return `contains(tolower(${field}),${quote(text.toLowerCase())})`;
+	}
+
+	return FUNCTION_OPERATORS.includes(operator)
+		? `${operator}(${field},${quote(text)})`
+		: `${field} ${operator} ${quote(text)}`;
+}
+
+/** A text literal: single quotes, and every apostrophe inside doubled */
+function quote(value: string): string {
+	return `'${value.replace(/'/g, "''")}'`;
+}
