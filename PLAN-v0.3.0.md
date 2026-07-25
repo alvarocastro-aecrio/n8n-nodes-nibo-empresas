@@ -137,14 +137,15 @@ que nem precisaria de token de verdade para provar o que prova.
 **Gate local:** `npm run lint`, `npm run lint:community`, `npm test`, `npm run build`,
 `npm pack` — todos verdes.
 
-**Teste de instalação real (regra 7)**, contra a instância limpa, com a 0.3.0 instalada pela
-tela Community Nodes:
+**Teste de instalação real (regra 7)**, contra a instância limpa, com a **0.3.1** instalada
+pela tela Community Nodes (aprovado pelo Alvaro em 2026-07-25 — a 0.3.0 reprovou, ver §8):
 
-| ☐ | **O teste negativo de 3 itens** (DESIGN §8.1): um node, uma execução, item 1 com token válido, item 2 com token **inválido de propósito**, item 3 com token válido. Esperado: **só o item 2 falha**, com 401 legível, pela saída de erro |
-| ☐ | Modo `Credential` continua funcionando igual (regressão da 0.2.x) |
-| ☐ | `Return All` funciona também no modo por item |
-| ☐ | Intervalo observável: a mesma varredura de várias páginas demora visivelmente mais com 2000 ms do que com 0 |
-| ☐ | `npm test` verde no CI; scanner oficial sem achados |
+| ☑ | **O teste negativo de 3 itens** (DESIGN §8.1): um node, uma execução, item 1 com token válido, item 2 com token **inválido de propósito**, item 3 com token válido. Esperado: **só o item 2 falha**, com 401 legível, pela saída de erro |
+| ☑ | Modo `Credential` continua funcionando igual (regressão da 0.2.x) |
+| ☑ | `Return All` funciona também no modo por item |
+| ☑ | Intervalo observável: a mesma varredura de várias páginas demora visivelmente mais com 2000 ms do que com 0 |
+| ☑ | `npm test` verde no CI; scanner oficial sem achados |
+| ☑ | O seletor **Authentication** troca de modo de verdade na tela — item que não existia neste plano e que a 0.3.0 reprovou |
 
 > **Por que o item 2 falhar sozinho prova tudo:** se o node resolvesse a autenticação uma
 > vez por node, os três itens se comportariam igual — ou todos passam, ou todos falham.
@@ -176,11 +177,13 @@ Alvaro**:
 
 Fatias 1 a 4 construídas e commitadas na `main`, uma por commit, com teste antes do
 código. **Gate local verde:** `npm run lint`, `npm run lint:community`, `npm test`
-(42 testes, 4 suítes), `npm run build`, `npm pack` — o tarball tem só `dist/`, sem
+(46 testes, 5 suítes), `npm run build`, `npm pack` — o tarball tem só `dist/`, sem
 teste nenhum, e `dependencies` continua `{}`.
 
-**A seção 6 segue aberta:** a versão ainda não foi publicada nem instalada de verdade.
-Pela regra inviolável 7, a v0.3.0 **não está pronta** até a tabela de aceite fechar.
+**Entregue pela 0.3.1, não pela 0.3.0.** A 0.3.0 foi publicada, instalada de verdade e
+**reprovou no teste de instalação**: o modo por item funcionava, mas era impossível
+selecioná-lo na tela (desvio 0 abaixo). A 0.3.1 corrigiu, foi publicada e passou nos seis
+itens da seção 6.
 
 ### Três coisas saíram diferentes do plano
 
@@ -225,3 +228,27 @@ de quem foi usar.
 algo que não funciona. A expressão concreta ficou onde é lida sem risco de reescrita: no
 **README** e na **mensagem de erro** de item sem token — que é justamente quando alguém
 precisa dela.
+
+### Versão fechada
+
+Publicadas no npm em 2026-07-25 pelas tags `v0.3.0` e `v0.3.1` (Trusted Publishing, com
+*provenance*), CI verde nas duas. A **0.3.1** foi instalada de verdade na instância limpa e
+**aprovada nos seis itens da seção 6** — inclusive o teste negativo de 3 itens, que é o que
+prova a resolução por item. **A v0.3.0 está pronta, entregue como 0.3.1** — o roteiro pode
+seguir para a 0.4.0.
+
+Duas coisas do processo merecem ficar registradas:
+
+**Instalar arquivos na mão em `~/.n8n/nodes` não vale como teste.** Para conferir a
+correção antes de publicar, os arquivos da 0.3.1 foram colocados na mão na pasta do pacote
+dentro do container. Funcionou por 22 minutos: à primeira reinstalação pela tela, o n8n
+apagou a pasta e baixou de novo a versão que consta no **banco dele** (0.3.0), sem aviso
+nenhum. A pasta é do n8n, não nossa — `community-packages.service.js` a apaga e reconstrói
+a cada instalação. **A única versão que existe é a publicada**, que é exatamente o que a
+regra 7 diz e o atalho tentou contornar.
+
+**O ícone tem cache de 24 h no navegador.** O n8n serve `/icons/...` com
+`Cache-Control: public, max-age=86400` e um `Last-Modified` fixo (26/10/1985), então uma
+troca de cor não aparece até um recarregamento forte — e a rota devolve **404 para qualquer
+query string**, o que elimina o truque de `?v=2` para furar o cache. Quem for mexer em
+ícone de novo: `Ctrl+Shift+R`, ou janela anônima.

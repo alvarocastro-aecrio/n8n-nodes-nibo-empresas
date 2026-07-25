@@ -94,7 +94,7 @@ The credential test performs a lightweight `GET /categories?$top=1` call.
 
 ## Compatibility
 
-Developed and tested against n8n **2.18.5** (self-hosted). Node.js ≥ 20.15 is required to build the package.
+Developed and tested against n8n **2.18.5** (self-hosted), on a clean instance, installed through the Community Nodes screen. Node.js ≥ 20.15 is required to build the package.
 
 ## Usage
 
