@@ -1,11 +1,20 @@
 import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
+import { sleep } from 'n8n-workflow';
 
 import { executeStakeholder } from '../resources/stakeholder/execute';
 import { niboListRequest } from '../transport/paginate';
 
 jest.mock('../transport/paginate');
 
+// Only `sleep` is replaced, so the tests run instantly while still proving how
+// many gaps the handler leaves between items.
+jest.mock('n8n-workflow', () => ({
+	...jest.requireActual('n8n-workflow'),
+	sleep: jest.fn().mockResolvedValue(undefined),
+}));
+
 const listRequest = niboListRequest as jest.MockedFunction<typeof niboListRequest>;
+const wait = sleep as jest.MockedFunction<typeof sleep>;
 
 const NODE: INode = {
 	id: 'test-node',
@@ -34,6 +43,7 @@ function optionsSentToTransport(): IDataObject {
 beforeEach(() => {
 	listRequest.mockReset();
 	listRequest.mockResolvedValue({ records: [], count: 0 });
+	wait.mockClear();
 });
 
 describe('executeStakeholder — list', () => {
@@ -84,6 +94,38 @@ describe('executeStakeholder — list', () => {
 		expect(items).toHaveLength(2);
 		expect(items[0].json).not.toHaveProperty('_niboPaginationWarning');
 		expect(items[1].json._niboPaginationWarning).toContain('incomplete');
+	});
+
+	it('leaves one interval between items, and none before the first', async () => {
+		await executeStakeholder.call(
+			context({ returnAll: true, requestInterval: 500 }, 3),
+			'customer',
+			'list',
+		);
+
+		expect(wait).toHaveBeenCalledTimes(2);
+		expect(wait).toHaveBeenCalledWith(500);
+	});
+
+	it('hands the interval to the transport, which spaces the pages of each item', async () => {
+		await executeStakeholder.call(
+			context({ returnAll: true, requestInterval: 500 }),
+			'customer',
+			'list',
+		);
+
+		expect(optionsSentToTransport()).toMatchObject({ interval: 500 });
+	});
+
+	it('never waits when the interval is zero', async () => {
+		await executeStakeholder.call(
+			context({ returnAll: true, requestInterval: 0 }, 3),
+			'customer',
+			'list',
+		);
+
+		expect(listRequest).toHaveBeenCalledTimes(3);
+		expect(wait).not.toHaveBeenCalled();
 	});
 
 	it('leaves the records untouched when the scan was consistent', async () => {

@@ -1,5 +1,5 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboApiRequest } from './request';
 
@@ -17,6 +17,8 @@ export interface INiboListOptions {
 	filter?: string;
 	/** Turn the "possibly incomplete" warning into a hard failure */
 	failOnIncomplete?: boolean;
+	/** Milliseconds to wait between two pages. `0` sends them back to back */
+	interval?: number;
 	/** Extra query parameters from the resource handler */
 	qs?: IDataObject;
 }
@@ -69,12 +71,24 @@ export async function niboListRequest(
 	const target = options.returnAll ? Number.POSITIVE_INFINITY : Math.max(options.limit, 0);
 	const filter = options.filter?.trim();
 
+	const interval = options.interval ?? 0;
+
 	const records: IDataObject[] = [];
 	let skip = 0;
+	let pages = 0;
 	let firstCount: number | undefined;
 	let lastCount: number | undefined;
 
 	while (records.length < target) {
+		// The wait sits before the request and skips the first one, so it is a
+		// gap between calls and never a delay on the node. Guarding here, rather
+		// than after the request, also means a scan that ends never pays for a
+		// page it did not fetch.
+		if (pages > 0 && interval > 0) {
+			await sleep(interval);
+		}
+		pages++;
+
 		const query: IDataObject = {
 			...options.qs,
 			$orderby: orderBy,

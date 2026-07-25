@@ -88,6 +88,17 @@ export class NiboEmpresas implements INodeType {
 				},
 			},
 			{
+				displayName: 'Interval Between Requests',
+				name: 'requestInterval',
+				type: 'number',
+				typeOptions: {
+					minValue: 0,
+				},
+				default: 1000,
+				description:
+					'How long to wait, in milliseconds, between two calls to the API. It applies between input items and between the pages of one scan, never before the first call. Set it to 0 to send the calls back to back.',
+			},
+			{
 				displayName: 'Resource',
 				name: 'resource',
 				type: 'options',

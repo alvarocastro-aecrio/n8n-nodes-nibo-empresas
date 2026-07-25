@@ -1,11 +1,20 @@
 import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
+import { sleep } from 'n8n-workflow';
 
 import { niboListRequest } from '../transport/paginate';
 import { niboApiRequest } from '../transport/request';
 
 jest.mock('../transport/request');
 
+// Only `sleep` is replaced: the errors thrown below are real n8n classes, and
+// the tests assert on them by identity.
+jest.mock('n8n-workflow', () => ({
+	...jest.requireActual('n8n-workflow'),
+	sleep: jest.fn().mockResolvedValue(undefined),
+}));
+
 const apiRequest = niboApiRequest as jest.MockedFunction<typeof niboApiRequest>;
+const wait = sleep as jest.MockedFunction<typeof sleep>;
 
 const NODE: INode = {
 	id: 'test-node',
@@ -39,6 +48,7 @@ function queryOf(callIndex: number): IDataObject {
 beforeEach(() => {
 	apiRequest.mockReset();
 	warn.mockReset();
+	wait.mockClear();
 });
 
 describe('niboListRequest — envelope', () => {
@@ -205,6 +215,52 @@ describe('niboListRequest — pagination drift', () => {
 				failOnIncomplete: true,
 			}),
 		).rejects.toThrow(/590/);
+	});
+});
+
+describe('niboListRequest — interval between requests', () => {
+	it('waits between pages, and never before the first one', async () => {
+		apiRequest
+			.mockResolvedValueOnce(page(500, 1, 1100))
+			.mockResolvedValueOnce(page(500, 501, 1100))
+			.mockResolvedValueOnce(page(100, 1001, 1100));
+
+		await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
+			returnAll: true,
+			limit: 50,
+			interval: 250,
+		});
+
+		// Three pages, two gaps between them — a wait before the first call would
+		// be a delay on the node, not an interval between requests.
+		expect(apiRequest).toHaveBeenCalledTimes(3);
+		expect(wait).toHaveBeenCalledTimes(2);
+		expect(wait).toHaveBeenCalledWith(250);
+	});
+
+	it('does not wait at all when a single page answers everything', async () => {
+		apiRequest.mockResolvedValueOnce(page(3, 1, 3));
+
+		await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
+			returnAll: true,
+			limit: 50,
+			interval: 2000,
+		});
+
+		expect(wait).not.toHaveBeenCalled();
+	});
+
+	it('sends the pages back to back when the interval is zero', async () => {
+		apiRequest.mockResolvedValueOnce(page(500, 1, 600)).mockResolvedValueOnce(page(100, 501, 600));
+
+		await niboListRequest.call(CONTEXT, 0, '/customers', 'id', {
+			returnAll: true,
+			limit: 50,
+			interval: 0,
+		});
+
+		expect(apiRequest).toHaveBeenCalledTimes(2);
+		expect(wait).not.toHaveBeenCalled();
 	});
 });
 

@@ -1,5 +1,5 @@
 import type { IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
-import { NodeApiError, NodeOperationError } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboListRequest } from '../../transport/paginate';
 
@@ -29,6 +29,14 @@ export async function executeStakeholder(
 
 	for (let i = 0; i < items.length; i++) {
 		try {
+			// Kept in step with the default declared on the node: one item per
+			// organization means a portfolio loop fires hundreds of calls in a
+			// row, and the defense has to be the default behavior.
+			const interval = this.getNodeParameter('requestInterval', i, 1000) as number;
+			if (i > 0 && interval > 0) {
+				await sleep(interval);
+			}
+
 			if (operation === 'list') {
 				const returnAll = this.getNodeParameter('returnAll', i, false) as boolean;
 
@@ -45,6 +53,7 @@ export async function executeStakeholder(
 						limit: returnAll ? 0 : (this.getNodeParameter('limit', i) as number),
 						filter: this.getNodeParameter('filter', i, '') as string,
 						failOnIncomplete: this.getNodeParameter('failOnIncomplete', i, false) as boolean,
+						interval,
 					},
 				);
 
