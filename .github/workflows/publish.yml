@@ -49,5 +49,8 @@ jobs:
       # Official n8n scanner — second net, checks provenance (which lint
       # cannot see). It is NOT the gate: it exits 0 even on lint findings,
       # which is why lint:community runs before publish above.
+      # Pinned to the version just published: without it the scanner resolves
+      # "latest", which seconds after publish is still the PREVIOUS release —
+      # on v0.2.0 it scanned 0.1.4 and reported on the wrong package.
       - name: Scan published package
-        run: npx @n8n/scan-community-package n8n-nodes-nibo-empresas
+        run: npx @n8n/scan-community-package "n8n-nodes-nibo-empresas@${GITHUB_REF_NAME#v}"
