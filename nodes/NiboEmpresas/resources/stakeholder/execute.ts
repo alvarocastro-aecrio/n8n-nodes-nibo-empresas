@@ -32,7 +32,10 @@ export async function executeStakeholder(
 			if (operation === 'list') {
 				const limit = this.getNodeParameter('limit', i) as number;
 
-				const records = await niboListRequest.call(this, endpoint, STAKEHOLDER_ORDER_BY, limit);
+				const { records } = await niboListRequest.call(this, endpoint, STAKEHOLDER_ORDER_BY, {
+					returnAll: false,
+					limit,
+				});
 
 				for (const record of records) {
 					returnData.push({ json: record, pairedItem: { item: i } });
