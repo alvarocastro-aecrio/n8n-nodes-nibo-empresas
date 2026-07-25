@@ -6,7 +6,7 @@ This is an [n8n](https://n8n.io/) community node. It lets you use the **Nibo Emp
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-> **Status: early development (v0.2.x).** The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
+> **Status: early development (v0.3.x).** The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
 
 ## Installation
 
@@ -35,6 +35,12 @@ n8n-nodes-nibo-empresas
 | **Filter (OData)** | An OData expression sent as `$filter`, for example `contains(name,'LTDA')`. Accented text needs no special treatment |
 | **Fail on Incomplete Results** | Off by default. See *Incomplete results* below |
 
+### Interval between requests
+
+**Interval Between Requests** is how long the node waits between two calls to the API, in milliseconds. It defaults to **1000** and applies both between input items and between the pages of a single scan — never before the first call.
+
+The default is deliberately conservative: one node looping over a portfolio of organizations fires hundreds of calls back to back, and that has to be handled by default rather than remembered by whoever builds the workflow. Set it to `0` to send the calls with no gap at all.
+
 ### Incomplete results
 
 Paging by `$skip` cannot see records written while the scan runs: they land at an arbitrary position in the ordering and can fall behind the point already read, disappearing with no error at all. The node watches the record count the server reports at the start and at the end of the scan, and checks that at least as many records arrived as it announced.
@@ -47,11 +53,32 @@ The Nibo API answers **HTTP 500 for invalid requests too**, which makes a plain 
 
 | What happened | What the node does | Is *Retry On Fail* useful? |
 |---|---|---|
-| Token missing, expired or from another organization (HTTP 401) | Says the token was rejected | No — fix the credential |
+| Token missing, expired or from another organization (HTTP 401) | Says the token was rejected | No — fix the token |
 | `validation_error` (bad filter, unknown sort field, broken business rule) | Shows the API's own description of the problem | **No** — retrying repeats the same invalid request |
 | `internal_server_error` | Shows the failure with the original body preserved | **Yes** — this one is a genuine server-side failure |
 
-Per-item token authentication and write operations are on the roadmap — see [Version history](#version-history).
+Write operations are on the roadmap — see [Version history](#version-history).
+
+## Authentication
+
+The **Authentication** field, at the top of the node, chooses where the token comes from:
+
+| Mode | Use it when |
+|---|---|
+| **Credential** *(default)* | One organization per node. The stored credential holds the token and the base URL |
+| **API Token (Per Item)** | Many organizations in one node. The token is read from the **API Token** field separately **for each input item** |
+
+An n8n credential cannot be picked per item: the field accepts no expression and is resolved once per node. That is the whole reason the second mode exists. **API Token** is an ordinary parameter, so it does accept an expression, and every item resolves its own:
+
+```
+{{ $json.apiToken }}
+```
+
+Feed the node one item per organization — from a database, a spreadsheet, or a previous node — and each item reads the books of its own token. In this mode the credential is neither shown nor required, and the base URL is always `https://api.nibo.com.br/empresas/v1`: with no credential there is nowhere else to keep one. If you ever need a different address, use the credential mode.
+
+An item that carries no token fails **on its own**, carrying its item index, so the rest of the run is unaffected. Set the node's *On Error* to **Continue (using error output)** to route those failures somewhere else instead of stopping the workflow.
+
+> ⚠️ **The token is not hidden in the execution data.** n8n redacts credentials, not parameters, so a token resolved into this field stays visible in the workflow's execution history — exactly as it already does in an HTTP Request node carrying the same header. This mode does not make that worse and it does not fix it either. Where that matters, keep the tokens in credentials and use the credential mode.
 
 ## Credentials
 
@@ -73,6 +100,8 @@ Developed and tested against n8n **2.18.5** (self-hosted). Node.js ≥ 20.15 is 
 
 Add the **Nibo Empresas** node to a workflow, select the credential, and run **Customer → Get Many**. Each customer becomes one n8n item.
 
+To read several organizations in a single node, switch **Authentication** to *API Token (Per Item)*, point the **API Token** field at the token carried by each input item, and send one item per organization — see [Authentication](#authentication).
+
 ## Resources
 
 - [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)
@@ -88,7 +117,7 @@ Add the **Nibo Empresas** node to a workflow, select the credential, and run **C
 | 0.1.4 | Load fix: tolerate stray old `n8n-workflow` copies that other community packages install into `~/.n8n/nodes` — they shadowed the real library and crashed class loading with "Class could not be found" (regression introduced by the scanner-mandated enum in 0.1.2) |
 | 0.2.0 | Real pagination: **Return All** walks the collection with `$skip` past the silent 500-record cap, and a limit above 500 is collected in several pages. **Filter (OData)**. Warning when a scan may be incomplete, with an opt-in strict mode. Readable errors that tell an invalid request apart from a server failure. First unit tests (jest, no network), now part of the release gate |
 | 0.2.1 | Dark-theme logo tone changed from light blue (`#9db9de`) to `#0653cd`. Icon-only release |
-| 0.3.0 *(planned)* | Per-item API token mode (multi-organization loops) |
+| 0.3.0 | **Per-item API token**: *Authentication* chooses between the stored credential and a token read from each input item, so one node can walk a whole portfolio of organizations in a loop. An item with no token fails alone, carrying its index, leaving the rest of the run untouched. **Interval Between Requests** (1000 ms by default), applied between items and between pages, never before the first call |
 | 0.4.0 *(planned)* | Customer: Get, Create, Update (safe merge), Delete |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
