@@ -169,3 +169,39 @@ Alvaro**:
 3. Intervalo: campo + espera entre páginas e entre itens + testes
 4. README (inclusive a ressalva de exposição do token); bump 0.3.0
 5. Publicar → teste de instalação real → fechar a tabela da seção 6
+
+---
+
+## 8. Execução (2026-07-25)
+
+Fatias 1 a 4 construídas e commitadas na `main`, uma por commit, com teste antes do
+código. **Gate local verde:** `npm run lint`, `npm run lint:community`, `npm test`
+(42 testes, 4 suítes), `npm run build`, `npm pack` — o tarball tem só `dist/`, sem
+teste nenhum, e `dependencies` continua `{}`.
+
+**A seção 6 segue aberta:** a versão ainda não foi publicada nem instalada de verdade.
+Pela regra inviolável 7, a v0.3.0 **não está pronta** até a tabela de aceite fechar.
+
+### Três coisas saíram diferentes do plano
+
+**1. O `itemIndex` é o primeiro parâmetro, não o último.** `niboApiRequest` e
+`niboListRequest` recebem `(itemIndex, …)`. O plano só dizia "na assinatura"; pôr no fim
+esbarrava nos parâmetros opcionais que já existiam (`qs`, `body`), o que obrigaria a
+escrever `undefined` no meio da chamada. Como índice é contexto da chamada inteira, ele
+entra antes de tudo.
+
+**2. O scanner tem uma segunda armadilha, e ela não estava prevista.** Além da regra
+`no-http-request-with-manual-auth` (que a seção 2.1 antecipou, e que a separação em duas
+funções privadas resolveu), a regra `require-node-api-error` **reprova `throw error` cru
+dentro de um `catch`** — que era exatamente como o despachante ia deixar passar o
+`NodeOperationError` do token vazio sem reclassificá-lo. A saída não foi
+`eslint-disable`: é a mesma forma condicional que o `execute.ts` já usava desde a 0.1.2
+(`throw error instanceof X ? error : …`), que expressa a mesma intenção numa forma que a
+regra enxerga.
+
+**3. A descrição do campo `API Token` não pode citar a expressão.** O linter
+`n8n-nodes-base` reescreve "json" como "JSON" em descrição de parâmetro
+(`node-param-description-miscased-json`), o que transformaria `{{ $json.apiToken }}` em
+algo que não funciona. A expressão concreta ficou onde é lida sem risco de reescrita: no
+**README** e na **mensagem de erro** de item sem token — que é justamente quando alguém
+precisa dela.
