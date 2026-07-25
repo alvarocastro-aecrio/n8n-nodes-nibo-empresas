@@ -654,9 +654,16 @@ export const stakeholderFields: INodeProperties[] = [
 			},
 		},
 	},
-	// Unchanged since 0.2.0, on purpose: same name, same type, same behavior.
-	// It is a permanent escape hatch, not a deprecated field — all that changed
-	// in 0.5.0 is that it is shown in its own mode.
+	// Unchanged since 0.2.0, on purpose: same name, same type, same behavior,
+	// and shown in both modes. It is a permanent escape hatch, not a deprecated
+	// field.
+	//
+	// Hiding it in the assisted mode was the first shape of 0.5.0, and it had a
+	// trap: the editor drops the value of a parameter it is not showing the
+	// moment anything else on the node is changed. A node saved on 0.4.x would
+	// have gone on filtering right up until someone edited its limit — and then
+	// lost the expression without being told. Staying on screen costs one box
+	// and takes that away.
 	{
 		displayName: 'Filter (OData)',
 		name: 'filter',
@@ -664,12 +671,11 @@ export const stakeholderFields: INodeProperties[] = [
 		default: '',
 		placeholder: "contains(name,'LTDA')",
 		description:
-			"OData expression sent as $filter, to narrow the results on the server. Accented text needs no special treatment, e.g. contains(name,'SERVIÇOS'). An apostrophe does: it has to be doubled, as in contains(name,'D''ALESSANDRO').",
+			"OData expression sent as $filter, to narrow the results on the server. Accented text needs no special treatment, e.g. contains(name,'SERVIÇOS'). An apostrophe does: it has to be doubled, as in contains(name,'D''ALESSANDRO') — which is what the Conditions mode does for you. With Filter Type on Conditions this expression is used only while there is no condition set, so a node that filtered by it before goes on filtering by it.",
 		displayOptions: {
 			show: {
 				resource: EVERY_TYPE,
 				operation: ['list'],
-				filterType: ['odata'],
 			},
 		},
 	},

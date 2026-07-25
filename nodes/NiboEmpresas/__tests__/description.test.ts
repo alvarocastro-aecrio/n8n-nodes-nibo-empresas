@@ -377,14 +377,24 @@ describe('NiboEmpresas — the assisted filter', () => {
 		expect(property('filterType')?.default).toBe('conditions');
 	});
 
-	// Zero breaking change: the published parameter keeps its name, its type and
-	// its behavior. All that changes is where it is shown.
-	it('leaves the published OData field exactly where it was, only shown in its own mode', () => {
+	/**
+	 * Zero breaking change, and it has to be zero on screen too. The published
+	 * parameter keeps its name, its type, its behavior — and its place: it is
+	 * shown in **both** modes.
+	 *
+	 * Hiding it in the assisted mode was the first shape of this version, and it
+	 * had a trap. The editor drops the value of a parameter it is not showing as
+	 * soon as anything else on the node is changed, so a node saved on 0.4.x
+	 * would have filtered correctly right up until someone edited its limit, and
+	 * then lost the expression with nothing said. One box on screen buys that
+	 * away.
+	 */
+	it('never hides the published OData field, whichever mode is chosen', () => {
 		const filter = property('filter');
 
 		expect(filter?.type).toBe('string');
 		expect(filter?.default).toBe('');
-		expect(filter?.displayOptions?.show?.filterType).toEqual(['odata']);
+		expect(filter?.displayOptions?.show).not.toHaveProperty('filterType');
 	});
 
 	it('offers the four filter parameters on Get Many of all four types', () => {

@@ -44,7 +44,7 @@ Each resource has its own ID field (**Customer ID**, **Employee ID**, **Partner 
 | **Limit** | How many records to return when *Return All* is off. The API caps every page at 500 records silently, so a higher limit is collected in several pages |
 | **Filter Type** | *Conditions* (the default) or *OData Expression* — see [Filtering](#filtering) |
 | **Filters** · **Combine Conditions** | The conditions to narrow the result by, joined by *And* or by *Or* |
-| **Filter (OData)** | An OData expression sent as `$filter`, shown when *Filter Type* is *OData Expression* |
+| **Filter (OData)** | An OData expression sent as `$filter`, written by hand. Unchanged since 0.2.0, and still on screen in both modes |
 
 Under **Options**, at the end of the node, *Return All* also brings **Fail on Incomplete Results** — see *Incomplete results* below.
 
@@ -69,7 +69,9 @@ The fields on offer are the ones the API actually filters on, checked against it
 
 **OData Expression** — for everything the conditions cannot say, such as a nested group: `(contains(name,'ACME') or contains(name,'LTDA')) and isCompany eq true`. The expression goes to the API as you wrote it, so quoting and escaping are yours to get right. Accented text needs no treatment (`contains(name,'SERVIÇOS')`); an apostrophe does.
 
-> **Upgrading from 0.4.x?** Nothing to redo. A node saved with a **Filter (OData)** keeps filtering by that expression, and the field is still there — switch **Filter Type** to *OData Expression* to see it. Set a condition and the conditions take over.
+The **Filter (OData)** box stays on screen in both modes. With *Filter Type* on *Conditions* it is used only while no condition is set — add one and the conditions are what filters.
+
+> **Upgrading from 0.4.x?** Nothing to redo, and nothing disappears. A node saved with a **Filter (OData)** keeps that expression where it always was, and keeps filtering by it. Add a condition when you want one, and the conditions take over.
 
 ### Create
 
@@ -202,7 +204,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.4.2 | The node reads in the order it is filled in: **Authentication** now comes above the credential picker, **Interval Between Requests** moved into **Options** at the end (still 1000 ms when left out — a node that set it before keeps its value), **Document Type** is asked before **Document Number**, and **Company Name** is no longer offered for a CPF, since a person has no trading name |
 | 0.4.3 | **Fail on Incomplete Results** moves into **Options** and is now **on by default**: a scan that may have missed records fails instead of handing back a list that looks whole. Add the option and turn it off for reads where that does not matter. A node saved while it was a field of its own keeps the choice its author made |
 | 0.4.4 | **Employee, Partner and Supplier** join Customer, with the same five operations each — the API gives the four an identical contract, and the handler has been parameterized by type since 0.1.0, so this cost no new logic. Each resource carries its own ID field, and Employee is offered only a CPF |
-| 0.5.0 | **The assisted filter**: Get Many builds the OData expression from conditions — field, operator and value, joined by *And* or *Or* — instead of taking one written by hand. It exists for a defect, not for comfort: a name carrying an apostrophe (`D'ALESSANDRO`) made an invalid expression, and the API answered HTTP 500 with nothing pointing at the quote. Each type now gets the literal the API demands, quoted or bare, and the menu of fields holds only what the API was checked to filter on — the document type is not one of them. **Filter (OData)** is unchanged and undeprecated, now under *Filter Type* = *OData Expression*, and a node saved before this version keeps filtering exactly as it did |
+| 0.5.0 | **The assisted filter**: Get Many builds the OData expression from conditions — field, operator and value, joined by *And* or *Or* — instead of taking one written by hand. It exists for a defect, not for comfort: a name carrying an apostrophe (`D'ALESSANDRO`) made an invalid expression, and the API answered HTTP 500 with nothing pointing at the quote. Each type now gets the literal the API demands, quoted or bare, and the menu of fields holds only what the API was checked to filter on — the document type is not one of them. **Filter (OData)** is unchanged, undeprecated and still on screen, so a node saved before this version keeps filtering exactly as it did, with nothing to redo |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
