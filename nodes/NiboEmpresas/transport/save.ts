@@ -1,0 +1,225 @@
+import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
+
+import { deepMerge } from './merge';
+import { niboApiRequest } from './request';
+
+/** A leaf of the change: where it goes and what should end up there */
+interface IChangedPath {
+	path: string[];
+	value: unknown;
+}
+
+export interface INiboUpdateOptions {
+	/**
+	 * Applied to the record and to the change before the confirmation compares
+	 * them. The API answers `Cnpj` on a read and takes `CNPJ` on a write, so
+	 * without it every document change would be reported as having failed. The
+	 * transport never imports a resource module: the resource hands its own
+	 * normalizer in.
+	 */
+	normalize?: (record: IDataObject) => IDataObject;
+}
+
+/**
+ * Creates a record and returns it as the API stored it.
+ *
+ * The `/FormatType=json` suffix is not decoration: measured on 2026-07-25, the
+ * plain `POST /customers` answers a bare JSON string with the new id, while
+ * the suffixed one answers the whole record — with `personType`, `isCompany`
+ * and `document.type` already filled in by the API. That is what makes a
+ * read-back call unnecessary. (The suffix works on creation only; on a `PUT`
+ * it answers 404.)
+ *
+ * The two fallbacks below are the rearguard for the resources still to come:
+ * the bare id arrives as a raw string on some collections and wrapped in
+ * `{"data": …}` on others, and no resource should have to know which.
+ */
+export async function niboCreate(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	endpoint: string,
+	body: IDataObject,
+): Promise<IDataObject> {
+	const response = await niboApiRequest.call(
+		this,
+		itemIndex,
+		'POST',
+		`${endpoint}/FormatType=json`,
+		{},
+		body,
+	);
+
+	const record = asRecord(response);
+	if (record !== undefined && typeof record.data !== 'string' && Object.keys(record).length > 0) {
+		return record;
+	}
+
+	const id = createdId(response, record);
+	if (id === '') {
+		throw new NodeOperationError(this.getNode(), 'Nibo did not say what it created', {
+			itemIndex,
+			description:
+				'The record may or may not have been created: the API answered the creation with a body this node could not read as a record or as an id. Check the collection in Nibo before sending it again.',
+		});
+	}
+
+	return { id };
+}
+
+/**
+ * The safe update: `GET` → merge → `PUT` → `GET` to confirm.
+ *
+ * Three calls where one would do, on purpose. The API's `PUT` takes the whole
+ * record and **zeroes every field left out of the body**, and a malformed
+ * payload answers `{"Messages":[""]}` with HTTP 200 while applying nothing at
+ * all. Either one is invisible at the moment it happens and shows up weeks
+ * later, when someone notices a customer lost its address.
+ *
+ * So the record is read first and the change is merged onto it (nothing else
+ * can be omitted), the answer to the `PUT` is treated as a failure whenever it
+ * carries `Messages`, and the record is read once more to check that the paths
+ * that were meant to change really did. Only then does the operation succeed.
+ *
+ * The interval between requests does not apply inside this cycle: the three
+ * calls are one operation on one item.
+ */
+export async function niboSafeUpdate(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	endpoint: string,
+	id: string,
+	changes: IDataObject,
+	options: INiboUpdateOptions = {},
+): Promise<IDataObject> {
+	const normalize = options.normalize ?? ((record: IDataObject) => record);
+	const expected = changedPaths(normalize(changes));
+
+	if (expected.length === 0) {
+		throw new NodeOperationError(this.getNode(), 'This update was given no field to change', {
+			itemIndex,
+			description:
+				'Add at least one field under Update Fields. The node will not send an update that rewrites the record with itself — in this API that is a write like any other.',
+		});
+	}
+
+	const resource = `${endpoint}/${encodeURIComponent(id)}`;
+
+	const current = asRecord(await niboApiRequest.call(this, itemIndex, 'GET', resource));
+	if (current === undefined) {
+		throw new NodeOperationError(this.getNode(), `Nibo returned no record for the ID "${id}"`, {
+			itemIndex,
+			description: 'The update was not sent: without the stored record there is nothing to merge onto.',
+		});
+	}
+
+	const answer = await niboApiRequest.call(
+		this,
+		itemIndex,
+		'PUT',
+		resource,
+		{},
+		deepMerge(current, changes),
+	);
+
+	const messages = silentFailure(answer);
+	if (messages !== undefined) {
+		throw new NodeOperationError(this.getNode(), `Nibo rejected the update: ${messages}`, {
+			itemIndex,
+			description:
+				'The API answered HTTP 200 with a Messages body, which is how it reports a payload it could not apply. Nothing was written.',
+		});
+	}
+
+	const confirmed = asRecord(await niboApiRequest.call(this, itemIndex, 'GET', resource));
+	if (confirmed === undefined) {
+		throw new NodeOperationError(this.getNode(), 'The update could not be confirmed', {
+			itemIndex,
+			description: `Nibo answered the update but returned no record when it was read back. Check the record "${id}" in Nibo.`,
+		});
+	}
+
+	const applied = normalize(confirmed);
+	const missing = expected.filter(({ path, value }) => !sameValue(valueAt(applied, path), value));
+	if (missing.length > 0) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Nibo did not apply the update to: ${missing.map(({ path }) => path.join('.')).join(', ')}`,
+			{
+				itemIndex,
+				description:
+					'The API answered the update without an error, but reading the record back shows those fields unchanged. Nothing else in the record was touched.',
+			},
+		);
+	}
+
+	return confirmed;
+}
+
+function asRecord(value: unknown): IDataObject | undefined {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		return undefined;
+	}
+	return value as IDataObject;
+}
+
+function createdId(response: unknown, record: IDataObject | undefined): string {
+	if (typeof record?.data === 'string') {
+		return record.data.trim();
+	}
+	return typeof response === 'string' ? response.trim() : '';
+}
+
+/** The text of a `{"Messages": […]}` answer, or undefined when there is none */
+function silentFailure(answer: unknown): string | undefined {
+	const record = asRecord(answer);
+	const messages = record?.Messages ?? record?.messages;
+	if (messages === undefined) {
+		return undefined;
+	}
+
+	const text = (Array.isArray(messages) ? messages : [messages])
+		.map((message) => String(message).trim())
+		.filter((message) => message !== '')
+		.join('; ');
+
+	return text === '' ? 'the API gave no reason' : text;
+}
+
+/** Every leaf of the change, as a path and the value that should end up there */
+function changedPaths(changes: IDataObject, prefix: string[] = []): IChangedPath[] {
+	return Object.entries(changes).flatMap(([key, value]) => {
+		const path = [...prefix, key];
+		const branch = asRecord(value);
+
+		return branch !== undefined && Object.keys(branch).length > 0
+			? changedPaths(branch, path)
+			: [{ path, value }];
+	});
+}
+
+function valueAt(record: IDataObject, path: string[]): unknown {
+	return path.reduce<unknown>((value, key) => asRecord(value)?.[key], record);
+}
+
+/**
+ * Whether the API's answer means the same as what was asked for.
+ *
+ * Deliberately tolerant on two counts, both measured: a field erased on
+ * purpose comes back as `null` rather than `''`, and numbers may arrive as
+ * text. Neither is the API refusing the change, and reporting them as one
+ * would make the confirmation useless.
+ */
+function sameValue(applied: unknown, asked: unknown): boolean {
+	if (isEmpty(applied) || isEmpty(asked)) {
+		return isEmpty(applied) && isEmpty(asked);
+	}
+	if (typeof applied === 'object' || typeof asked === 'object') {
+		return JSON.stringify(applied) === JSON.stringify(asked);
+	}
+	return String(applied) === String(asked);
+}
+
+function isEmpty(value: unknown): boolean {
+	return value === undefined || value === null || value === '';
+}
