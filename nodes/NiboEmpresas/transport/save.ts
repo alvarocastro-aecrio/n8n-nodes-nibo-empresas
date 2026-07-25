@@ -19,6 +19,14 @@ export interface INiboUpdateOptions {
 	 * normalizer in.
 	 */
 	normalize?: (record: IDataObject) => IDataObject;
+
+	/**
+	 * Turns the merged record into the body to send. What a read answers is not
+	 * always a body a write can take: some collections mirror a field in more
+	 * than one place, and the copy that arrives last wins. Which fields those
+	 * are is knowledge of the resource, not of the transport.
+	 */
+	writeBody?: (record: IDataObject) => IDataObject;
 }
 
 /**
@@ -113,13 +121,15 @@ export async function niboSafeUpdate(
 		});
 	}
 
+	const writeBody = options.writeBody ?? ((record: IDataObject) => record);
+
 	const answer = await niboApiRequest.call(
 		this,
 		itemIndex,
 		'PUT',
 		resource,
 		{},
-		deepMerge(current, changes),
+		writeBody(deepMerge(current, changes)),
 	);
 
 	const messages = silentFailure(answer);
@@ -205,10 +215,11 @@ function valueAt(record: IDataObject, path: string[]): unknown {
 /**
  * Whether the API's answer means the same as what was asked for.
  *
- * Deliberately tolerant on two counts, both measured: a field erased on
- * purpose comes back as `null` rather than `''`, and numbers may arrive as
- * text. Neither is the API refusing the change, and reporting them as one
- * would make the confirmation useless.
+ * Deliberately tolerant on three counts, all measured: a field erased on
+ * purpose comes back as `null` rather than `''`; numbers may arrive as text;
+ * and some values come back padded — ask for a `zipCode` of "22000000" and
+ * every later read answers "22000000 ". None of those is the API refusing the
+ * change, and reporting them as one would make the confirmation cry wolf.
  */
 function sameValue(applied: unknown, asked: unknown): boolean {
 	if (isEmpty(applied) || isEmpty(asked)) {
@@ -217,9 +228,10 @@ function sameValue(applied: unknown, asked: unknown): boolean {
 	if (typeof applied === 'object' || typeof asked === 'object') {
 		return JSON.stringify(applied) === JSON.stringify(asked);
 	}
-	return String(applied) === String(asked);
+	return String(applied).trim() === String(asked).trim();
 }
 
 function isEmpty(value: unknown): boolean {
-	return value === undefined || value === null || value === '';
+	// A blank the API padded is still a blank — see the note on sameValue.
+	return value === undefined || value === null || String(value).trim() === '';
 }

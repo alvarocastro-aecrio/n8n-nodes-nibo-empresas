@@ -360,6 +360,23 @@ describe('executeStakeholder — update', () => {
 		});
 	});
 
+	// The record a read answers is not a body a write can send back: the API
+	// mirrors phone and e-mail at the root, and the mirror undoes the change.
+	it('hands the safe cycle the rule for what must not go back in the body', async () => {
+		await executeStakeholder.call(
+			context({ customerId: 'not-a-real-id', updateFields: { phone: '2199999999' } }),
+			'customer',
+			'update',
+		);
+
+		const writeBody = updateCall().options?.writeBody;
+
+		expect(writeBody?.({ name: 'ACME', phone: 'old', communication: { phone: 'new' } })).toEqual({
+			name: 'ACME',
+			communication: { phone: 'new' },
+		});
+	});
+
 	it('returns the record as the confirmation read it, normalized', async () => {
 		safeUpdate.mockResolvedValue({
 			id: 'not-a-real-id',

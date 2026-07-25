@@ -197,6 +197,53 @@ describe('niboSafeUpdate', () => {
 		expect(result).toBeDefined();
 	});
 
+	// Measured on the cobaia: a PUT carrying the record exactly as the GET
+	// answered it writes nothing at all. The resource knows which fields the API
+	// mirrors and hands in a function to drop them; the transport does not.
+	it('puts the body the resource prepared, not the merged record raw', async () => {
+		apiAnswering({ ...STORED, communication: { email: 'billing@example.com', phone: '2199' } });
+
+		await niboSafeUpdate.call(
+			context(),
+			0,
+			'/customers',
+			'not-a-real-id',
+			{ communication: { phone: '2199' } },
+			{
+				writeBody: (record) => {
+					const { id, ...rest } = record;
+					return rest;
+				},
+			},
+		);
+
+		expect(call(1).body).not.toHaveProperty('id');
+		expect(call(1).body).toMatchObject({ communication: { phone: '2199' } });
+	});
+
+	// This API stores `address.zipCode` padded with a trailing space: ask for
+	// "22000000" and every later read answers "22000000 ". It applied the
+	// change; reporting it as refused would make the confirmation cry wolf.
+	it('does not cry wolf when the API pads the value it stored', async () => {
+		apiAnswering({ ...STORED, address: { ...(STORED.address as object), zipCode: '22000000 ' } });
+
+		const result = await niboSafeUpdate.call(context(), 0, '/customers', 'not-a-real-id', {
+			address: { zipCode: '22000000' },
+		});
+
+		expect(result).toBeDefined();
+	});
+
+	it('reads a value the API padded into blankness as the erasure it was', async () => {
+		apiAnswering({ ...STORED, communication: { email: 'billing@example.com', phone: ' ' } });
+
+		const result = await niboSafeUpdate.call(context(), 0, '/customers', 'not-a-real-id', {
+			communication: { phone: '' },
+		});
+
+		expect(result).toBeDefined();
+	});
+
 	it('refuses to rewrite the record with itself when nothing was informed', async () => {
 		const failure = niboSafeUpdate.call(context(), 0, '/customers', 'not-a-real-id', {});
 

@@ -4,7 +4,7 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
 import { niboCreate, niboSafeUpdate } from '../../transport/save';
-import { normalizeStakeholder } from './normalize';
+import { normalizeStakeholder, stakeholderWriteBody } from './normalize';
 
 // One handler for the four stakeholder types — their API contract is
 // identical. Only `customer` is routed to it in v0.1.0.
@@ -118,7 +118,7 @@ export async function executeStakeholder(
 					endpoint,
 					recordId.call(this, resource, i),
 					changes,
-					{ normalize: normalizeStakeholder },
+					{ normalize: normalizeStakeholder, writeBody: stakeholderWriteBody },
 				);
 
 				returnData.push({ json: normalizeStakeholder(updated), pairedItem: { item: i } });
