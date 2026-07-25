@@ -133,3 +133,38 @@ Fatias pequenas, commit por fatia, push e tag **só com seu OK**:
 3. UI (`description.ts`) + `execute.ts`
 4. CI roda `npm test`; README; bump 0.2.0
 5. Publicar → teste de instalação real → marcar pronta
+
+---
+
+## 8. Execução (2026-07-25)
+
+Fatias 1 a 4 construídas e commitadas na `main`, uma por commit, com teste antes do
+código. **Gate local verde:** `npm run lint`, `npm run lint:community`, `npm test`
+(29 testes, 4 suítes), `npm run build`, `npm pack` — o tarball tem só `dist/`,
+sem teste nenhum.
+
+### Duas coisas saíram diferentes do plano
+
+**1. O toggle da decisão 2 chama-se "Fail on Incomplete Results", não "Fail on count
+drift".** O comportamento é o da decisão 2, mas cobre **dois** sinais de resultado
+incompleto, não um: o `count` mudar do início para o fim da varredura **e** chegarem
+menos registros do que o servidor anunciou (a defesa do §1.3 do contrato contra o teto
+mudo de 500). Como nome de parâmetro é contrato — renomear depois quebra workflow, é a
+mesma razão da decisão 9 —, o nome foi escolhido para descrever os dois casos já na
+estreia. Segue **desligado por padrão**, e o aviso continua sendo aviso: `logger.warn`
+mais `_niboPaginationWarning` no último item.
+
+**2. O erro chega ao node já embrulhado, e o embrulho não pode ser refeito.** Lendo o
+`n8n-core` publicado: `httpRequestWithAuthentication` lança `new NodeApiError(node,
+error)` antes de o pacote ver qualquer coisa, e a mensagem vira a da tabela de status
+HTTP — *"The service was not able to process your request"* para **todo** 500, que é
+justamente onde esta API esconde erro de validação. Pior: o construtor do `NodeApiError`
+**devolve a mesma instância** quando recebe uma, então re-embrulhar com a mensagem boa
+seria silenciosamente ignorado. O transporte remonta o erro a partir do corpo — que o
+embrulho preserva em `context.data` — em vez de re-embrulhar. Sem isso a §5.1 não sairia
+do papel.
+
+### Falta para fechar a versão
+
+O **teste de instalação real (regra 7)** e a tabela de aceite da seção 6, que só rodam
+depois de publicar. Publicação e tag seguem esperando o OK do Alvaro.
