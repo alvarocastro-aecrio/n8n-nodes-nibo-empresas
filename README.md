@@ -22,13 +22,17 @@ n8n-nodes-nibo-empresas
 
 ## Operations
 
-| Resource | Operation | Notes |
-|---|---|---|
-| Customer | Create | Adds a customer and returns it as Nibo stored it |
-| Customer | Delete | Removes a customer and returns `{ id, deleted: true }` |
-| Customer | Get | Returns one customer by ID |
-| Customer | Get Many | Returns customers, paging through the collection when needed. A stable sort (`$orderby=id`) is always applied. |
-| Customer | Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
+Four resources — **Customer**, **Employee**, **Partner** and **Supplier** — with the same five operations each. The API gives the four an identical contract, so the node treats them as one family:
+
+| Operation | Notes |
+|---|---|
+| Create | Adds a contact and returns it as Nibo stored it |
+| Delete | Removes it and returns `{ id, deleted: true }` |
+| Get | Returns one contact by ID |
+| Get Many | Returns the collection, paging through it when needed. A stable sort (`$orderby=id`) is always applied. |
+| Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
+
+Each resource has its own ID field (**Customer ID**, **Employee ID**, **Partner ID**, **Supplier ID**), so a workflow that already names one keeps working when others are added. **Employee** is offered only a CPF: an employee is a person, and the API would otherwise happily store a company in the payroll.
 
 > **The document type has one spelling.** The API takes `CNPJ`/`CPF` when you write and answers `Cnpj`/`Cpf` when you read. Since 0.4.0 the node hands out the first spelling on **every** operation, Get Many included. If a workflow of yours compares `document.type` with `'Cnpj'`, that comparison has to become `'CNPJ'`.
 
@@ -44,20 +48,20 @@ Under **Options**, at the end of the node, *Return All* also brings **Fail on In
 
 ### Create
 
-**Name**, **Document Number** and **Document Type** are asked for up front; everything else lives under **Additional Fields**, and only the fields you add are sent. The customer comes back as Nibo stored it, with the fields the API fills in on its own (`personType`, `isCompany`, `initialsName`) already there.
+**Name**, **Document Number** and **Document Type** are asked for up front; everything else lives under **Additional Fields**, and only the fields you add are sent. The contact comes back as Nibo stored it, with the fields the API fills in on its own (`personType`, `isCompany`, `initialsName`) already there.
 
 Two details of this API worth knowing before you fill the form in:
 
 - **Document Number takes digits only** — no dots, slashes or dashes.
-- **Email is one string holding every address, separated by commas** (`billing@example.com,accounts@example.com`). This API keeps a customer's e-mails in a single field, not in a list.
+- **Email is one string holding every address, separated by commas** (`billing@example.com,accounts@example.com`). This API keeps a contact's e-mails in a single field, not in a list.
 
 ### Update
 
-The API's `PUT` takes the **whole** record: every field left out of the body is **zeroed**, silently and with HTTP 200. Worse, a payload it cannot read is answered with `{"Messages":[""]}` — HTTP 200, no error, and nothing written. It is the kind of failure nobody notices until someone asks why a customer lost its address.
+The API's `PUT` takes the **whole** record: every field left out of the body is **zeroed**, silently and with HTTP 200. Worse, a payload it cannot read is answered with `{"Messages":[""]}` — HTTP 200, no error, and nothing written. It is the kind of failure nobody notices until someone asks why a contact lost its address.
 
 So this operation never sends a bare `PUT`. For each item it:
 
-1. reads the customer as it is stored;
+1. reads the contact as it is stored;
 2. merges the fields you added onto it;
 3. writes the complete record back;
 4. **reads it again and checks that the fields you changed really changed.**
@@ -68,7 +72,7 @@ What that gives you:
 
 | | |
 |---|---|
-| A field you **do not add** | Is not touched. The customer keeps whatever is in Nibo |
+| A field you **do not add** | Is not touched. The contact keeps whatever is in Nibo |
 | A field you add and **leave empty** | Is written empty. That is how a stored value is erased on purpose |
 | **Update Fields left empty** | The item fails instead of rewriting the record with itself |
 
@@ -76,7 +80,7 @@ The address is offered field by field (**Address City**, **Address Line 1**, …
 
 ### Delete
 
-Takes the customer ID and removes it. The API answers 204 with no body, so the node returns `{ id, deleted: true }` as the confirmation. It is an ordinary operation with no extra guard rail — whoever builds the workflow answers for what it does.
+Takes the ID and removes it. The API answers 204 with no body, so the node returns `{ id, deleted: true }` as the confirmation. It is an ordinary operation with no extra guard rail — whoever builds the workflow answers for what it does.
 
 ### Interval between requests
 
@@ -145,9 +149,9 @@ Developed and tested against n8n **2.18.5** (self-hosted), on a clean instance, 
 
 ## Usage
 
-Add the **Nibo Empresas** node to a workflow, select the credential, and run **Customer → Get Many**. Each customer becomes one n8n item.
+Add the **Nibo Empresas** node to a workflow, select the credential, pick a resource — Customer, Employee, Partner or Supplier — and run **Get Many**. Each record becomes one n8n item.
 
-Writing works the same way: **Create** takes a name and a document, **Update** takes the ID of a customer and only the fields you want changed, and **Delete** takes an ID. Each input item is one operation, and each answers with the record as Nibo has it.
+Writing works the same way: **Create** takes a name and a document, **Update** takes the ID of a contact and only the fields you want changed, and **Delete** takes an ID. Each input item is one operation, and each answers with the record as Nibo has it.
 
 To read several organizations in a single node, switch **Authentication** to *API Token (Per Item)*, point the **API Token** field at the token carried by each input item, and send one item per organization — see [Authentication](#authentication).
 
@@ -172,6 +176,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.4.1 | Fix, found by 0.4.0's own confirmation step on the first real run: **Update wrote nothing**. A read answers `phone` and `email` twice — once inside `communication`, once mirrored at the root of the record — and sending both back makes the root copy, which still carries the old value, win. The node now drops the two mirrors from the body it writes, and the API fills them back in. Also: the confirmation no longer reports a change as refused when the API pads the value it stored (`zipCode` comes back with a trailing space) |
 | 0.4.2 | The node reads in the order it is filled in: **Authentication** now comes above the credential picker, **Interval Between Requests** moved into **Options** at the end (still 1000 ms when left out — a node that set it before keeps its value), **Document Type** is asked before **Document Number**, and **Company Name** is no longer offered for a CPF, since a person has no trading name |
 | 0.4.3 | **Fail on Incomplete Results** moves into **Options** and is now **on by default**: a scan that may have missed records fails instead of handing back a list that looks whole. Add the option and turn it off for reads where that does not matter. A node saved while it was a field of its own keeps the choice its author made |
+| 0.4.4 | **Employee, Partner and Supplier** join Customer, with the same five operations each — the API gives the four an identical contract, and the handler has been parameterized by type since 0.1.0, so this cost no new logic. Each resource carries its own ID field, and Employee is offered only a CPF |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer

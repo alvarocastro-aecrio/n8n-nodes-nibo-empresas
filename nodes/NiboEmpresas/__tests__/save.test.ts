@@ -49,7 +49,13 @@ describe('niboCreate', () => {
 	it('posts to the FormatType=json endpoint and returns the record the API stored', async () => {
 		apiRequest.mockResolvedValue({ id: 'not-a-real-id', name: 'ACME LTDA', isCompany: true });
 
-		const created = await niboCreate.call(context(), 0, '/customers', { name: 'ACME LTDA' });
+		const created = await niboCreate.call(
+			context(),
+			0,
+			'/customers',
+			{ name: 'ACME LTDA' },
+			{ answersWithTheRecord: true },
+		);
 
 		expect(call(0).method).toBe('POST');
 		expect(call(0).endpoint).toBe('/customers/FormatType=json');
@@ -65,12 +71,45 @@ describe('niboCreate', () => {
 		expect(call(0).itemIndex).toBe(3);
 	});
 
+	/**
+	 * Measured on the cobaia on 2026-07-25: the FormatType=json suffix exists on
+	 * /customers and /suppliers and answers 404 on /employees and /partners.
+	 * Where it is missing the plain POST answers a bare id, and the record has
+	 * to be read back — otherwise a workflow would get a different shape from
+	 * Create depending on which collection it wrote to.
+	 */
+	it('posts plainly and reads the record back where the suffix does not exist', async () => {
+		apiRequest
+			.mockResolvedValueOnce('not-a-real-id')
+			.mockResolvedValueOnce({ id: 'not-a-real-id', name: 'ADA LOVELACE' });
+
+		const created = await niboCreate.call(context(), 0, '/employees', { name: 'ADA LOVELACE' });
+
+		expect(call(0)).toMatchObject({ method: 'POST', endpoint: '/employees' });
+		expect(call(1)).toMatchObject({ method: 'GET', endpoint: '/employees/not-a-real-id' });
+		expect(created).toEqual({ id: 'not-a-real-id', name: 'ADA LOVELACE' });
+	});
+
+	it('still answers with the id when the read-back gives nothing to show', async () => {
+		apiRequest.mockResolvedValueOnce('not-a-real-id').mockResolvedValueOnce('');
+
+		const created = await niboCreate.call(context(), 0, '/employees', { name: 'ADA LOVELACE' });
+
+		expect(created).toEqual({ id: 'not-a-real-id' });
+	});
+
 	// The fallbacks below are the rearguard for the resources still to come:
 	// POST answers a bare id in one of two shapes depending on the collection.
 	it('falls back to the bare id when that is all the API answers', async () => {
 		apiRequest.mockResolvedValue('not-a-real-id');
 
-		const created = await niboCreate.call(context(), 0, '/customers', { name: 'ACME LTDA' });
+		const created = await niboCreate.call(
+			context(),
+			0,
+			'/customers',
+			{ name: 'ACME LTDA' },
+			{ answersWithTheRecord: true },
+		);
 
 		expect(created).toEqual({ id: 'not-a-real-id' });
 	});
@@ -78,7 +117,13 @@ describe('niboCreate', () => {
 	it('falls back to the id wrapped in a data envelope', async () => {
 		apiRequest.mockResolvedValue({ data: 'not-a-real-id' });
 
-		const created = await niboCreate.call(context(), 0, '/customers', { name: 'ACME LTDA' });
+		const created = await niboCreate.call(
+			context(),
+			0,
+			'/customers',
+			{ name: 'ACME LTDA' },
+			{ answersWithTheRecord: true },
+		);
 
 		expect(created).toEqual({ id: 'not-a-real-id' });
 	});

@@ -1,66 +1,105 @@
-import type { INodeProperties } from 'n8n-workflow';
+import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
-// Customer, Supplier, Employee and Partner share the exact same contract in
-// the API, so they share this description too. Only Customer is exposed in
-// v0.1.0; the other three enter later as one option each, with no new logic.
+/**
+ * Customer, Supplier, Employee and Partner are one family: the API gives the
+ * four an identical contract, so they share one handler and this one
+ * description. What differs is only what the editor shows — the word in each
+ * text, the name of the ID field, and which documents make sense.
+ */
+interface IStakeholderType {
+	/** The `resource` value, which is also the word used in the action texts */
+	value: string;
+	/** How the editor names one of them */
+	label: string;
+	/** How the action texts name many of them */
+	plural: string;
+	/** Its own ID parameter — a parameter name is a contract, so nobody shares one */
+	idParameter: string;
+	/** An employee is a person; the other three can be a company */
+	isPerson?: boolean;
+}
 
-export const stakeholderOperations: INodeProperties[] = [
+// Alphabetical by label: it is the order the editor shows and the order the
+// n8n linter requires of an options list.
+const TYPES: IStakeholderType[] = [
+	{ value: 'customer', label: 'Customer', plural: 'customers', idParameter: 'customerId' },
 	{
-		displayName: 'Operation',
-		name: 'operation',
-		type: 'options',
-		noDataExpression: true,
-		displayOptions: {
-			show: {
-				resource: ['customer'],
-			},
-		},
-		// Alphabetical by name, which is what the n8n linter requires and what
-		// the editor shows in this exact order.
-		options: [
-			{
-				name: 'Create',
-				value: 'create',
-				action: 'Create a customer',
-				description: 'Add a customer to the organization',
-			},
-			{
-				name: 'Delete',
-				value: 'delete',
-				action: 'Delete a customer',
-				description: 'Remove a customer from the organization',
-			},
-			{
-				name: 'Get',
-				value: 'get',
-				action: 'Get a customer',
-				description: 'Retrieve one customer by ID',
-			},
-			{
-				name: 'Get Many',
-				value: 'list',
-				action: 'Get many customers',
-				description: 'Retrieve customers of the organization',
-			},
-			{
-				name: 'Update',
-				value: 'update',
-				action: 'Update a customer',
-				description:
-					'Change the fields given below, leaving every other field of the customer as it is',
-			},
-		],
-		default: 'list',
+		value: 'employee',
+		label: 'Employee',
+		plural: 'employees',
+		idParameter: 'employeeId',
+		isPerson: true,
 	},
+	{ value: 'partner', label: 'Partner', plural: 'partners', idParameter: 'partnerId' },
+	{ value: 'supplier', label: 'Supplier', plural: 'suppliers', idParameter: 'supplierId' },
 ];
 
-// The menu shared by Create and Update. Create adds it under Additional
-// Fields, Update under Update Fields, and both are built from this one list so
-// they cannot drift apart. Alphabetical by display name, as the linter asks.
-//
-// The document type is not in the same place in the two forms — Create asks
-// for it up front, Update keeps it inside the menu — and one field depends on
-// it, so the path to it is a parameter of the list.
+const PEOPLE = TYPES.filter((type) => type.isPerson === true).map((type) => type.value);
+const COMPANIES = TYPES.filter((type) => type.isPerson !== true).map((type) => type.value);
+const EVERY_TYPE = TYPES.map((type) => type.value);
+
+/** The Resource options, and the list the credential has to name — see the node description */
+export const stakeholderResources: INodePropertyOptions[] = TYPES.map((type) => ({
+	name: type.label,
+	value: type.value,
+}));
+
+// Alphabetical by name, which is what the n8n linter requires and what the
+// editor shows in this exact order.
+export const stakeholderOperations: INodeProperties[] = TYPES.map((type) => ({
+	displayName: 'Operation',
+	name: 'operation',
+	type: 'options',
+	noDataExpression: true,
+	displayOptions: {
+		show: {
+			resource: [type.value],
+		},
+	},
+	options: [
+		{
+			name: 'Create',
+			value: 'create',
+			action: `Create a ${type.value}`,
+			description: `Add a ${type.value} to the organization`,
+		},
+		{
+			name: 'Delete',
+			value: 'delete',
+			action: `Delete a ${type.value}`,
+			description: `Remove a ${type.value} from the organization`,
+		},
+		{
+			name: 'Get',
+			value: 'get',
+			action: `Get a ${type.value}`,
+			description: `Retrieve one ${type.value} by ID`,
+		},
+		{
+			name: 'Get Many',
+			value: 'list',
+			action: `Get many ${type.plural}`,
+			description: `Retrieve ${type.plural} of the organization`,
+		},
+		{
+			name: 'Update',
+			value: 'update',
+			action: `Update a ${type.value}`,
+			description: `Change the fields given below, leaving every other field of the ${type.value} as it is`,
+		},
+	],
+	default: 'list',
+}));
+
+/**
+ * The menu shared by Create and Update. Create adds it under Additional
+ * Fields, Update under Update Fields, and both are built from this one list so
+ * they cannot drift apart. Alphabetical by display name, as the linter asks.
+ *
+ * The document type is not in the same place in the two forms — Create asks
+ * for it up front, Update keeps it inside the menu — and one field depends on
+ * it, so the path to it is a parameter of the list.
+ */
 function writableFields(documentType: string): INodeProperties[] {
 	return [
 		{
@@ -151,7 +190,7 @@ function writableFields(documentType: string): INodeProperties[] {
 			default: '',
 			placeholder: 'billing@example.com,accounts@example.com',
 			description:
-				'One string holding every address, separated by commas. This API keeps the e-mails of a customer in a single field, not in a list.',
+				'One string holding every address, separated by commas. This API keeps the e-mails of a contact in a single field, not in a list.',
 		},
 		{
 			displayName: 'Phone',
@@ -168,40 +207,58 @@ function writableFields(documentType: string): INodeProperties[] {
 	];
 }
 
-// The name and the document, which Update takes as ordinary optional fields
-// and Create asks for up front.
-const identityFields: INodeProperties[] = [
-	{
-		displayName: 'Document Number',
-		name: 'documentNumber',
-		type: 'string',
-		default: '',
-		description: 'Digits only, with no dots, slashes or dashes',
-	},
-	{
-		displayName: 'Document Type',
-		name: 'documentType',
-		type: 'options',
-		options: [
-			{
-				name: 'CNPJ',
-				value: 'CNPJ',
-			},
-			{
-				name: 'CPF',
-				value: 'CPF',
-			},
-		],
-		default: 'CNPJ',
-	},
-	{
-		displayName: 'Name',
-		name: 'name',
-		type: 'string',
-		default: '',
-		description: 'The registered name of the customer',
-	},
-];
+/**
+ * Which documents the type can carry.
+ *
+ * An employee is a person, and the API would happily store a CNPJ there —
+ * which is how a payroll ends up with a company in it. A partner, on the other
+ * hand, really can be a holding company.
+ */
+function documentTypeOptions(isPerson: boolean): INodePropertyOptions[] {
+	const cpf = { name: 'CPF', value: 'CPF' };
+
+	return isPerson ? [cpf] : [{ name: 'CNPJ', value: 'CNPJ' }, cpf];
+}
+
+// Two literals rather than one field with a computed default: the n8n linter
+// reads defaults straight from the source, and a value it cannot see is a
+// value it reports as missing.
+const DOCUMENT_TYPE_OF_A_PERSON: INodeProperties = {
+	displayName: 'Document Type',
+	name: 'documentType',
+	type: 'options',
+	options: documentTypeOptions(true),
+	default: 'CPF',
+};
+
+const DOCUMENT_TYPE_OF_A_COMPANY: INodeProperties = {
+	displayName: 'Document Type',
+	name: 'documentType',
+	type: 'options',
+	options: documentTypeOptions(false),
+	default: 'CNPJ',
+};
+
+/** The name and the document, which Update takes as ordinary optional fields */
+function identityFields(isPerson: boolean): INodeProperties[] {
+	return [
+		{
+			displayName: 'Document Number',
+			name: 'documentNumber',
+			type: 'string',
+			default: '',
+			description: 'Digits only, with no dots, slashes or dashes',
+		},
+		isPerson ? DOCUMENT_TYPE_OF_A_PERSON : DOCUMENT_TYPE_OF_A_COMPANY,
+		{
+			displayName: 'Name',
+			name: 'name',
+			type: 'string',
+			default: '',
+			description: 'The registered name of the contact',
+		},
+	];
+}
 
 /** The editor lists a menu in the order it is declared, and alphabetical is the convention */
 function byDisplayName(fields: INodeProperties[]): INodeProperties[] {
@@ -209,30 +266,49 @@ function byDisplayName(fields: INodeProperties[]): INodeProperties[] {
 }
 
 export const stakeholderFields: INodeProperties[] = [
-	{
-		displayName: 'Customer ID',
-		name: 'customerId',
-		type: 'string',
-		required: true,
-		default: '',
-		description: 'The ID of the customer to work on, as Nibo returns it in the ID field',
-		displayOptions: {
-			show: {
-				resource: ['customer'],
-				operation: ['delete', 'get', 'update'],
+	// One ID field per type, each named after itself
+	...TYPES.map(
+		(type): INodeProperties => ({
+			displayName: `${type.label} ID`,
+			name: type.idParameter,
+			type: 'string',
+			required: true,
+			default: '',
+			description: `The ID of the ${type.value} to work on, as Nibo returns it in the ID field`,
+			displayOptions: {
+				show: {
+					resource: [type.value],
+					operation: ['delete', 'get', 'update'],
+				},
 			},
-		},
-	},
+		}),
+	),
 	{
 		displayName: 'Name',
 		name: 'name',
 		type: 'string',
 		required: true,
 		default: '',
-		description: 'The registered name of the customer',
+		description: 'The registered name of the contact',
 		displayOptions: {
 			show: {
-				resource: ['customer'],
+				resource: EVERY_TYPE,
+				operation: ['create'],
+			},
+		},
+	},
+	// Two declarations of the same parameter: the type decides which documents
+	// are on offer, and an employee gets only the one a person has.
+	{
+		displayName: 'Document Type',
+		name: 'documentType',
+		type: 'options',
+		required: true,
+		options: documentTypeOptions(false),
+		default: 'CNPJ',
+		displayOptions: {
+			show: {
+				resource: COMPANIES,
 				operation: ['create'],
 			},
 		},
@@ -242,20 +318,11 @@ export const stakeholderFields: INodeProperties[] = [
 		name: 'documentType',
 		type: 'options',
 		required: true,
-		options: [
-			{
-				name: 'CNPJ',
-				value: 'CNPJ',
-			},
-			{
-				name: 'CPF',
-				value: 'CPF',
-			},
-		],
-		default: 'CNPJ',
+		options: documentTypeOptions(true),
+		default: 'CPF',
 		displayOptions: {
 			show: {
-				resource: ['customer'],
+				resource: PEOPLE,
 				operation: ['create'],
 			},
 		},
@@ -270,7 +337,7 @@ export const stakeholderFields: INodeProperties[] = [
 		description: 'Digits only, with no dots, slashes or dashes',
 		displayOptions: {
 			show: {
-				resource: ['customer'],
+				resource: EVERY_TYPE,
 				operation: ['create'],
 			},
 		},
@@ -284,27 +351,33 @@ export const stakeholderFields: INodeProperties[] = [
 		options: byDisplayName(writableFields('/documentType')),
 		displayOptions: {
 			show: {
-				resource: ['customer'],
+				resource: EVERY_TYPE,
 				operation: ['create'],
 			},
 		},
 	},
-	{
-		displayName: 'Update Fields',
-		name: 'updateFields',
-		type: 'collection',
-		placeholder: 'Add Field',
-		default: {},
-		description:
-			'The fields to change. A field left out is not touched: the customer keeps whatever is stored in Nibo. A field added and left empty is written empty, which is how a value is erased on purpose.',
-		options: byDisplayName([...writableFields('documentType'), ...identityFields]),
-		displayOptions: {
-			show: {
-				resource: ['customer'],
-				operation: ['update'],
+	// Same again: the menu carries the document type, so it splits the same way
+	...[COMPANIES, PEOPLE].map(
+		(resources): INodeProperties => ({
+			displayName: 'Update Fields',
+			name: 'updateFields',
+			type: 'collection',
+			placeholder: 'Add Field',
+			default: {},
+			description:
+				'The fields to change. A field left out is not touched: the contact keeps whatever is stored in Nibo. A field added and left empty is written empty, which is how a value is erased on purpose.',
+			options: byDisplayName([
+				...writableFields('documentType'),
+				...identityFields(resources === PEOPLE),
+			]),
+			displayOptions: {
+				show: {
+					resource: resources,
+					operation: ['update'],
+				},
 			},
-		},
-	},
+		}),
+	),
 	{
 		displayName: 'Return All',
 		name: 'returnAll',
@@ -313,7 +386,7 @@ export const stakeholderFields: INodeProperties[] = [
 		description: 'Whether to return all results or only up to a given limit',
 		displayOptions: {
 			show: {
-				resource: ['customer'],
+				resource: EVERY_TYPE,
 				operation: ['list'],
 			},
 		},
@@ -330,7 +403,7 @@ export const stakeholderFields: INodeProperties[] = [
 		hint: 'The API caps every page at 500 records, so a higher limit is collected in several pages',
 		displayOptions: {
 			show: {
-				resource: ['customer'],
+				resource: EVERY_TYPE,
 				operation: ['list'],
 				returnAll: [false],
 			},
@@ -346,7 +419,7 @@ export const stakeholderFields: INodeProperties[] = [
 			"OData expression sent as $filter, to narrow the results on the server. Accented text needs no special treatment, e.g. contains(name,'SERVIÇOS').",
 		displayOptions: {
 			show: {
-				resource: ['customer'],
+				resource: EVERY_TYPE,
 				operation: ['list'],
 			},
 		},

@@ -17,7 +17,11 @@ const MAIN_CONNECTION: MainConnection = NodeConnectionTypes
 	? NodeConnectionTypes.Main
 	: ('main' as MainConnection);
 
-import { stakeholderFields, stakeholderOperations } from './resources/stakeholder/description';
+import {
+	stakeholderFields,
+	stakeholderOperations,
+	stakeholderResources,
+} from './resources/stakeholder/description';
 import { executeStakeholder } from './resources/stakeholder/execute';
 
 // Thin description + router. No HTTP call and no API rule lives here: the
@@ -59,7 +63,7 @@ export class NiboEmpresas implements INodeType {
 				displayOptions: {
 					show: {
 						authMode: ['credential'],
-						resource: ['customer'],
+						resource: stakeholderResources.map((resource) => resource.value as string),
 					},
 				},
 			},
@@ -111,12 +115,7 @@ export class NiboEmpresas implements INodeType {
 				name: 'resource',
 				type: 'options',
 				noDataExpression: true,
-				options: [
-					{
-						name: 'Customer',
-						value: 'customer',
-					},
-				],
+				options: stakeholderResources,
 				default: 'customer',
 			},
 			...stakeholderOperations,

@@ -29,34 +29,45 @@ export interface INiboUpdateOptions {
 	writeBody?: (record: IDataObject) => IDataObject;
 }
 
+export interface INiboCreateOptions {
+	/**
+	 * Whether this collection answers a create with the whole record when the
+	 * `/FormatType=json` suffix is used.
+	 *
+	 * Measured per collection on 2026-07-25, and it is not uniform: `/customers`
+	 * and `/suppliers` answer the suffixed POST with the complete record, while
+	 * `/employees` and `/partners` answer **404 to the suffix itself**. Where it
+	 * is missing the plain POST works and gives back a bare id.
+	 *
+	 * Off unless a collection was measured to support it: a suffix that is not
+	 * there costs a failed write, while the plain path costs one extra read.
+	 */
+	answersWithTheRecord?: boolean;
+}
+
 /**
  * Creates a record and returns it as the API stored it.
  *
- * The `/FormatType=json` suffix is not decoration: measured on 2026-07-25, the
- * plain `POST /customers` answers a bare JSON string with the new id, while
- * the suffixed one answers the whole record — with `personType`, `isCompany`
- * and `document.type` already filled in by the API. That is what makes a
- * read-back call unnecessary. (The suffix works on creation only; on a `PUT`
- * it answers 404.)
+ * Two shapes, because the API has two. Where the `/FormatType=json` suffix
+ * exists it answers the whole record — with `personType`, `isCompany` and
+ * `document.type` already filled in — and one call is enough. Where it does
+ * not, the plain POST answers a bare id and the record is read back, so that
+ * Create hands a workflow the same thing either way. (The suffix is for
+ * creation only: on a `PUT` it answers 404 everywhere.)
  *
- * The two fallbacks below are the rearguard for the resources still to come:
- * the bare id arrives as a raw string on some collections and wrapped in
- * `{"data": …}` on others, and no resource should have to know which.
+ * The id fallbacks are the rearguard for the resources still to come: it
+ * arrives as a raw string on some collections and wrapped in `{"data": …}` on
+ * others, and no resource should have to know which.
  */
 export async function niboCreate(
 	this: IExecuteFunctions,
 	itemIndex: number,
 	endpoint: string,
 	body: IDataObject,
+	options: INiboCreateOptions = {},
 ): Promise<IDataObject> {
-	const response = await niboApiRequest.call(
-		this,
-		itemIndex,
-		'POST',
-		`${endpoint}/FormatType=json`,
-		{},
-		body,
-	);
+	const path = options.answersWithTheRecord === true ? `${endpoint}/FormatType=json` : endpoint;
+	const response = await niboApiRequest.call(this, itemIndex, 'POST', path, {}, body);
 
 	const record = asRecord(response);
 	if (record !== undefined && typeof record.data !== 'string' && Object.keys(record).length > 0) {
@@ -72,7 +83,17 @@ export async function niboCreate(
 		});
 	}
 
-	return { id };
+	if (options.answersWithTheRecord === true) {
+		return { id };
+	}
+
+	// The id alone would make Create answer one shape here and another there,
+	// depending on which collection the workflow happened to write to.
+	const created = asRecord(
+		await niboApiRequest.call(this, itemIndex, 'GET', `${endpoint}/${encodeURIComponent(id)}`),
+	);
+
+	return created ?? { id };
 }
 
 /**

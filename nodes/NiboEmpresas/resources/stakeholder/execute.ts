@@ -6,17 +6,49 @@ import { niboApiRequest } from '../../transport/request';
 import { niboCreate, niboSafeUpdate } from '../../transport/save';
 import { normalizeStakeholder, stakeholderWriteBody } from './normalize';
 
-// One handler for the four stakeholder types — their API contract is
-// identical. Only `customer` is routed to it in v0.1.0.
-const STAKEHOLDER_ENDPOINTS: Record<string, string> = {
-	customer: '/customers',
-};
+interface IStakeholderCollection {
+	endpoint: string;
+	/**
+	 * The parameter carrying the ID. A parameter name is a contract, so each
+	 * type has its own rather than everyone sharing one that would be renamed.
+	 */
+	idParameter: string;
+	/**
+	 * Whether `POST /{collection}/FormatType=json` exists here. Measured on the
+	 * cobaia on 2026-07-25: it does for customers and suppliers, and answers
+	 * **404** for employees and partners. The transport falls back to the plain
+	 * POST plus a read-back, so Create answers the same shape either way.
+	 */
+	createAnswersWithTheRecord: boolean;
+}
 
-// A parameter name is a contract: renaming one breaks every workflow already
-// built on it. So each stakeholder type gets its own ID field, named after
-// itself, and the three still outside the UI enter with theirs.
-const STAKEHOLDER_ID_PARAMETERS: Record<string, string> = {
-	customer: 'customerId',
+/**
+ * One handler for the four stakeholder types — the API gives them an identical
+ * contract, and since 0.4.4 all four are in the UI. They cost this table and
+ * no logic at all, which is what the parameterized handler was for since
+ * 0.1.0. Where they genuinely differ, they differ here.
+ */
+const STAKEHOLDERS: Record<string, IStakeholderCollection> = {
+	customer: {
+		endpoint: '/customers',
+		idParameter: 'customerId',
+		createAnswersWithTheRecord: true,
+	},
+	employee: {
+		endpoint: '/employees',
+		idParameter: 'employeeId',
+		createAnswersWithTheRecord: false,
+	},
+	partner: {
+		endpoint: '/partners',
+		idParameter: 'partnerId',
+		createAnswersWithTheRecord: false,
+	},
+	supplier: {
+		endpoint: '/suppliers',
+		idParameter: 'supplierId',
+		createAnswersWithTheRecord: true,
+	},
 };
 
 // `id` is the only stakeholder field measured to be unique and immutable
@@ -32,10 +64,11 @@ export async function executeStakeholder(
 	const items = this.getInputData();
 	const returnData: INodeExecutionData[] = [];
 
-	const endpoint = STAKEHOLDER_ENDPOINTS[resource];
-	if (endpoint === undefined) {
+	const collection = STAKEHOLDERS[resource];
+	if (collection === undefined) {
 		throw new NodeOperationError(this.getNode(), `The resource "${resource}" is not supported`);
 	}
+	const endpoint = collection.endpoint;
 
 	for (let i = 0; i < items.length; i++) {
 		try {
@@ -102,6 +135,7 @@ export async function executeStakeholder(
 						documentType: this.getNodeParameter('documentType', i) as string,
 						...(this.getNodeParameter('additionalFields', i, {}) as IDataObject),
 					}),
+					{ answersWithTheRecord: collection.createAnswersWithTheRecord },
 				);
 
 				returnData.push({ json: normalizeStakeholder(created), pairedItem: { item: i } });
@@ -256,7 +290,7 @@ function failOnIncomplete(
  * answer to.
  */
 function recordId(this: IExecuteFunctions, resource: string, itemIndex: number): string {
-	const parameter = STAKEHOLDER_ID_PARAMETERS[resource];
+	const parameter = STAKEHOLDERS[resource].idParameter;
 	const id = String(this.getNodeParameter(parameter, itemIndex, '') ?? '').trim();
 
 	if (id === '') {

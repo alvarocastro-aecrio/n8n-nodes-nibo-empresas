@@ -204,6 +204,87 @@ describe('executeStakeholder — list', () => {
 	});
 });
 
+// The handler was parameterized by type from 0.1.0 — this is what that was for.
+describe('executeStakeholder — the other three types', () => {
+	it.each([
+		['supplier', 'supplierId', '/suppliers'],
+		['employee', 'employeeId', '/employees'],
+		['partner', 'partnerId', '/partners'],
+	])('reads %s from its own collection', async (resource, parameter, endpoint) => {
+		await executeStakeholder.call(
+			context({ [parameter]: 'not-a-real-id', returnAll: true }),
+			resource,
+			'list',
+		);
+
+		expect(listRequest.mock.calls[0][1]).toBe(endpoint);
+		expect(listRequest.mock.calls[0][2]).toBe('id');
+	});
+
+	it.each([
+		['supplier', 'supplierId', '/suppliers'],
+		['employee', 'employeeId', '/employees'],
+		['partner', 'partnerId', '/partners'],
+	])('deletes a %s by the ID field of its own', async (resource, parameter, endpoint) => {
+		const items = await executeStakeholder.call(
+			context({ [parameter]: 'not-a-real-id' }),
+			resource,
+			'delete',
+		);
+
+		expect(apiCall(0)).toMatchObject({
+			method: 'DELETE',
+			endpoint: `${endpoint}/not-a-real-id`,
+		});
+		expect(items[0].json).toEqual({ id: 'not-a-real-id', deleted: true });
+	});
+
+	it('writes a supplier to the supplier collection', async () => {
+		await executeStakeholder.call(
+			context({ name: 'ACME LTDA', documentNumber: '00000000000000', documentType: 'CNPJ' }),
+			'supplier',
+			'create',
+		);
+
+		expect(create.mock.calls[0][1]).toBe('/suppliers');
+	});
+
+	it('runs the safe update cycle on a partner too', async () => {
+		await executeStakeholder.call(
+			context({ partnerId: 'not-a-real-id', updateFields: { phone: '2199999999' } }),
+			'partner',
+			'update',
+		);
+
+		expect(safeUpdate.mock.calls[0][1]).toBe('/partners');
+		expect(safeUpdate.mock.calls[0][2]).toBe('not-a-real-id');
+	});
+
+	// The 404 that reprovou the first run of 0.4.4: the suffix that lets a
+	// create answer with the whole record exists on two of the four collections
+	// and answers "Resource not found" on the other two.
+	it.each([
+		['customer', true],
+		['supplier', true],
+		['employee', false],
+		['partner', false],
+	])('tells the transport whether a %s create answers with the record', async (resource, answers) => {
+		await executeStakeholder.call(
+			context({ name: 'ACME LTDA', documentNumber: '00000000000000', documentType: 'CNPJ' }),
+			resource as string,
+			'create',
+		);
+
+		expect(create.mock.calls[0][3]).toEqual({ answersWithTheRecord: answers });
+	});
+
+	it('still refuses a type it does not know', async () => {
+		const failure = executeStakeholder.call(context({}), 'accountant', 'list');
+
+		await expect(failure).rejects.toThrow(/accountant/);
+	});
+});
+
 describe('executeStakeholder — get', () => {
 	it('reads one record by ID and returns it as a single item', async () => {
 		apiRequest.mockResolvedValue({ id: 'not-a-real-id', name: 'ACME LTDA' });

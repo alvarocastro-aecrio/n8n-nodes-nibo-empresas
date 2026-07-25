@@ -125,6 +125,112 @@ describe('NiboEmpresas — the mode switch as the editor sees it', () => {
 	});
 });
 
+describe('NiboEmpresas — the four stakeholder types', () => {
+	const TYPES = ['customer', 'employee', 'partner', 'supplier'];
+
+	/** Every declaration of a parameter, since one name can have several */
+	function declarations(name: string): INodeProperties[] {
+		return description.properties.filter((prop) => prop.name === name);
+	}
+
+	/** The resources a parameter is shown for, across all its declarations */
+	function shownFor(name: string): string[] {
+		return declarations(name)
+			.flatMap((prop) => (prop.displayOptions?.show?.resource ?? []) as string[])
+			.filter((resource, index, all) => all.indexOf(resource) === index)
+			.sort();
+	}
+
+	it('offers the four, in the order the linter asks for', () => {
+		const options = property('resource')?.options as INodePropertyOptions[];
+
+		expect(options.map((option) => option.value)).toEqual(TYPES);
+		expect(options.map((option) => option.name)).toEqual([
+			'Customer',
+			'Employee',
+			'Partner',
+			'Supplier',
+		]);
+	});
+
+	it('gives all four the same five operations', () => {
+		for (const resource of TYPES) {
+			const operations = declarations('operation').find((prop) =>
+				(prop.displayOptions?.show?.resource ?? []).includes(resource),
+			);
+			const values = (operations?.options as INodePropertyOptions[]).map((option) => option.value);
+
+			expect(values.sort()).toEqual(['create', 'delete', 'get', 'list', 'update']);
+		}
+	});
+
+	// A parameter name is a contract, and `customerId` is already published, so
+	// each type carries its own rather than everyone sharing a renamed one.
+	it('names the ID field after the type it belongs to', () => {
+		for (const [resource, parameter] of [
+			['customer', 'customerId'],
+			['employee', 'employeeId'],
+			['partner', 'partnerId'],
+			['supplier', 'supplierId'],
+		]) {
+			const field = declarations(parameter)[0];
+
+			expect(field?.displayOptions?.show?.resource).toEqual([resource]);
+			expect(field?.displayOptions?.show?.operation).toEqual(['delete', 'get', 'update']);
+			expect(field?.required).toBe(true);
+		}
+	});
+
+	it('asks the same fields of all four types', () => {
+		for (const field of ['name', 'documentNumber', 'additionalFields', 'updateFields', 'returnAll']) {
+			expect(shownFor(field)).toEqual(TYPES);
+		}
+	});
+
+	// An employee is a person. The API would take a CNPJ there, which is how a
+	// payroll ends up with a company in it.
+	it('offers an employee no document type other than CPF', () => {
+		const forEmployee = declarations('documentType').find((prop) =>
+			(prop.displayOptions?.show?.resource ?? []).includes('employee'),
+		);
+
+		expect((forEmployee?.options as INodePropertyOptions[]).map((option) => option.value)).toEqual([
+			'CPF',
+		]);
+		expect(forEmployee?.default).toBe('CPF');
+	});
+
+	// A partner can be a holding company, so both are offered there.
+	it('keeps both documents for the three types that can be a company', () => {
+		for (const resource of ['customer', 'partner', 'supplier']) {
+			const field = declarations('documentType').find((prop) =>
+				(prop.displayOptions?.show?.resource ?? []).includes(resource),
+			);
+
+			expect((field?.options as INodePropertyOptions[]).map((option) => option.value)).toEqual([
+				'CNPJ',
+				'CPF',
+			]);
+			expect(field?.default).toBe('CNPJ');
+		}
+	});
+
+	it('offers an employee no company name to change either', () => {
+		const forEmployee = description.properties.find(
+			(prop) =>
+				prop.name === 'updateFields' &&
+				(prop.displayOptions?.show?.resource ?? []).includes('employee'),
+		);
+		const documentType = ((forEmployee?.options ?? []) as INodeProperties[]).find(
+			(field) => field.name === 'documentType',
+		);
+
+		expect((documentType?.options as INodePropertyOptions[]).map((option) => option.value)).toEqual(
+			['CPF'],
+		);
+	});
+});
+
 describe('NiboEmpresas — the Customer operations', () => {
 	function operationValues(): string[] {
 		return (property('operation')?.options as INodePropertyOptions[]).map(
