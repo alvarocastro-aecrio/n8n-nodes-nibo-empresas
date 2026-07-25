@@ -1,9 +1,12 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
+import type { IODataCondition } from '../../transport/odata';
+import { buildODataFilter } from '../../transport/odata';
 import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
 import { niboCreate, niboSafeUpdate } from '../../transport/save';
+import { stakeholderFilterFieldTypes } from './description';
 import { normalizeStakeholder, stakeholderWriteBody } from './normalize';
 
 interface IStakeholderCollection {
@@ -92,7 +95,7 @@ export async function executeStakeholder(
 					{
 						returnAll,
 						limit: returnAll ? 0 : (this.getNodeParameter('limit', i) as number),
-						filter: this.getNodeParameter('filter', i, '') as string,
+						filter: listFilter.call(this, i),
 						failOnIncomplete: failOnIncomplete.call(this, i, options),
 						interval,
 					},
@@ -238,6 +241,98 @@ function writePayload(fields: IDataObject): IDataObject {
 	}
 
 	return payload;
+}
+
+/** One row of the condition builder, as the editor stores it */
+interface IFilterRow {
+	field?: string;
+	operator?: string;
+	/** Where a text field is typed */
+	value?: string;
+	/** The checkbox of a yes-or-no field */
+	booleanValue?: boolean;
+	/** The picker of a date field */
+	dateValue?: string;
+}
+
+/**
+ * The `$filter` this item is read with — the one decision of 0.5.0.
+ *
+ * Two modes, and one retaguarda between them. A node saved before this version
+ * carries a `filter` and no `filterType` at all: it opens in the assisted mode
+ * with no conditions in it, and it has to go on filtering by the expression its
+ * author wrote. So an assisted filter that built nothing falls back to whatever
+ * expression is stored — the same rule the interval (0.4.2) and the strict scan
+ * (0.4.3) already follow. The moment a condition exists, the conditions are
+ * what the person is looking at, and they win.
+ */
+function listFilter(this: IExecuteFunctions, itemIndex: number): string {
+	const written = () => String(this.getNodeParameter('filter', itemIndex, '') ?? '');
+
+	if (this.getNodeParameter('filterType', itemIndex, 'conditions') === 'odata') {
+		return written();
+	}
+
+	const rows = ((this.getNodeParameter('filters', itemIndex, {}) as IDataObject).conditions ??
+		[]) as IFilterRow[];
+
+	const built = buildODataFilter(
+		rows.map((row) => filterCondition.call(this, row, itemIndex)),
+		this.getNodeParameter('filterCombine', itemIndex, 'and') as string,
+	);
+
+	return built === '' ? written() : built;
+}
+
+/**
+ * One row turned into a condition the builder can write.
+ *
+ * The type comes from the menu in the description, and it is what decides the
+ * literal — so a field this version does not have a type for cannot be written
+ * at all. That can only be a node saved against a different menu, and dropping
+ * the condition would hand back more records than the workflow asked for, which
+ * is the direction a workflow deletes by. It fails instead, carrying its index.
+ */
+function filterCondition(
+	this: IExecuteFunctions,
+	row: IFilterRow,
+	itemIndex: number,
+): IODataCondition {
+	const field = String(row.field ?? '').trim();
+	const type = stakeholderFilterFieldTypes[field];
+
+	if (field !== '' && type === undefined) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`This node cannot filter on the field "${field}"`,
+			{
+				itemIndex,
+				description:
+					'It is not one of the fields the API answers a filter on. Pick another field, or switch Filter Type to OData Expression and write the expression yourself.',
+			},
+		);
+	}
+
+	return {
+		field,
+		operator: String(row.operator ?? ''),
+		// A row with no field is an unfinished row and the builder skips it — but
+		// it is still handed a type, and text is the type of nothing typed yet.
+		type: type ?? 'text',
+		value: filterValue(row, type),
+	};
+}
+
+/** Each type is collected in its own box, so the value arrives as what it is */
+function filterValue(row: IFilterRow, type: IODataCondition['type'] | undefined): unknown {
+	if (type === 'boolean') {
+		return row.booleanValue;
+	}
+	if (type === 'date') {
+		return row.dateValue;
+	}
+
+	return row.value;
 }
 
 /**

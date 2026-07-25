@@ -579,3 +579,185 @@ describe('the operations the editor offers and the handler routes', () => {
 		expect(items).toBeDefined();
 	});
 });
+
+/**
+ * The $filter the handler decides on. Two modes, one of them the builder — and
+ * the retaguarda that keeps a node saved before 0.5.0 filtering exactly as it
+ * did, which is what makes this release a zero breaking change.
+ */
+describe('executeStakeholder — the filter it sends', () => {
+	/** The $filter the handler handed to the transport */
+	function filterSent(): unknown {
+		return optionsSentToTransport().filter;
+	}
+
+	function withConditions(conditions: IDataObject[], rest: IDataObject = {}) {
+		return context({ returnAll: true, filterType: 'conditions', filters: { conditions }, ...rest });
+	}
+
+	it('builds the expression out of the conditions', async () => {
+		await executeStakeholder.call(
+			withConditions([{ field: 'name', operator: 'contains', value: 'ACME' }]),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(name,'ACME')");
+	});
+
+	// The whole reason this version exists: typed raw, this name closes the
+	// literal early and the API answers 500 with nothing pointing at the quote.
+	it('escapes the apostrophe that used to be an unexplained 500', async () => {
+		await executeStakeholder.call(
+			withConditions([{ field: 'name', operator: 'contains', value: "D'ALESSANDRO" }]),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(name,'D''ALESSANDRO')");
+	});
+
+	it('joins two conditions with and by default', async () => {
+		await executeStakeholder.call(
+			withConditions([
+				{ field: 'name', operator: 'contains', value: 'ACME' },
+				{ field: 'address/state', operator: 'eq', value: 'RJ' },
+			]),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(name,'ACME') and address/state eq 'RJ'");
+	});
+
+	it('joins them with or when that is what was chosen', async () => {
+		await executeStakeholder.call(
+			withConditions(
+				[
+					{ field: 'name', operator: 'contains', value: 'ACME' },
+					{ field: 'address/state', operator: 'eq', value: 'RJ' },
+				],
+				{ filterCombine: 'or' },
+			),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(name,'ACME') or address/state eq 'RJ'");
+	});
+
+	// Each type is collected in its own box, so the value reaches the builder as
+	// what it is — and comes out as the literal the API takes for it.
+	it('reads a yes-or-no from its checkbox and writes it bare', async () => {
+		await executeStakeholder.call(
+			withConditions([{ field: 'isCompany', operator: 'eq', booleanValue: false }]),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe('isCompany eq false');
+	});
+
+	it('reads a date from its own box and writes it bare', async () => {
+		await executeStakeholder.call(
+			withConditions([
+				{ field: 'updateDate', operator: 'ge', dateValue: '2026-07-01T00:00:00.000Z' },
+			]),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe('updateDate ge 2026-07-01T00:00:00.000Z');
+	});
+
+	it('sends the expression as it was written when the mode is OData', async () => {
+		await executeStakeholder.call(
+			context({
+				returnAll: true,
+				filterType: 'odata',
+				filter: "contains(name,'LTDA') and isCompany eq true",
+			}),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(name,'LTDA') and isCompany eq true");
+	});
+
+	/**
+	 * A node saved under 0.4.4 carries a `filter` and no `filterType` at all. It
+	 * has to go on filtering by the expression its author wrote — the same rule
+	 * the interval (0.4.2) and the strict scan (0.4.3) already follow.
+	 */
+	it('keeps filtering by the expression of a node saved before this version', async () => {
+		await executeStakeholder.call(
+			context({ returnAll: true, filter: "contains(name,'LTDA')" }),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(name,'LTDA')");
+	});
+
+	it('lets the conditions win once there is one, over an expression left behind', async () => {
+		await executeStakeholder.call(
+			withConditions([{ field: 'name', operator: 'contains', value: 'ACME' }], {
+				filter: "contains(name,'LTDA')",
+			}),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(name,'ACME')");
+	});
+
+	it('sends no filter at all when nobody asked for one', async () => {
+		await executeStakeholder.call(context({ returnAll: true }), 'customer', 'list');
+
+		expect(filterSent()).toBe('');
+	});
+
+	// A row added and left untouched is an unfinished row, not "match
+	// everything" — and it must not take the saved expression down with it.
+	it('ignores a condition with no value, and falls back to the saved expression', async () => {
+		await executeStakeholder.call(
+			withConditions([{ field: 'name', operator: 'contains', value: '' }], {
+				filter: "contains(name,'LTDA')",
+			}),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(name,'LTDA')");
+	});
+
+	/**
+	 * A field this version does not know can only come from a node saved with a
+	 * menu that is not this one. Dropping the condition would return more records
+	 * than the workflow asked for — the direction a workflow deletes by — so the
+	 * item fails, carrying its index.
+	 */
+	it('fails the item on a field it does not know, instead of widening the result', async () => {
+		const failure = executeStakeholder.call(
+			withConditions([{ field: 'document/type', operator: 'eq', value: 'CPF' }]),
+			'customer',
+			'list',
+		);
+
+		await expect(failure).rejects.toThrow(/document\/type/);
+		await expect(failure).rejects.toMatchObject({ context: { itemIndex: 0 } });
+	});
+
+	it('filters the same way on the other three types', async () => {
+		for (const resource of ['supplier', 'employee', 'partner']) {
+			listRequest.mockClear();
+			await executeStakeholder.call(
+				withConditions([{ field: 'name', operator: 'containsIgnoreCase', value: 'ACME' }]),
+				resource,
+				'list',
+			);
+
+			expect(filterSent()).toBe("contains(tolower(name),'acme')");
+		}
+	});
+});
