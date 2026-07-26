@@ -95,7 +95,7 @@ export async function executeStakeholder(
 					{
 						returnAll,
 						limit: returnAll ? 0 : (this.getNodeParameter('limit', i) as number),
-						filter: listFilter.call(this, i),
+						filter: listFilter.call(this, i, options),
 						failOnIncomplete: failOnIncomplete.call(this, i, options),
 						interval,
 					},
@@ -256,21 +256,31 @@ interface IFilterRow {
 }
 
 /**
- * The `$filter` this item is read with — the one decision of 0.5.0.
+ * The `$filter` this item is read with, in the order the three answers beat
+ * each other.
  *
- * Two modes, and one retaguarda between them. A node saved before this version
- * carries a `filter` and no `filterType` at all: it opens in the assisted mode
- * with no conditions in it, and it has to go on filtering by the expression its
- * author wrote. So an assisted filter that built nothing falls back to whatever
- * expression is stored — the same rule the interval (0.4.2) and the strict scan
- * (0.4.3) already follow. The moment a condition exists, the conditions are
- * what the person is looking at, and they win.
+ * 1. **The expression written by hand wins.** Someone who added Filter (OData)
+ *    and typed into it said something more specific than a menu can, and it is
+ *    what the node sends.
+ * 2. **Otherwise the conditions are built.**
+ * 3. **Otherwise the expression a node saved before 0.5.1 still carries.** Back
+ *    then `filter` was a field in the body of the node; it is an Option now, and
+ *    the stored value is read here so that node goes on filtering exactly as it
+ *    did — the same retaguarda the interval (0.4.2) and the strict scan (0.4.3)
+ *    already have.
+ *
+ * That last one is a fallback and never an override: it is a value nobody can
+ * see any more, and a value nobody can see must not quietly beat the conditions
+ * someone is looking at.
  */
-function listFilter(this: IExecuteFunctions, itemIndex: number): string {
-	const written = () => String(this.getNodeParameter('filter', itemIndex, '') ?? '');
-
-	if (this.getNodeParameter('filterType', itemIndex, 'conditions') === 'odata') {
-		return written();
+function listFilter(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	options: IDataObject,
+): string {
+	const written = typeof options.filter === 'string' ? options.filter.trim() : '';
+	if (written !== '') {
+		return written;
 	}
 
 	const rows = ((this.getNodeParameter('filters', itemIndex, {}) as IDataObject).conditions ??
@@ -281,7 +291,7 @@ function listFilter(this: IExecuteFunctions, itemIndex: number): string {
 		this.getNodeParameter('filterCombine', itemIndex, 'and') as string,
 	);
 
-	return built === '' ? written() : built;
+	return built === '' ? String(this.getNodeParameter('filter', itemIndex, '') ?? '') : built;
 }
 
 /**

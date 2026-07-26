@@ -347,6 +347,14 @@ describe('NiboEmpresas — the Customer operations', () => {
 describe('NiboEmpresas — the assisted filter', () => {
 	const TYPES = ['customer', 'employee', 'partner', 'supplier'];
 
+	/** One field of the Options collection, which is the last parameter of the node */
+	function option(name: string): INodeProperties | undefined {
+		const options = description.properties[description.properties.length - 1];
+		expect(options?.name).toBe('options');
+
+		return ((options?.options ?? []) as INodeProperties[]).find((field) => field.name === name);
+	}
+
 	/** The fields of one row of the condition builder */
 	function conditionFields(): INodeProperties[] {
 		const collections = (property('filters')?.options ?? []) as Array<{
@@ -378,27 +386,35 @@ describe('NiboEmpresas — the assisted filter', () => {
 	});
 
 	/**
-	 * Zero breaking change, and it has to be zero on screen too. The published
-	 * parameter keeps its name, its type, its behavior — and its place: it is
-	 * shown in **both** modes.
+	 * Writing OData by hand is the exception, not the way in — so since 0.5.1 it
+	 * is an Option at the end of the node, opt-in, where the interval (0.4.2) and
+	 * the strict scan (0.4.3) already live. The body asks only what the operation
+	 * needs.
 	 *
-	 * Hiding it in the assisted mode was the first shape of this version, and it
-	 * had a trap. The editor drops the value of a parameter it is not showing as
-	 * soon as anything else on the node is changed, so a node saved on 0.4.x
-	 * would have filtered correctly right up until someone edited its limit, and
-	 * then lost the expression with nothing said. One box on screen buys that
-	 * away.
+	 * The name does not change, because it is the value a node saved before that
+	 * still carries.
 	 */
-	it('never hides the published OData field, whichever mode is chosen', () => {
-		const filter = property('filter');
+	it('offers the raw expression as an option at the end, not as a field of the body', () => {
+		expect(property('filter')).toBeUndefined();
+
+		const filter = option('filter');
 
 		expect(filter?.type).toBe('string');
 		expect(filter?.default).toBe('');
-		expect(filter?.displayOptions?.show).not.toHaveProperty('filterType');
 	});
 
-	it('offers the four filter parameters on Get Many of all four types', () => {
-		for (const name of ['filterType', 'filters', 'filterCombine', 'filter']) {
+	// The two sets of fields are what Filter Type switches between, so the option
+	// is offered in the mode that is about it — and only on a scan, which is the
+	// only operation with anything to filter.
+	it('offers that option only in the OData mode of Get Many', () => {
+		expect(option('filter')?.displayOptions?.show).toEqual({
+			'/operation': ['list'],
+			'/filterType': ['odata'],
+		});
+	});
+
+	it('offers the three filter parameters on Get Many of all four types', () => {
+		for (const name of ['filterType', 'filters', 'filterCombine']) {
 			expect(property(name)?.displayOptions?.show?.operation).toEqual(['list']);
 			expect(property(name)?.displayOptions?.show?.resource).toEqual(TYPES);
 		}

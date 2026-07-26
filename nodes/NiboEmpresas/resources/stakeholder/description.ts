@@ -593,12 +593,13 @@ export const stakeholderFields: INodeProperties[] = [
 			{
 				name: 'OData Expression',
 				value: 'odata',
-				description: 'Write the expression yourself, for what the conditions cannot say',
+				description:
+					'Write the expression yourself, in Filter (OData) under Options at the end of the node',
 			},
 		],
 		default: 'conditions',
 		description:
-			'How the results are narrowed on the server. Conditions writes the expression for you, quoting each value and escaping the apostrophes an expression written by hand trips over. OData Expression stays for everything the conditions do not cover, such as nested groups. A node saved before this field existed keeps filtering by the expression it already had — switch to OData Expression to see it.',
+			'How the results are narrowed on the server. Conditions writes the expression for you, quoting each value and escaping the apostrophes an expression written by hand trips over. OData Expression takes the one you write in Filter (OData), under Options at the end of the node, and stays for everything the conditions do not cover, such as nested groups. A node saved before this field existed keeps filtering by the expression it already had, with nothing to redo.',
 		displayOptions: {
 			show: {
 				resource: EVERY_TYPE,
@@ -654,29 +655,12 @@ export const stakeholderFields: INodeProperties[] = [
 			},
 		},
 	},
-	// Unchanged since 0.2.0, on purpose: same name, same type, same behavior,
-	// and shown in both modes. It is a permanent escape hatch, not a deprecated
-	// field.
+	// The raw expression is no longer here: since 0.5.1 it is an Option at the
+	// end of the node, opt-in, like the interval (0.4.2) and the strict scan
+	// (0.4.3) before it. The body of the node asks only what the operation
+	// needs, and writing OData by hand is the exception, not the way in.
 	//
-	// Hiding it in the assisted mode was the first shape of 0.5.0, and it had a
-	// trap: the editor drops the value of a parameter it is not showing the
-	// moment anything else on the node is changed. A node saved on 0.4.x would
-	// have gone on filtering right up until someone edited its limit — and then
-	// lost the expression without being told. Staying on screen costs one box
-	// and takes that away.
-	{
-		displayName: 'Filter (OData)',
-		name: 'filter',
-		type: 'string',
-		default: '',
-		placeholder: "contains(name,'LTDA')",
-		description:
-			"OData expression sent as $filter, to narrow the results on the server. Accented text needs no special treatment, e.g. contains(name,'SERVIÇOS'). An apostrophe does: it has to be doubled, as in contains(name,'D''ALESSANDRO') — which is what the Conditions mode does for you. With Filter Type on Conditions this expression is used only while there is no condition set, so a node that filtered by it before goes on filtering by it.",
-		displayOptions: {
-			show: {
-				resource: EVERY_TYPE,
-				operation: ['list'],
-			},
-		},
-	},
+	// The parameter keeps its name, so a node saved with it still carries the
+	// expression it was filtering by — see `listFilter` in execute.ts, which
+	// reads the option first and that stored value second.
 ];

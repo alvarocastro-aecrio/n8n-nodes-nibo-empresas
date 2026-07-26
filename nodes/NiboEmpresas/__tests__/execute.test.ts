@@ -670,12 +670,12 @@ describe('executeStakeholder — the filter it sends', () => {
 		expect(filterSent()).toBe('updateDate ge 2026-07-01T00:00:00.000Z');
 	});
 
-	it('sends the expression as it was written when the mode is OData', async () => {
+	it('sends the expression as it was written when one was added under Options', async () => {
 		await executeStakeholder.call(
 			context({
 				returnAll: true,
 				filterType: 'odata',
-				filter: "contains(name,'LTDA') and isCompany eq true",
+				options: { filter: "contains(name,'LTDA') and isCompany eq true" },
 			}),
 			'customer',
 			'list',
@@ -684,10 +684,37 @@ describe('executeStakeholder — the filter it sends', () => {
 		expect(filterSent()).toBe("contains(name,'LTDA') and isCompany eq true");
 	});
 
+	// Someone who wrote an expression by hand said something more specific than
+	// a menu can, so it is what the node sends.
+	it('lets the written expression override the conditions', async () => {
+		await executeStakeholder.call(
+			withConditions([{ field: 'name', operator: 'contains', value: 'ACME' }], {
+				options: { filter: "contains(name,'LTDA')" },
+			}),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(name,'LTDA')");
+	});
+
+	it('falls back to the conditions when the option is there but empty', async () => {
+		await executeStakeholder.call(
+			withConditions([{ field: 'name', operator: 'contains', value: 'ACME' }], {
+				options: { filter: '   ' },
+			}),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(name,'ACME')");
+	});
+
 	/**
-	 * A node saved under 0.4.4 carries a `filter` and no `filterType` at all. It
-	 * has to go on filtering by the expression its author wrote — the same rule
-	 * the interval (0.4.2) and the strict scan (0.4.3) already follow.
+	 * A node saved under 0.4.4 carries `filter` as a field of the body, with no
+	 * `filterType` and no option. It has to go on filtering by the expression its
+	 * author wrote — the same rule the interval (0.4.2) and the strict scan
+	 * (0.4.3) already follow.
 	 */
 	it('keeps filtering by the expression of a node saved before this version', async () => {
 		await executeStakeholder.call(
@@ -699,7 +726,13 @@ describe('executeStakeholder — the filter it sends', () => {
 		expect(filterSent()).toBe("contains(name,'LTDA')");
 	});
 
-	it('lets the conditions win once there is one, over an expression left behind', async () => {
+	/**
+	 * And that stored value is a fallback, never an override. It is a value
+	 * nobody can see any more — the field it was typed into is an Option now —
+	 * and a value nobody can see must not quietly beat the conditions someone is
+	 * looking at.
+	 */
+	it('never lets that invisible expression beat the conditions on screen', async () => {
 		await executeStakeholder.call(
 			withConditions([{ field: 'name', operator: 'contains', value: 'ACME' }], {
 				filter: "contains(name,'LTDA')",

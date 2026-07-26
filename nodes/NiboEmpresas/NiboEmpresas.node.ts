@@ -143,6 +143,23 @@ export class NiboEmpresas implements INodeType {
 						},
 					},
 					{
+						displayName: 'Filter (OData)',
+						name: 'filter',
+						type: 'string',
+						default: '',
+						placeholder: "contains(name,'LTDA')",
+						description:
+							"OData expression sent as $filter, written by hand, for what the conditions cannot say — a nested group such as (A or B) and C. Accented text needs no special treatment, e.g. contains(name,'SERVIÇOS'). An apostrophe does: it has to be doubled, as in contains(name,'D''ALESSANDRO'), which is exactly what the Conditions mode does for you. Filled in, it is what filters: it overrides the conditions.",
+						// Only a scan has anything to filter, and Filter Type is what
+						// decides which of the two sets of fields is on screen.
+						displayOptions: {
+							show: {
+								'/operation': ['list'],
+								'/filterType': ['odata'],
+							},
+						},
+					},
+					{
 						displayName: 'Interval Between Requests',
 						name: 'requestInterval',
 						type: 'number',
