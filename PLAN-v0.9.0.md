@@ -269,8 +269,11 @@ sondas, cada um com seu `DELETE` confirmado em 204. A cobaia terminou com
 
 ## 6. Teste e aceite
 
-**Gate local (a cumprir):** `npm run lint`, `npm run lint:community`, `npm test`,
-`npm run build`, `npm pack` — todos verdes antes da publicação.
+**Gate local:** ☑ cumprido em 2026-07-26, com o código das seis fatias escrito —
+`npm run lint`, `npm run lint:community`, `npm test` (558 testes), `npm run build` e
+`npm pack` todos verdes. ⚠️ `npx @n8n/scan-community-package` lê o pacote **publicado**,
+não o local: na corrida desta versão ele analisou a 0.8.2 e disse que passou. Não é
+evidência sobre a 0.9.0 — é o mesmo buraco que a nota do CI já registra.
 
 | ☑ | Item | Como será conferido |
 |---|---|---|
@@ -288,3 +291,50 @@ sondas, cada um com seu `DELETE` confirmado em 204. A cobaia terminou com
 | ☐ | Um node salvo na 0.8.2 executa sem ser tocado | Criação e update de agendamento, e Category · Get Many |
 | ☐ | A cobaia termina sem centro de custo e sem agendamento de sonda | `count: 0` nos dois |
 | ☐ | **Instalação real (regra 7)** | Tela Community Nodes de uma instância limpa, com o pacote vindo do npm |
+
+---
+
+## 7. O que a construção mediu além do plano, e onde ele foi contrariado
+
+Escrito em 2026-07-26, depois das seis fatias. Só leitura: nenhuma escrita nova na cobaia.
+
+### 7.1 Duas lacunas que o plano deixou em aberto, medidas antes do código
+
+1. **A chave de paginação dos grupos, e a armadilha nela.** A fatia 1 pedia "pagina com
+   `$orderby`" sem dizer com qual chave. `GET /schedules/categories/groups?$orderby=id`
+   responde **200 e não ordena** — devolve a mesma ordem arbitrária de quando não se manda
+   chave nenhuma. Como chave de paginação isso lê registro duas vezes e perde outro **sem
+   erro nenhum**. `referenceCode` e `name` ordenam de verdade; ficou `referenceCode`, que é
+   também a ordem em que um plano de contas se lê. `$skip` sem `$orderby` → 500, como no
+   resto da API. **Regra que fica: não basta a chave responder 200, ela tem que mudar a
+   ordem.**
+2. **A forma exata da árvore**, que a decisão 9 precisava para montar a lista de subgrupos.
+   Array puro de 5 nós de grupo `{id, name, order, referenceCode, children}` —
+   `referenceCode` **número** onde `/categories` manda texto. Um filho é folha
+   (`{id, name, order, type, isEditable, isDeleted, isSubgroup:false}`) ou subgrupo
+   (`isSubgroup: true`, com `children` próprios e **sem** `type`). Os IDs de grupo da árvore
+   são os mesmos de `/groups`, então a lista de subgrupo filtra pelo grupo escolhido.
+
+### 7.2 Onde o plano foi contrariado, e por quê
+
+**A seção 3 dizia que `transport/*` e `resources/shared/*` não mudam. Mudaram.** A decisão 5
+manda oferecer **ID** no filtro assistido do centro de custo, e um ID desta API compara
+**sem aspas** — `costCenterId eq '<guid>'` é 500 *"Found operand types 'Edm.Guid' and
+'Edm.String'"*, medido de novo aqui junto com o mesmo caso em `/categories`. Todo literal
+que o construtor de OData escreve para texto é aspeado, então a única forma de cumprir a
+decisão 5 sem oferecer um item de menu que responde 500 sempre era um tipo `guid` no
+`transport/odata.ts` e sua caixa em `resources/shared/filter.ts`. O tipo recusa um valor
+malformado **antes** da requisição, porque uma condição que o servidor rejeita é uma
+varredura que volta vazia — e vazia se lê como "não há registros".
+
+### 7.3 Decisões de recorte que a tela obrigou
+
+- **Subgrupo ficou em *Additional Fields***, não no corpo: não é preciso para a operação
+  acontecer (CLAUDE §4.1, corolário). A decisão 9 autorizava o campo a existir, não o lugar.
+- **Uma caixa de *Share* por linha, não uma por espécie.** É o que faz "nunca os dois"
+  (decisão 7) ser propriedade do formulário e não intenção do handler.
+- **No *Update Fields*, linha sem *Apportion By* é recusada** em vez de assumir percentual.
+  Num agendamento rateado por valor, assumir converteria valores em percentuais em silêncio.
+- **O rótulo do parâmetro da árvore não diz "NFS-e".** O linter do n8n põe todo display name
+  em title case e transforma `NFS-e` em `NFS-E`, grafia que o documento não tem. O nome do
+  documento ficou na descrição, onde nada o reescreve.

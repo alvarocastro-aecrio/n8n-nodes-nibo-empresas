@@ -6,7 +6,7 @@ This is an [n8n](https://n8n.io/) community node. It lets you use the **Nibo Emp
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-> **Status: early development (v0.7.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
+> **Status: early development (v0.9.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
 
 ## Installation
 
@@ -22,25 +22,28 @@ n8n-nodes-nibo-empresas
 
 ## Operations
 
-Seven resources in three families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
+Eight resources in four families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
 
 | Family | Resources, as the menu names them | What they are |
 |---|---|---|
 | **Contacts** | Contact - Customer · Contact - Employee · Contact - Partner · Contact - Supplier | Who you buy from, sell to, employ or share the company with |
 | **Schedules** | Schedule - Credit · Schedule - Debit | Accounts receivable and accounts payable — an amount due on a date |
-| **Category** | Category | The chart of accounts a schedule is filed under. **Get Many** only |
+| **Category** | Category | The chart of accounts a schedule is filed under. Everything but **Update** and **Delete**, which this API does not have |
+| **Cost Center** | Cost Center | The part of the company an amount belongs to. All five operations |
 
 The family word is part of each name on purpose: the editor builds its **Actions** tab from the Resource menu in the order it is declared, so the names are what put a family together there instead of scattering it alphabetically between the others. It is a label and nothing else — the value the workflow stores (`customer`, `creditSchedule`, …) has never changed.
 
-Contacts and schedules have the same five operations each. **Category has only Get Many**, because that is the only route the API offers for it.
+Contacts, schedules and cost centers have the same five operations each. **Category has no Update and no Delete**, because the API has no route for either — see [Categories](#categories).
 
 | Operation | Notes |
 |---|---|
 | Create | Adds a record and returns it as Nibo stored it |
 | Delete | Removes it and returns `{ id, deleted: true }` |
 | Get | Returns one record by ID |
-| Get Many | Returns the collection, paging through it when needed. A stable sort is always applied — `$orderby=id` for a contact or a category, `$orderby=scheduleId` for a schedule. |
+| Get Many | Returns the collection, paging through it when needed. A stable sort is always applied, and the key differs per collection — `$orderby=id` for a contact or a category, `$orderby=scheduleId` for a schedule, `$orderby=costCenterId` for a cost center. |
 | Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
+
+Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show.
 
 Every resource that works on a single record has its own ID field (**Customer ID**, **Supplier ID**, **Credit Schedule ID**, …), so a workflow that already names one keeps working when others are added.
 
@@ -57,6 +60,23 @@ Every resource that works on a single record has its own ID field (**Customer ID
 Creating one asks for what the API refuses a creation without: the **Stakeholder**, the **Due Date**, the **Schedule Date** and at least one line under **Categories**. **Description** and **Is Flagged** are on the form too, since a schedule with no description is a line nobody can read later in Nibo. **Reference** lives under *Additional Fields*.
 
 On **Update** those two are back inside *Update Fields*, and that is deliberate: there, a field on the screen is a field that gets written, so a visible empty Description would erase the stored one every time anything else changed.
+
+#### Apportionment across cost centers
+
+A schedule can also be split across **cost centers**, which is a different question from the category: a category says *what* an amount is, a cost center says *whose* it is. **Apportion By** decides how each line is read and **Cost Centers** holds the lines.
+
+| Apportion By | Each line carries | The API requires |
+|---|---|---|
+| **Percentage** | A share of the whole | The shares to add up to **100** |
+| **Value** | An amount | The amounts to add up to the **amount of the schedule** |
+
+There is one **Share** box per line rather than one per kind, and that is the point: which of the two the number becomes is decided once, above the lines, so a line can never carry both. Sending both is the mistake this API reports worst — it answers *"A soma dos valores totais dos Centros de Custo deve ser igual ao valor do agendamento"* to somebody who typed percentages, complaining about the sum and never about the pair. When either sum error comes back, the node keeps the API's sentence and adds that underneath.
+
+Unlike splitting across **categories**, several cost center lines need nothing turned on in Nibo.
+
+Both fields are on the creation form and inside *Update Fields*. **With no line at all, neither reaches the API** — so a schedule created or updated without an apportionment is written exactly as it was before this existed, and an existing apportionment survives an update that does not mention it.
+
+> On an update, adding **Cost Centers** without **Apportion By** fails rather than picking one for you. The same number means 70% under one and R$ 70 under the other, and guessing would quietly turn the amounts of a value apportionment into percentages.
 
 **The contact is searched for, not pasted.** Type part of a name and the search runs **on the server** — an organization can hold thousands of customers, so nothing is loaded up front and nothing is silently capped. The list offers only the kinds the API accepts on that side, which is a rule of Nibo's and not of this node:
 
@@ -98,7 +118,23 @@ Two more behaviors of this API that a workflow will meet:
 
 ### Categories
 
-The chart of accounts. **Get Many** is the only operation, because it is the only route the API has: `GET /categories/{id}` answers 404, and creating one has never been verified, so neither is offered.
+The chart of accounts. Five operations, where 0.8.x had one:
+
+| Operation | What it reads or writes |
+|---|---|
+| **Get Many** | The categories of the organization, filtered and paged like any other collection |
+| **Get** | One category by ID |
+| **Get Many Groups** | The groups the chart of accounts is divided into — five on a new organization |
+| **Get Tree** | The whole hierarchy: groups, **subgroups** and the categories inside them |
+| **Create** | Adds a category under a group, and optionally inside a subgroup |
+
+> ⚠️ **Creating a category cannot be undone.** This API has no way to edit or delete one — `PUT` and `DELETE` are 404 at every address that was tried. A category created with the wrong name stays until somebody fixes it on Nibo's own screen. The node says so above the fields rather than in a footnote.
+
+Up to 0.8.2 this section said a category was read-only, because `POST`, `PUT`, `DELETE` and `GET /categories/{id}` all answer 404. The 404s were real; the conclusion was not. **The rest of the family lives under `/schedules/categories`**, where creating, reading one by ID, listing the groups and reading the tree all answer 200. Update and delete are genuinely absent — 404 in both paths.
+
+**Get** reads through the list filtered by ID rather than through the route that reads one record, so that Get and Get Many hand back the very same record. That route exists and answers 200, but it drops `subgroupId` and `subgroupName` — a node that answered one shape here and another there would be inventing a difference the API does not have.
+
+**Get Tree** is the only place a **subgroup** exists. They appear in no answer of `GET /categories` — only the `subgroupId` of the categories that sit inside them. It takes two flags, both optional and both off unless you turn them on: **Include Deleted Categories**, and **Only Service Invoice Categories**, which narrows the tree to what an NFS-e amount can be composed of.
 
 Each category carries a `name`, a `referenceCode`, a `group` and a `type` — `in` for revenue, `out` for expense. The assisted filter offers **Name**, **Reference Code**, **Type**, **Group Name** and **Is Editable**; *Type* is a list, since `in` and `out` are not what anyone would guess for revenue and expense.
 
@@ -115,6 +151,18 @@ Each category carries a `name`, a `referenceCode`, a `group` and a `type` — `i
 | **Filters** · **Combine Conditions** | The conditions to narrow the result by, joined by *And* or by *Or* — see [Filtering](#filtering) |
 
 Under **Options**, at the end of the node, live **Filter (OData)** — for an expression written by hand — and **Fail on Incomplete Results**, which *Return All* brings with it (see *Incomplete results* below).
+
+### Cost centers
+
+The other classifier this API has. A category says **what** an amount is; a cost center says **which part of the company** it belongs to — a branch, a project, a team. A schedule can carry both, and [Apportionment across cost centers](#apportionment-across-cost-centers) is where that is filled in.
+
+All five operations, and unlike a category this family is **reversible**: create, edit and delete all answer. Creating one asks for a **Description**, which the API refuses a creation without, and offers an **External Code** under *Additional Fields* — a code of your own, from whatever system the company already keeps them in.
+
+The assisted filter offers **Description**, **External Code** and **ID**, and nothing else: those are the three that were checked against the API.
+
+> **A cost center is read by `costCenterId`, not by `id`.** That is what this collection calls its key — `$orderby=id` is an HTTP 500 here — and it is the field to read the ID out of.
+
+> **An organization starts with no cost center at all.** Unlike the chart of accounts, which arrives filled in, these are something somebody creates. An empty list on a schedule's apportionment field says so rather than showing an empty box.
 
 ### Filtering
 
@@ -141,8 +189,11 @@ The fields on offer are the ones the API actually filters on, checked against it
 | **Contacts** | Name · Document Number · Email · Phone · Trading Name · City · State · Is Company · Is Archived · Updated At |
 | **Schedules** | Description · Reference · Stakeholder Name · Value · Due Date · Schedule Date · Accrual Date · Created At · Updated At · Is Paid · Is Overdue · Is Flagged · Has Invoice |
 | **Category** | Name · Reference Code · Type · Group Name · Is Editable |
+| **Cost Center** | Description · External Code · ID |
 
-What is deliberately missing from each is missing for a measured reason. On a contact, the **document type**: `document/type eq 'Cpf'` is an HTTP 500, because that enum does not compare — filter by **Document Number** instead. On a schedule, the **type** (a constant inside either collection, so it could only ever answer "yes" or "nothing"), **`isDeleted`** (a 500 — the field is not on this view) and **`costCenterValueType`** (a 500, the same enum problem as the document type). On a category, **`isDeleted`** again.
+What is deliberately missing from each is missing for a measured reason. On a contact, the **document type**: `document/type eq 'Cpf'` is an HTTP 500, because that enum does not compare — filter by **Document Number** instead. On a schedule, the **type** (a constant inside either collection, so it could only ever answer "yes" or "nothing"), **`isDeleted`** (a 500 — the field is not on this view) and **`costCenterValueType`** (a 500, the same enum problem as the document type). On a category and on a cost center, **`isDeleted`** again.
+
+> **An ID is the one value this API takes unquoted.** `costCenterId eq '2efffcd0-…'` is an HTTP 500 naming the two types it could not compare — *'Edm.Guid' and 'Edm.String'* — and the same expression without the quotes answers 200. It is the exact opposite of what every text field here requires, so **ID** is a kind of its own: the node writes the literal bare, and refuses a value that is not an ID before sending it, because a condition the server rejects is a scan that returns nothing and reads as "no records".
 
 Worth noticing across those two lines: a category's **Type** *is* offered, while a contact's document type is not, even though both are enums of text. One compares and the other answers 500. Neither was assumed — each was asked.
 
@@ -164,6 +215,10 @@ What the API refuses a creation without is asked for up front; everything else l
 - **Email is one string holding every address, separated by commas** (`billing@example.com,accounts@example.com`). This API keeps a contact's e-mails in a single field, not in a list.
 
 **For a schedule** it is the **Stakeholder**, the **Due Date**, the **Schedule Date** and the **Categories** lines — plus **Accrual Date**, which is optional and still on the screen. See [Schedules](#schedules) for why.
+
+**For a cost center** it is the **Description**, which the API refuses a creation without.
+
+**For a category** it is the **Category Group**, the **Name** and the **Type**, with **Subgroup** under *Additional Fields*. This is the one creation of this node that **cannot be undone** — see [Categories](#categories).
 
 ### Update
 
@@ -306,6 +361,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.8.0 | **The contact of a schedule is chosen by searching.** What 0.7.0 did for the category, now for the stakeholder — but as a search rather than a list, because an organization can hold thousands of customers and loading them would be 28 calls to open a field. What is typed goes to the server. The list offers only the kinds the API accepts on each side: customer or partner on a credit schedule, supplier, employee or partner on a debit one, measured as a full matrix against the API. **By ID** stays, so an expression still gets in, and a node saved under 0.7.x keeps working untouched. The same search is offered inside *Update Fields*, so changing a contact is choosing one as well |
 | 0.8.1 | **The category list stops offering what a schedule cannot be filed under.** A schedule created with *"Outras receitas"* is accepted by the API and then shows up broken on Nibo's own screen — one category inside the entry, another outside it with no value. Measured family by family against the API: withheld-tax categories do the same, discounts are refused by the API itself, and interest reads correctly and stays on the list. The three that cannot work are filtered out on the server, in the call the field already made, and the node now explains the API's *"Categoria de juros, multa ou desconto invalida"* when an ID from an expression runs into it |
 | 0.8.2 | **The Actions tab reads by family.** The editor builds that tab from the Resource menu in the order it is declared, one heading per resource and no sorting of its own — so seven bare names in alphabetical order put *Credit Schedule* between *Category* and *Customer*, and the tab looked like a pile of unrelated things. Each resource now carries its family word (*Contact - Customer*, *Schedule - Credit*), which groups the menu **and** stays alphabetical, so nothing had to be forced. Labels only: the values a workflow stores are untouched, and the ID fields are still *Customer ID* and *Credit Schedule ID*. Also fixed, from the same look at the screen: the node had been offering *"Create a employee"* since 0.4.0 |
+| 0.9.0 | **The family of classifiers, closed.** Category gains **Get**, **Get Many Groups**, **Get Tree** and **Create** — four operations this project had written off, because `POST`, `PUT`, `DELETE` and `GET /categories/{id}` all answer 404 and that was read as "a category is read-only". The 404s were real; the conclusion was not. **The writing family lives under `/schedules/categories`**, and everything but update and delete answers 200 there. Those two are genuinely absent in both paths, which makes **creating a category an act with no way back** — the node says so above the button rather than in a footnote. The new **Cost Center** resource is the other classifier of this API and has all five operations, being reversible; its key is `costCenterId`, not `id`. And the finding that pays for the version on its own: **a schedule accepts an apportionment across cost centers** and the node offered no way to say it. **Apportion By** and **Cost Centers** are on the creation form and inside *Update Fields*; with no line, neither reaches the API, so every schedule written by 0.8.2 is written identically and an existing apportionment survives an update that does not mention it |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
