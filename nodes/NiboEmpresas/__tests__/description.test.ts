@@ -682,6 +682,37 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 		expect(forSchedules('accrualDate')?.description).toMatch(/copies the due date/i);
 	});
 
+	/**
+	 * A schedule falls due on a **day**. The API takes `YYYY-MM-DD` and there is
+	 * no hour in any of these three, so offering a clock is offering a decision
+	 * that does not exist — and one that has a wrong answer, since the editor
+	 * hands over the moment with its offset and `2026-08-10T00:00:00-03:00` is
+	 * the 9th in UTC.
+	 *
+	 * `dateOnly` settles both at once: the picker loses its clock, and the value
+	 * is stored as the plain day the API wants.
+	 */
+	it.each(['dueDate', 'scheduleDate', 'accrualDate'])(
+		'asks %s as a day, with no clock on it',
+		(name) => {
+			const field = forSchedules(name);
+
+			expect(field?.type).toBe('dateTime');
+			expect(field?.typeOptions?.dateOnly).toBe(true);
+		},
+	);
+
+	it.each(['dueDate', 'scheduleDate', 'accrualDate'])(
+		'asks %s the same way inside Update Fields',
+		(name) => {
+			const field = ((forSchedules('updateFields')?.options ?? []) as INodeProperties[]).find(
+				(one) => one.name === name,
+			);
+
+			expect(field?.typeOptions?.dateOnly).toBe(true);
+		},
+	);
+
 	// There is no total field to fill in: the amount of a schedule is the sum of
 	// its lines, and that is the API's own arithmetic, not ours.
 	it('collects the categories as the lines the payload is made of', () => {

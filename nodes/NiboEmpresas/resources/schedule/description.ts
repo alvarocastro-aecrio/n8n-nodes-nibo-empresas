@@ -307,6 +307,14 @@ export const scheduleFields: INodeProperties[] = [
 		displayName: 'Due Date',
 		name: 'dueDate',
 		type: 'dateTime',
+		typeOptions: {
+			// A schedule falls due on a day. The API takes YYYY-MM-DD and there is no
+			// hour in any of these, so a clock offers a decision that does not exist —
+			// and one with a wrong answer, since the editor hands over the moment with
+			// its offset and 2026-08-10T00:00:00-03:00 is the 9th in UTC. `dateOnly`
+			// drops the clock AND stores the plain day, which is what the API takes.
+			dateOnly: true,
+		},
 		required: true,
 		default: '',
 		description: 'The date the amount falls due',
@@ -321,6 +329,14 @@ export const scheduleFields: INodeProperties[] = [
 		displayName: 'Schedule Date',
 		name: 'scheduleDate',
 		type: 'dateTime',
+		typeOptions: {
+			// A schedule falls due on a day. The API takes YYYY-MM-DD and there is no
+			// hour in any of these, so a clock offers a decision that does not exist —
+			// and one with a wrong answer, since the editor hands over the moment with
+			// its offset and 2026-08-10T00:00:00-03:00 is the 9th in UTC. `dateOnly`
+			// drops the clock AND stores the plain day, which is what the API takes.
+			dateOnly: true,
+		},
 		required: true,
 		default: '',
 		description:
@@ -339,6 +355,14 @@ export const scheduleFields: INodeProperties[] = [
 		displayName: 'Accrual Date',
 		name: 'accrualDate',
 		type: 'dateTime',
+		typeOptions: {
+			// A schedule falls due on a day. The API takes YYYY-MM-DD and there is no
+			// hour in any of these, so a clock offers a decision that does not exist —
+			// and one with a wrong answer, since the editor hands over the moment with
+			// its offset and 2026-08-10T00:00:00-03:00 is the 9th in UTC. `dateOnly`
+			// drops the clock AND stores the plain day, which is what the API takes.
+			dateOnly: true,
+		},
 		default: '',
 		description:
 			'The month this belongs to in the books. Left empty, the API silently copies the due date — which files the income or the expense in the month the money moves rather than the month it was earned or incurred.',
@@ -407,6 +431,14 @@ export const scheduleFields: INodeProperties[] = [
 				displayName: 'Accrual Date',
 				name: 'accrualDate',
 				type: 'dateTime',
+				typeOptions: {
+					// A schedule falls due on a day. The API takes YYYY-MM-DD and there is no
+					// hour in any of these, so a clock offers a decision that does not exist —
+					// and one with a wrong answer, since the editor hands over the moment with
+					// its offset and 2026-08-10T00:00:00-03:00 is the 9th in UTC. `dateOnly`
+					// drops the clock AND stores the plain day, which is what the API takes.
+					dateOnly: true,
+				},
 				default: '',
 				description: 'The month this belongs to in the books',
 			},
@@ -414,6 +446,14 @@ export const scheduleFields: INodeProperties[] = [
 				displayName: 'Due Date',
 				name: 'dueDate',
 				type: 'dateTime',
+				typeOptions: {
+					// A schedule falls due on a day. The API takes YYYY-MM-DD and there is no
+					// hour in any of these, so a clock offers a decision that does not exist —
+					// and one with a wrong answer, since the editor hands over the moment with
+					// its offset and 2026-08-10T00:00:00-03:00 is the 9th in UTC. `dateOnly`
+					// drops the clock AND stores the plain day, which is what the API takes.
+					dateOnly: true,
+				},
 				default: '',
 				description: 'The date the amount falls due',
 			},
@@ -421,6 +461,14 @@ export const scheduleFields: INodeProperties[] = [
 				displayName: 'Schedule Date',
 				name: 'scheduleDate',
 				type: 'dateTime',
+				typeOptions: {
+					// A schedule falls due on a day. The API takes YYYY-MM-DD and there is no
+					// hour in any of these, so a clock offers a decision that does not exist —
+					// and one with a wrong answer, since the editor hands over the moment with
+					// its offset and 2026-08-10T00:00:00-03:00 is the 9th in UTC. `dateOnly`
+					// drops the clock AND stores the plain day, which is what the API takes.
+					dateOnly: true,
+				},
 				default: '',
 				description: 'The date the money is expected to move',
 			},
