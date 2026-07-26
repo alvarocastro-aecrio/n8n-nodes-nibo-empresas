@@ -62,7 +62,7 @@ Creating one asks for what the API refuses a creation without: the **Stakeholder
 Two more behaviors of this API that a workflow will meet:
 
 - **A deleted schedule read by ID answers HTTP 500**, carrying `Agendamento não encontrado` — a *not found* wearing a server error. The node reads the body and hands the sentence over (see [Errors](#errors)), so it is legible rather than "the service failed".
-- **The listing is eventually consistent.** Seconds after a `DELETE` answered 204, the collection still returned the record that Get already denied. Deleting and re-listing in the same breath can show you what you deleted.
+- **The listing is eventually consistent, in both directions**, and this is the one a workflow trips over. Measured: a schedule the get-by-id already answers is **absent from its collection for a second or two** after being created, and a schedule that `DELETE` answered 204 for is still **in** the collection for a few seconds after. A **Create** followed straight by a **Get Many** can miss what it just made, and a **Delete** followed straight by a **Get Many** can still show it. Chain by the ID the create hands back — **Get** is consistent immediately — rather than by re-listing.
 
 The dates you pick travel as the **day** you picked, cut rather than converted: the editor hands over `2026-08-10T00:00:00.000-03:00`, which is the 9th in UTC, and a schedule that falls due one day early is a schedule that is overdue one day early.
 

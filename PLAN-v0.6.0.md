@@ -233,20 +233,47 @@ descrição de booleano começa com "Whether", nada de `{{ $json… }}` em descr
 ## 7. Teste e aceite
 
 **Gate local:** `npm run lint`, `npm run lint:community`, `npm test`, `npm run build`,
-`npm pack` — todos verdes.
+`npm pack` — todos verdes na 0.6.0, com **328 testes**.
 
-**Teste de instalação real (regra 7)**, com a 0.6.0 instalada pela tela Community Nodes,
-contra a cobaia:
+**Aceite funcional (2026-07-26)** — o pacote **publicado** `n8n-nodes-nibo-empresas@0.6.0`
+baixado do npm e executado contra a cobaia, 35 verificações:
 
-| ☐ | Get Many nos dois recursos, com filtro assistido: *Due Date depois de* + *Is Paid é falso*; *Value maior que* com centavos |
-| ☐ | Get devolve o agendamento pelo ID; ID de débito no recurso de crédito **falha dizendo o tipo real** |
-| ☐ | Create de um recebimento na cobaia devolve o registro completo, com a categoria da linha |
-| ☐ | Create de um pagamento digitado **positivo** funciona; o GET seguinte mostra o sinal que a medição 1.3 documentou |
-| ☐ | Competência deixada vazia → o registro volta com competência igual ao vencimento (o aviso do campo diz a verdade) |
-| ☐ | Update de description confirma pela releitura; os demais campos intactos |
-| ☐ | Delete dos dois; **a cobaia termina com zero agendamentos** |
-| ☐ | Regressão: os quatro stakeholders filtram e escrevem como na 0.5.2 |
-| ☐ | CI verde; scanner oficial sem achados |
+| ☑ | Get Many nos dois recursos, com filtro assistido: *Due Date depois de* + *Is Paid é falso*; *Value maior que* com centavos |
+| ☑ | Get devolve o agendamento pelo ID; ID de débito no recurso de crédito **falha dizendo o tipo real** (e o inverso também) |
+| ☑ | Create de um recebimento na cobaia devolve o registro completo, com a categoria da linha |
+| ☑ | Create de um pagamento digitado **positivo** funciona; `isFlagged` gravado; o GET seguinte mostra o sinal que a medição 1.3 documentou |
+| ☑ | Competência deixada vazia → o registro volta com competência igual ao vencimento; competência preenchida é respeitada |
+| ☑ | Update de description confirma pela releitura; referência, valor, categoria e datas intactos; update sem campo nenhum é recusado |
+| ☑ | Delete dos dois; **a cobaia terminou com zero agendamentos** nas três coleções |
+| ☑ | Regressão: Customer filtra ignorando caixa, lê por ID, escreve e confirma; campo fora do cardápio ainda falha em vez de alargar |
+| ☑ | CI verde. **Scanner: ver a ressalva abaixo** |
+
+**O sinal do débito, medido ao vivo no aceite:** o mesmo agendamento respondeu `value: -500`
+no Get (endpoint universal) e `value: +500` no Get Many (coleção de débito), `openValue`
+positivo nos dois. É o que a decisão 5 previu e o que o README agora diz com os números.
+
+**Achado do aceite — a listagem atrasa nos dois sentidos.** A medição da fatia 5 tinha
+pego o atraso só no DELETE; o aceite mostrou que vale também para o CREATE. Medido:
+
+| t | `GET /schedules/credit/{id}` | listagem de débito (sem filtro) |
+|---|---|---|
+| +0 ms | achou, `value -500` | **0 registros** |
+| +2 s | achou | achou |
+
+Ou seja: **Create seguido de Get Many pode não ver o que acabou de criar.** Quem encadeia
+deve usar o ID que o Create devolve — o Get é consistente na hora. Está escrito no README.
+
+⚠️ **Ressalva sobre o scanner oficial.** O passo do CI ficou verde **sem ter analisado o
+pacote**: o `@n8n/scan-community-package` quebrou no runner (`Failed to analyze:
+TypeError`) e **saiu com código 0 assim mesmo**, então o `if` do workflow leu sucesso.
+Rodado à mão na VPS, o mesmo scanner passou limpo — *"Package n8n-nodes-nibo-empresas@0.6.0
+has passed all security checks"*, com provenance conferida. O pacote está certo; o passo do
+CI é que não garante nada hoje e precisa exigir a linha de sucesso em vez do código de saída.
+
+**Pendente para fechar a regra 7 por inteiro:** instalar a 0.6.0 pela **tela Community
+Nodes** do n8n de dev (hoje com a 0.5.2) e confirmar que o node carrega e mostra os dois
+recursos novos. É a única parte que o aceite funcional não cobre — ela prova empacotamento,
+não comportamento — e depende do login do owner da instância.
 
 ---
 
