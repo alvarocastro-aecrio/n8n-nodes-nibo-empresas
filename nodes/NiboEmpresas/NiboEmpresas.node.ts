@@ -17,12 +17,31 @@ const MAIN_CONNECTION: MainConnection = NodeConnectionTypes
 	? NodeConnectionTypes.Main
 	: ('main' as MainConnection);
 
+import type { INodePropertyOptions } from 'n8n-workflow';
+
+import {
+	scheduleFields,
+	scheduleOperations,
+	scheduleResources,
+} from './resources/schedule/description';
 import {
 	stakeholderFields,
 	stakeholderOperations,
 	stakeholderResources,
 } from './resources/stakeholder/description';
 import { executeStakeholder } from './resources/stakeholder/execute';
+
+/**
+ * Every resource the node offers, in one alphabetical list.
+ *
+ * The families are interleaved rather than grouped: the editor shows this list
+ * as it is declared, the n8n linter wants it alphabetical, and whoever is
+ * looking for "Debit Schedule" is looking for the letter D, not for a family
+ * they would have to know the node has.
+ */
+const RESOURCES: INodePropertyOptions[] = [...stakeholderResources, ...scheduleResources].sort(
+	(one, other) => one.name.localeCompare(other.name),
+);
 
 // Thin description + router. No HTTP call and no API rule lives here: the
 // cross-cutting behaviors live in transport/, the per-resource ones in
@@ -63,7 +82,7 @@ export class NiboEmpresas implements INodeType {
 				displayOptions: {
 					show: {
 						authMode: ['credential'],
-						resource: stakeholderResources.map((resource) => resource.value as string),
+						resource: RESOURCES.map((resource) => resource.value as string),
 					},
 				},
 			},
@@ -115,11 +134,13 @@ export class NiboEmpresas implements INodeType {
 				name: 'resource',
 				type: 'options',
 				noDataExpression: true,
-				options: stakeholderResources,
+				options: RESOURCES,
 				default: 'customer',
 			},
 			...stakeholderOperations,
+			...scheduleOperations,
 			...stakeholderFields,
+			...scheduleFields,
 			{
 				displayName: 'Options',
 				name: 'options',

@@ -147,16 +147,13 @@ describe('NiboEmpresas — the four stakeholder types', () => {
 			.sort();
 	}
 
+	// The four are still all there, and still in this order — the schedules of
+	// 0.6.0 are interleaved with them alphabetically, not appended after them.
 	it('offers the four, in the order the linter asks for', () => {
 		const options = property('resource')?.options as INodePropertyOptions[];
+		const values = options.map((option) => option.value);
 
-		expect(options.map((option) => option.value)).toEqual(TYPES);
-		expect(options.map((option) => option.name)).toEqual([
-			'Customer',
-			'Employee',
-			'Partner',
-			'Supplier',
-		]);
+		expect(values.filter((value) => TYPES.includes(value as string))).toEqual(TYPES);
 	});
 
 	it('gives all four the same five operations', () => {
@@ -187,9 +184,13 @@ describe('NiboEmpresas — the four stakeholder types', () => {
 		}
 	});
 
+	// `arrayContaining` rather than equality: since 0.6.0 three of these names
+	// are also parameters of the schedules, which have declarations of their
+	// own. What this is about is that no stakeholder type is left out of any of
+	// them.
 	it('asks the same fields of all four types', () => {
 		for (const field of ['name', 'documentNumber', 'additionalFields', 'updateFields', 'returnAll']) {
-			expect(shownFor(field)).toEqual(TYPES);
+			expect(shownFor(field)).toEqual(expect.arrayContaining(TYPES));
 		}
 	});
 
@@ -543,6 +544,301 @@ describe('NiboEmpresas — the assisted filter', () => {
 	it('keeps every menu of the builder alphabetical', () => {
 		for (const field of [...inRow('field'), ...inRow('operator'), property('filterType')!, property('filterCombine')!]) {
 			const names = optionNames(field);
+
+			expect(names).toEqual([...names].sort());
+		}
+	});
+});
+
+/**
+ * The second family, and what it was for: the core built up to 0.5.x pays for
+ * it. Two resources, five operations each, and nothing about the filter, the
+ * paging or the safe update written a second time.
+ */
+describe('NiboEmpresas — the two schedule resources', () => {
+	const SCHEDULES = ['creditSchedule', 'debitSchedule'];
+
+	function declarations(name: string): INodeProperties[] {
+		return description.properties.filter((prop) => prop.name === name);
+	}
+
+	/** The declaration of a parameter drawn for this resource */
+	function forResource(name: string, resource: string): INodeProperties | undefined {
+		return declarations(name).find((prop) =>
+			((prop.displayOptions?.show?.resource ?? []) as string[]).includes(resource),
+		);
+	}
+
+	// Interleaved, not appended: whoever is looking for "Debit Schedule" is
+	// looking for the letter D, not for a family they would have to know exists.
+	it('puts the six resources in one alphabetical menu', () => {
+		const options = property('resource')?.options as INodePropertyOptions[];
+
+		expect(options.map((option) => option.name)).toEqual([
+			'Credit Schedule',
+			'Customer',
+			'Debit Schedule',
+			'Employee',
+			'Partner',
+			'Supplier',
+		]);
+	});
+
+	// The cost of the credential trick (see the block at the top): a resource
+	// missing from that list would be a resource with no credential at all.
+	it('lists the two new resources in the credential as well', () => {
+		const [credential] = description.credentials ?? [];
+
+		expect(credential.displayOptions?.show?.resource).toEqual(
+			expect.arrayContaining(SCHEDULES),
+		);
+	});
+
+	it('gives both the same five operations as the stakeholders', () => {
+		for (const resource of SCHEDULES) {
+			const operations = forResource('operation', resource);
+			const values = (operations?.options as INodePropertyOptions[]).map((option) => option.value);
+
+			expect(values.sort()).toEqual(['create', 'delete', 'get', 'list', 'update']);
+			expect(operations?.default).toBe('list');
+		}
+	});
+
+	// A parameter name is a contract, so each resource carries its own rather
+	// than the two sharing one.
+	it('names the ID field after the resource it belongs to', () => {
+		for (const [resource, parameter] of [
+			['creditSchedule', 'creditScheduleId'],
+			['debitSchedule', 'debitScheduleId'],
+		]) {
+			const field = forResource(parameter, resource);
+
+			expect(field?.displayOptions?.show?.resource).toEqual([resource]);
+			expect(field?.displayOptions?.show?.operation).toEqual(['delete', 'get', 'update']);
+			expect(field?.required).toBe(true);
+		}
+	});
+
+	it('offers Get Many the same Return All and Limit the stakeholders have', () => {
+		for (const name of ['returnAll', 'limit']) {
+			expect(forResource(name, 'creditSchedule')?.displayOptions?.show?.operation).toEqual(['list']);
+		}
+	});
+});
+
+describe('NiboEmpresas — the fields a schedule is created with', () => {
+	const SCHEDULES = ['creditSchedule', 'debitSchedule'];
+
+	function forSchedules(name: string): INodeProperties | undefined {
+		return description.properties.find(
+			(prop) =>
+				prop.name === name &&
+				((prop.displayOptions?.show?.resource ?? []) as string[]).includes('creditSchedule'),
+		);
+	}
+
+	/** The fields offered inside a collection drawn for the schedules */
+	function fieldsOf(collection: string): string[] {
+		return ((forSchedules(collection)?.options ?? []) as INodeProperties[]).map(
+			(field) => field.name,
+		);
+	}
+
+	it('asks up front for exactly what the API refuses a creation without', () => {
+		for (const name of ['stakeholderId', 'dueDate', 'scheduleDate', 'categories']) {
+			const field = forSchedules(name);
+
+			expect(field?.required).toBe(true);
+			expect(field?.displayOptions?.show?.operation).toEqual(['create']);
+			expect(field?.displayOptions?.show?.resource).toEqual(SCHEDULES);
+		}
+	});
+
+	/**
+	 * The asymmetry the node exists for, and the reason this field is on the
+	 * screen instead of inside a menu: omit `accrualDate` and the API copies the
+	 * due date without saying so, which files the income or the expense in the
+	 * wrong month. A field nobody sees is a decision nobody took.
+	 */
+	/** Where a parameter of the schedules sits in the body of the node */
+	function positionOf(name: string): number {
+		return description.properties.findIndex(
+			(prop) =>
+				prop.name === name &&
+				((prop.displayOptions?.show?.resource ?? []) as string[]).includes('creditSchedule'),
+		);
+	}
+
+	it('puts the accrual date next to the due date, optional but never hidden', () => {
+		const accrualDate = forSchedules('accrualDate');
+
+		expect(accrualDate?.type).toBe('dateTime');
+		expect(accrualDate?.required).toBeUndefined();
+		expect(positionOf('accrualDate')).toBeGreaterThan(positionOf('dueDate'));
+		expect(positionOf('accrualDate')).toBeLessThan(positionOf('additionalFields'));
+	});
+
+	it('says on that field what leaving it empty does', () => {
+		expect(forSchedules('accrualDate')?.description).toMatch(/copies the due date/i);
+	});
+
+	// There is no total field to fill in: the amount of a schedule is the sum of
+	// its lines, and that is the API's own arithmetic, not ours.
+	it('collects the categories as the lines the payload is made of', () => {
+		const categories = forSchedules('categories');
+		const line = ((categories?.options ?? []) as Array<{ name: string; values: INodeProperties[] }>)[0];
+
+		expect(categories?.type).toBe('fixedCollection');
+		expect(categories?.typeOptions?.multipleValues).toBe(true);
+		expect(line.values.map((field) => field.name)).toEqual(['categoryId', 'value']);
+		expect(line.values.find((field) => field.name === 'value')?.type).toBe('number');
+	});
+
+	it('says that the amount of a schedule is the sum of its lines', () => {
+		expect(forSchedules('categories')?.description).toMatch(/sum/i);
+	});
+
+	it('keeps the rest of what can be written under Additional Fields', () => {
+		expect(fieldsOf('additionalFields')).toEqual(['description', 'reference']);
+	});
+
+	// Same rule as the stakeholders: what can be set when creating can be
+	// changed later, and nothing in Update is mandatory.
+	it('offers under Update Fields everything Create asks for, all optional', () => {
+		const inUpdate = fieldsOf('updateFields');
+
+		expect(inUpdate).toEqual(
+			expect.arrayContaining([
+				'accrualDate',
+				'categories',
+				'description',
+				'dueDate',
+				'reference',
+				'scheduleDate',
+				'stakeholderId',
+			]),
+		);
+		expect(forSchedules('updateFields')?.required).toBeUndefined();
+	});
+});
+
+/**
+ * The filter menu of the schedules — closed and measured on 2026-07-26, like
+ * the stakeholders' was on 2026-07-25. It is the first one with an amount in
+ * it, which is the type v0.6.0 added to the builder.
+ */
+describe('NiboEmpresas — the schedule filter menu', () => {
+	function forSchedules(name: string): INodeProperties | undefined {
+		return description.properties.find(
+			(prop) =>
+				prop.name === name &&
+				((prop.displayOptions?.show?.resource ?? []) as string[]).includes('creditSchedule'),
+		);
+	}
+
+	function conditionFields(): INodeProperties[] {
+		const collections = (forSchedules('filters')?.options ?? []) as Array<{
+			name: string;
+			values: INodeProperties[];
+		}>;
+
+		return collections.find((collection) => collection.name === 'conditions')?.values ?? [];
+	}
+
+	function optionValues(field: INodeProperties | undefined): string[] {
+		return ((field?.options ?? []) as INodePropertyOptions[]).map((option) => option.value as string);
+	}
+
+	function fieldBox(): INodeProperties | undefined {
+		return conditionFields().find((field) => field.name === 'field');
+	}
+
+	it('offers only the paths the API was measured to filter on', () => {
+		expect(optionValues(fieldBox()).sort()).toEqual(
+			[
+				'accrualDate',
+				'createDate',
+				'description',
+				'dueDate',
+				'hasInvoice',
+				'isDued',
+				'isFlagged',
+				'isPaid',
+				'reference',
+				'scheduleDate',
+				'stakeholder/name',
+				'updateDate',
+				'value',
+			].sort(),
+		);
+	});
+
+	/**
+	 * Three absences, each for its own reason: `type` is a constant inside one of
+	 * these collections, so filtering by it can only say "yes" or "nothing";
+	 * `isDeleted` is a 500 because the field is not on this view; and
+	 * `costCenterValueType` is a 500 because the enum does not compare, exactly
+	 * as `document/type` does not on the stakeholders.
+	 */
+	it.each(['type', 'isDeleted', 'costCenterValueType'])(
+		'never offers %s, which the API cannot filter on here',
+		(path) => {
+			expect(optionValues(fieldBox())).not.toContain(path);
+		},
+	);
+
+	it('starts the row on the due date, which is what a schedule is asked about', () => {
+		expect(fieldBox()?.default).toBe('dueDate');
+	});
+
+	/** Which value box is drawn for a given field path */
+	function valueBoxFor(path: string): INodeProperties | undefined {
+		return conditionFields().find(
+			(field) =>
+				field.displayName === 'Value' &&
+				((field.displayOptions?.show?.field ?? []) as string[]).includes(path),
+		);
+	}
+
+	// The amount is the reason the builder learned a fourth type: quoting it is
+	// a 500 naming the two types it could not compare.
+	it('collects the amount in a number box', () => {
+		expect(valueBoxFor('value')?.type).toBe('number');
+		expect(valueBoxFor('value')?.name).toBe('numberValue');
+	});
+
+	it.each([
+		['dueDate', 'dateTime'],
+		['description', 'string'],
+		['isPaid', 'boolean'],
+	])('collects %s as a %s, as it always did', (path, type) => {
+		expect(valueBoxFor(path)?.type).toBe(type);
+	});
+
+	/** Which operator values are offered for a given field path */
+	function operatorsFor(path: string): string[] {
+		const declaration = conditionFields().find(
+			(field) =>
+				field.name === 'operator' &&
+				((field.displayOptions?.show?.field ?? []) as string[]).includes(path),
+		);
+
+		return optionValues(declaration);
+	}
+
+	it('offers an amount the six comparisons, all of them measured', () => {
+		expect(operatorsFor('value').sort()).toEqual(['eq', 'ge', 'gt', 'le', 'lt', 'ne'].sort());
+	});
+
+	it('never offers contains for an amount, a date or a yes-or-no', () => {
+		for (const path of ['value', 'dueDate', 'isPaid']) {
+			expect(operatorsFor(path)).not.toContain('contains');
+		}
+	});
+
+	it('keeps every menu of the builder alphabetical', () => {
+		for (const field of conditionFields()) {
+			const names = ((field.options ?? []) as INodePropertyOptions[]).map((option) => option.name);
 
 			expect(names).toEqual([...names].sort());
 		}
