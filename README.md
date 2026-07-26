@@ -6,7 +6,7 @@ This is an [n8n](https://n8n.io/) community node. It lets you use the **Nibo Emp
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-> **Status: early development (v0.4.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
+> **Status: early development (v0.6.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
 
 ## Installation
 
@@ -22,19 +22,49 @@ n8n-nodes-nibo-empresas
 
 ## Operations
 
-Four resources — **Customer**, **Employee**, **Partner** and **Supplier** — with the same five operations each. The API gives the four an identical contract, so the node treats them as one family:
+Six resources in two families, each with the same five operations. Within a family the API gives every resource an identical contract, so the node treats the family as one:
+
+| Family | Resources | What they are |
+|---|---|---|
+| **Contacts** | Customer · Employee · Partner · Supplier | Who you buy from, sell to, employ or share the company with |
+| **Schedules** | Credit Schedule · Debit Schedule | Accounts receivable and accounts payable — an amount due on a date |
 
 | Operation | Notes |
 |---|---|
-| Create | Adds a contact and returns it as Nibo stored it |
+| Create | Adds a record and returns it as Nibo stored it |
 | Delete | Removes it and returns `{ id, deleted: true }` |
-| Get | Returns one contact by ID |
-| Get Many | Returns the collection, paging through it when needed. A stable sort (`$orderby=id`) is always applied. |
+| Get | Returns one record by ID |
+| Get Many | Returns the collection, paging through it when needed. A stable sort is always applied — `$orderby=id` for a contact, `$orderby=scheduleId` for a schedule. |
 | Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
 
-Each resource has its own ID field (**Customer ID**, **Employee ID**, **Partner ID**, **Supplier ID**), so a workflow that already names one keeps working when others are added. **Employee** is offered only a CPF: an employee is a person, and the API would otherwise happily store a company in the payroll.
+Every resource has its own ID field (**Customer ID**, **Supplier ID**, **Credit Schedule ID**, …), so a workflow that already names one keeps working when others are added.
+
+### Contacts
+
+**Employee** is offered only a CPF: an employee is a person, and the API would otherwise happily store a company in the payroll.
 
 > **The document type has one spelling.** The API takes `CNPJ`/`CPF` when you write and answers `Cnpj`/`Cpf` when you read. Since 0.4.0 the node hands out the first spelling on **every** operation, Get Many included. If a workflow of yours compares `document.type` with `'Cnpj'`, that comparison has to become `'CNPJ'`.
+
+### Schedules
+
+**Credit Schedule** is money coming in, **Debit Schedule** is money going out. They are two resources rather than one resource with a type field, because the type is not a setting of the operation — it is which set of books the operation is about.
+
+Creating one asks for what the API refuses a creation without: the **Stakeholder ID** of the contact, the **Due Date**, the **Schedule Date** and at least one line under **Categories**. **Description**, **Reference** and **Is Flagged** live under *Additional Fields*.
+
+**There is no total to type.** The amount of a schedule is the sum of its category lines: a schedule of 1,000 is one line of 1,000 or two of 500. Type the line amounts **positive on both kinds** — that is what the API takes, and it signs them itself.
+
+> **Accrual Date is on the screen, not in a menu, and that is deliberate.** Leave it empty and the API **silently copies the due date**, which files the income or the expense in the month the money moves rather than the month it was earned or incurred. It is the single most expensive default in this API, so the node puts it next to the due date where the decision gets taken.
+
+**Get** reads a schedule of either kind through one address: `GET /schedules/credit/{id}` is the get-by-id of this API, and `/schedules/debit/{id}` is a 404 as a route, not as a record. That address answers a debit ID with a debit record, cheerfully, under the credit resource — same fields, same shape, opposite meaning. The node checks what came back and **refuses an ID of the other kind, naming which resource it belongs to**, rather than handing a workflow a payable where it asked for a receivable.
+
+> ⚠️ **The sign of a debit belongs to the endpoint, not to the record.** Measured against the API: the same debit, in the same minute, is `value: -500` read by **Get** and `value: +500` listed by **Get Many**. `openValue` is positive in both, and the server's own filter on the debit collection compares the **positive** number — `value eq 500` finds it, `value eq -500` finds nothing. The node passes all of it through untouched: a node that flipped a financial value would add up differently from the API it wraps, and every reconciliation built on the difference would be wrong in a way nobody could see. Compare with `openValue`, or with `Math.abs()`, when a workflow has to treat both kinds alike.
+
+Two more behaviors of this API that a workflow will meet:
+
+- **A deleted schedule read by ID answers HTTP 500**, carrying `Agendamento não encontrado` — a *not found* wearing a server error. The node reads the body and hands the sentence over (see [Errors](#errors)), so it is legible rather than "the service failed".
+- **The listing is eventually consistent.** Seconds after a `DELETE` answered 204, the collection still returned the record that Get already denied. Deleting and re-listing in the same breath can show you what you deleted.
+
+The dates you pick travel as the **day** you picked, cut rather than converted: the editor hands over `2026-08-10T00:00:00.000-03:00`, which is the 9th in UTC, and a schedule that falls due one day early is a schedule that is overdue one day early.
 
 **Get Many** takes:
 
@@ -58,12 +88,22 @@ The filter is narrowed **on the server**, so what does not match is never paged 
 | Name · Contains (Ignoring Case) · `ACME` | `contains(tolower(name),'acme')` |
 | Is Company · Is · ☑ | `isCompany eq true` |
 | Updated At · On or After · `2026-07-01` | `updateDate ge 2026-07-01T00:00:00.000Z` |
+| Value · Greater Than · `100.50` | `value gt 100.50` |
 
-The operators you are offered depend on the field: text gets *Contains*, *Contains (Ignoring Case)*, *Equals*, *Not Equals*, *Starts With* and *Ends With*; a yes-or-no field gets *Is* and *Is Not*; a date gets *After*, *On or After*, *Before* and *On or Before*. A condition whose value is left empty is ignored.
+The operators you are offered depend on the field: text gets *Contains*, *Contains (Ignoring Case)*, *Equals*, *Not Equals*, *Starts With* and *Ends With*; a yes-or-no field gets *Is* and *Is Not*; a date gets *After*, *On or After*, *Before* and *On or Before*; an amount gets all six comparisons. A condition whose value is left empty is ignored — except an amount, which is sent even at zero, since zero is an answer.
 
 > **The apostrophe.** A name such as `D'ALESSANDRO` typed into a raw expression closes the literal early, and the API answers HTTP 500 — *"unterminated literal"* — with nothing in the answer pointing at the quote. In an expression it has to be doubled: `contains(name,'D''ALESSANDRO')`. **Conditions does that for you**, which is the reason this mode exists.
 
-The fields on offer are the ones the API actually filters on, checked against it one by one: **Name**, **Document Number**, **Email**, **Phone**, **Trading Name**, **City**, **State**, **Is Company**, **Is Archived** and **Updated At**. The **document type** is deliberately not among them — `document/type eq 'Cpf'` is an HTTP 500, because that enum does not compare. Filter by **Document Number** instead.
+The fields on offer are the ones the API actually filters on, checked against it one by one, and each family has its own menu:
+
+| Family | Fields you can filter on |
+|---|---|
+| **Contacts** | Name · Document Number · Email · Phone · Trading Name · City · State · Is Company · Is Archived · Updated At |
+| **Schedules** | Description · Reference · Stakeholder Name · Value · Due Date · Schedule Date · Accrual Date · Created At · Updated At · Is Paid · Is Overdue · Is Flagged · Has Invoice |
+
+What is deliberately missing from each is missing for a measured reason. On a contact, the **document type**: `document/type eq 'Cpf'` is an HTTP 500, because that enum does not compare — filter by **Document Number** instead. On a schedule, the **type** (a constant inside either collection, so it could only ever answer "yes" or "nothing"), **`isDeleted`** (a 500 — the field is not on this view) and **`costCenterValueType`** (a 500, the same enum problem as the document type).
+
+> **Value is an amount, and amounts are not quoted.** `value gt '100'` is an HTTP 500 naming the two types it could not compare — *'Edm.Decimal' and 'Edm.String'*. The node writes the literal bare and keeps your cents. An amount arriving through an expression as `100,50` is read as the amount it means; `1.234,56` is refused instead of guessed at, because read one way it is a thousand and read the other it is one and a bit, and nothing in the value says which.
 
 **Filter (OData)** — under **Options**, at the end of the node, for everything the conditions cannot say: a nested group such as `(contains(name,'ACME') or contains(name,'LTDA')) and isCompany eq true`. The expression goes to the API as you wrote it, so quoting and escaping are yours to get right: accented text needs no treatment (`contains(name,'SERVIÇOS')`), an apostrophe does.
 
@@ -73,12 +113,14 @@ The fields on offer are the ones the API actually filters on, checked against it
 
 ### Create
 
-**Name**, **Document Number** and **Document Type** are asked for up front; everything else lives under **Additional Fields**, and only the fields you add are sent. The contact comes back as Nibo stored it, with the fields the API fills in on its own (`personType`, `isCompany`, `initialsName`) already there.
+What the API refuses a creation without is asked for up front; everything else lives under **Additional Fields**, and only the fields you add are sent. The record comes back as Nibo stored it, with whatever the API fills in on its own already there.
 
-Two details of this API worth knowing before you fill the form in:
+**For a contact** that is **Name**, **Document Number** and **Document Type**, and two details of this API are worth knowing before you fill the form in:
 
 - **Document Number takes digits only** — no dots, slashes or dashes.
 - **Email is one string holding every address, separated by commas** (`billing@example.com,accounts@example.com`). This API keeps a contact's e-mails in a single field, not in a list.
+
+**For a schedule** it is the **Stakeholder ID**, the **Due Date**, the **Schedule Date** and the **Categories** lines — plus **Accrual Date**, which is optional and still on the screen. See [Schedules](#schedules) for why.
 
 ### Update
 
@@ -86,22 +128,25 @@ The API's `PUT` takes the **whole** record: every field left out of the body is 
 
 So this operation never sends a bare `PUT`. For each item it:
 
-1. reads the contact as it is stored;
+1. reads the record as it is stored;
 2. merges the fields you added onto it;
 3. writes the complete record back;
 4. **reads it again and checks that the fields you changed really changed.**
 
 Three calls where one would do, on purpose. If the API answers with `Messages`, or if the confirmation finds a field that did not take, the item fails and says which field — it never reports a write that did not happen as a success.
 
+On a schedule the two reads go to the get-by-id every schedule shares and the `PUT` goes to the collection the record actually belongs to, because those are two different addresses in this API. The confirmation also knows three things the API does to a value on its way through, none of which is a refusal: a date asked for as the 20th comes back as a moment, a debit line asked for as 300 comes back as −300, and **every `PUT` recreates the category lines with new line IDs**. What a workflow receives is untouched by any of that — it is the record as the API answered it.
+
 What that gives you:
 
 | | |
 |---|---|
-| A field you **do not add** | Is not touched. The contact keeps whatever is in Nibo |
-| A field you add and **leave empty** | Is written empty. That is how a stored value is erased on purpose |
+| A field you **do not add** | Is not touched. The record keeps whatever is in Nibo |
+| A **text** field you add and leave empty | Is written empty. That is how a stored value is erased on purpose |
+| A **date** or a **category line** you add and leave empty | Is ignored. There is no empty date to write, and an unfinished row is not a change |
 | **Update Fields left empty** | The item fails instead of rewriting the record with itself |
 
-The address is offered field by field (**Address City**, **Address Line 1**, …) rather than as one block, for the same reason: a block would submit every field it contains the moment you opened it, and this API would write exactly that.
+The address of a contact is offered field by field (**Address City**, **Address Line 1**, …) rather than as one block, for the same reason: a block would submit every field it contains the moment you opened it, and this API would write exactly that.
 
 ### Delete
 
@@ -174,9 +219,11 @@ Developed and tested against n8n **2.18.5** (self-hosted), on a clean instance, 
 
 ## Usage
 
-Add the **Nibo Empresas** node to a workflow, select the credential, pick a resource — Customer, Employee, Partner or Supplier — and run **Get Many**. Each record becomes one n8n item.
+Add the **Nibo Empresas** node to a workflow, select the credential, pick a resource — Customer, Employee, Partner, Supplier, Credit Schedule or Debit Schedule — and run **Get Many**. Each record becomes one n8n item.
 
-Writing works the same way: **Create** takes a name and a document, **Update** takes the ID of a contact and only the fields you want changed, and **Delete** takes an ID. Each input item is one operation, and each answers with the record as Nibo has it.
+Writing works the same way: **Create** takes what that resource cannot be created without, **Update** takes an ID and only the fields you want changed, and **Delete** takes an ID. Each input item is one operation, and each answers with the record as Nibo has it.
+
+A common pair: read the contact with **Customer · Get Many**, filtered by name, then feed its `id` into **Credit Schedule · Create** as the **Stakeholder ID**.
 
 To read several organizations in a single node, switch **Authentication** to *API Token (Per Item)*, point the **API Token** field at the token carried by each input item, and send one item per organization — see [Authentication](#authentication).
 
@@ -205,6 +252,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.5.0 | **The assisted filter**: Get Many builds the OData expression from conditions — field, operator and value, joined by *And* or *Or* — instead of taking one written by hand. It exists for a defect, not for comfort: a name carrying an apostrophe (`D'ALESSANDRO`) made an invalid expression, and the API answered HTTP 500 with nothing pointing at the quote. Each type now gets the literal the API demands, quoted or bare, and the menu of fields holds only what the API was checked to filter on — the document type is not one of them. **Filter (OData)** is unchanged, undeprecated and still on screen, so a node saved before this version keeps filtering exactly as it did, with nothing to redo |
 | 0.5.1 | **Filter (OData)** moves into **Options**, at the end of the node, where the other operational adjustments already are: the body asks only what the operation needs, and writing OData by hand is the exception rather than the way in |
 | 0.5.2 | The **Filter Type** selector is gone, and writing an expression into **Filter (OData)** is the switch itself: fill it in and the conditions leave the screen — and leave the request with them, so nothing filters from behind a field you cannot see. Empty it and the conditions are back. 0.5.1 had put the box behind that selector, which meant it was not on the *Add option* list until you had already chosen a mode — a switch you had to find before you could find the thing it switched |
+| 0.6.0 | **Credit Schedule and Debit Schedule** — accounts receivable and payable — with the same five operations each. The second family, and the first one the core built up to 0.5.x paid for: paging, the safe update cycle, the assisted filter and the readable errors were already there. What is genuinely new is what this family does differently — the paging key is `scheduleId` (`$orderby=id` is a 500 here), a schedule of either kind is read through **one** get-by-id, so **Get refuses an ID of the other kind instead of quietly handing back the wrong record**, and the filter builder learned what an amount is. **Accrual Date** is on the screen rather than in a menu, because leaving it out makes the API copy the due date silently. ⚠️ **The sign of a debit belongs to the endpoint**: the same record reads `-500` through Get and `+500` through Get Many, and the node passes both through untouched |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
