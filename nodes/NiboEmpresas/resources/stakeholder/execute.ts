@@ -5,6 +5,7 @@ import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
 import { niboCreate, niboSafeUpdate } from '../../transport/save';
 import { listFilter } from '../shared/filter';
+import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { stakeholderFilterFieldTypes } from './description';
 import { normalizeStakeholder, stakeholderWriteBody } from './normalize';
 
@@ -114,7 +115,7 @@ export async function executeStakeholder(
 					returnData.push({ json, pairedItem: { item: i } });
 				});
 			} else if (operation === 'get') {
-				const id = recordId.call(this, resource, i);
+				const id = recordId.call(this, collection.idParameter, i);
 				const record = await niboApiRequest.call(
 					this,
 					i,
@@ -150,14 +151,14 @@ export async function executeStakeholder(
 					this,
 					i,
 					endpoint,
-					recordId.call(this, resource, i),
+					recordId.call(this, collection.idParameter, i),
 					changes,
 					{ normalize: normalizeStakeholder, writeBody: stakeholderWriteBody },
 				);
 
 				returnData.push({ json: normalizeStakeholder(updated), pairedItem: { item: i } });
 			} else if (operation === 'delete') {
-				const id = recordId.call(this, resource, i);
+				const id = recordId.call(this, collection.idParameter, i);
 				await niboApiRequest.call(this, i, 'DELETE', `${endpoint}/${encodeURIComponent(id)}`);
 
 				// The API answers 204 with no body at all, so the confirmation the
@@ -240,69 +241,6 @@ function writePayload(fields: IDataObject): IDataObject {
 	}
 
 	return payload;
-}
-
-/**
- * How long to wait between two calls, in milliseconds.
- *
- * A second by default, and on purpose: one item per organization means a
- * portfolio loop fires hundreds of calls in a row, so the defense has to be
- * what happens when nobody chose anything.
- *
- * Until 0.4.1 it was a field of its own. A node saved back then still carries
- * it there and its author still means it, so that value is read when the
- * option was not set.
- */
-function requestInterval(
-	this: IExecuteFunctions,
-	itemIndex: number,
-	options: IDataObject,
-): number {
-	return typeof options.requestInterval === 'number'
-		? options.requestInterval
-		: (this.getNodeParameter('requestInterval', itemIndex, 1000) as number);
-}
-
-/**
- * Whether a scan that may have missed records fails instead of being handed
- * back with a warning.
- *
- * On unless someone says otherwise, for the same reason as the interval: the
- * defense has to be what happens by default. A list that quietly lost two
- * records is exactly what a workflow deletes by.
- *
- * Until 0.4.2 it was a field of its own, off by default — a node saved back
- * then made that choice, and keeps it.
- */
-function failOnIncomplete(
-	this: IExecuteFunctions,
-	itemIndex: number,
-	options: IDataObject,
-): boolean {
-	return typeof options.failOnIncomplete === 'boolean'
-		? options.failOnIncomplete
-		: (this.getNodeParameter('failOnIncomplete', itemIndex, true) as boolean);
-}
-
-/**
- * The ID this item works on, refused while it is still cheap to refuse.
- *
- * An empty ID would otherwise be sent as `/customers/` — the collection
- * endpoint — which on a DELETE is a request no one wants to find out the
- * answer to.
- */
-function recordId(this: IExecuteFunctions, resource: string, itemIndex: number): string {
-	const parameter = STAKEHOLDERS[resource].idParameter;
-	const id = String(this.getNodeParameter(parameter, itemIndex, '') ?? '').trim();
-
-	if (id === '') {
-		throw new NodeOperationError(this.getNode(), 'This item carries no record ID', {
-			itemIndex,
-			description: `The ${parameter} field is empty. It is usually an expression reading the ID from the incoming item.`,
-		});
-	}
-
-	return id;
 }
 
 function readRecord(

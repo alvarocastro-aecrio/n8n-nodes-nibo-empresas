@@ -4,7 +4,7 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeConnectionTypes } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
 // Other community packages may bundle their own (often old) n8n-workflow as a
 // runtime dependency, and Node's resolution then hands THIS node that stray
@@ -24,6 +24,7 @@ import {
 	scheduleOperations,
 	scheduleResources,
 } from './resources/schedule/description';
+import { executeSchedule } from './resources/schedule/execute';
 import {
 	stakeholderFields,
 	stakeholderOperations,
@@ -42,6 +43,22 @@ import { executeStakeholder } from './resources/stakeholder/execute';
 const RESOURCES: INodePropertyOptions[] = [...stakeholderResources, ...scheduleResources].sort(
 	(one, other) => one.name.localeCompare(other.name),
 );
+
+/** Which handler each resource belongs to — the whole of what the node knows about them */
+type Handler = (
+	this: IExecuteFunctions,
+	resource: string,
+	operation: string,
+) => Promise<INodeExecutionData[]>;
+
+const HANDLERS: Record<string, Handler> = {
+	...Object.fromEntries(
+		stakeholderResources.map((resource) => [resource.value as string, executeStakeholder]),
+	),
+	...Object.fromEntries(
+		scheduleResources.map((resource) => [resource.value as string, executeSchedule]),
+	),
+};
 
 // Thin description + router. No HTTP call and no API rule lives here: the
 // cross-cutting behaviors live in transport/, the per-resource ones in
@@ -200,9 +217,11 @@ export class NiboEmpresas implements INodeType {
 		const resource = this.getNodeParameter('resource', 0) as string;
 		const operation = this.getNodeParameter('operation', 0) as string;
 
-		// Single resource family in v0.1.0; the router grows with the roadmap.
-		const returnData = await executeStakeholder.call(this, resource, operation);
+		const handler = HANDLERS[resource];
+		if (handler === undefined) {
+			throw new NodeOperationError(this.getNode(), `The resource "${resource}" is not supported`);
+		}
 
-		return [returnData];
+		return [await handler.call(this, resource, operation)];
 	}
 }

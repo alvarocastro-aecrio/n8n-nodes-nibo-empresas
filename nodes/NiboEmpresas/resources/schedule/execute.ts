@@ -1,0 +1,196 @@
+import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
+
+import { niboListRequest } from '../../transport/paginate';
+import { niboApiRequest } from '../../transport/request';
+import { listFilter } from '../shared/filter';
+import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
+import { scheduleFilterFieldTypes } from './description';
+import { normalizeSchedule } from './normalize';
+
+interface IScheduleCollection {
+	/** Where this kind is listed, created, updated and deleted */
+	endpoint: string;
+	/**
+	 * The parameter carrying the ID. A parameter name is a contract, so each
+	 * kind has its own rather than the two sharing one.
+	 */
+	idParameter: string;
+	/** What the API answers in `type` for a record of this kind */
+	type: string;
+	/** How an error message names one of them */
+	noun: string;
+}
+
+/**
+ * One handler for the two kinds of schedule — the API gives them the same
+ * contract, exactly as it does the four stakeholders. They cost this table and
+ * one guard, and no logic at all.
+ */
+const SCHEDULES: Record<string, IScheduleCollection> = {
+	creditSchedule: {
+		endpoint: '/schedules/credit',
+		idParameter: 'creditScheduleId',
+		type: 'credit',
+		noun: 'credit schedule',
+	},
+	debitSchedule: {
+		endpoint: '/schedules/debit',
+		idParameter: 'debitScheduleId',
+		type: 'debit',
+		noun: 'debit schedule',
+	},
+};
+
+/**
+ * Where a schedule is read by ID — both kinds, always this one.
+ *
+ * `GET /schedules/credit/{id}` takes an ID of either kind and answers what that
+ * ID actually is, `type` included. `GET /schedules/debit/{id}` and
+ * `GET /schedules/{id}` are 404, always: not "not found for this id", but the
+ * route itself. So the collection a schedule is written to is not the
+ * collection it is read from, which is why the guard below exists at all.
+ */
+const READ_BY_ID = '/schedules/credit';
+
+/**
+ * The paging key, and the first thing about this family that is not the
+ * stakeholders'.
+ *
+ * There the key is `id`; here `id` answers HTTP 500 — *Could not find a
+ * property named 'id' on type '…ScheduleFullViewDto'* — and the key is
+ * `scheduleId`. The transport has taken it as a parameter since 0.2.0 and this
+ * is the first collection to walk through that door. `$skip` without an
+ * `$orderby` is a 500 here too, so it is always sent.
+ */
+const SCHEDULE_ORDER_BY = 'scheduleId';
+
+export async function executeSchedule(
+	this: IExecuteFunctions,
+	resource: string,
+	operation: string,
+): Promise<INodeExecutionData[]> {
+	const items = this.getInputData();
+	const returnData: INodeExecutionData[] = [];
+
+	const collection = SCHEDULES[resource];
+	if (collection === undefined) {
+		throw new NodeOperationError(this.getNode(), `The resource "${resource}" is not supported`);
+	}
+	const endpoint = collection.endpoint;
+
+	for (let i = 0; i < items.length; i++) {
+		try {
+			const options = this.getNodeParameter('options', i, {}) as IDataObject;
+			const interval = requestInterval.call(this, i, options);
+			if (i > 0 && interval > 0) {
+				await sleep(interval);
+			}
+
+			if (operation === 'list') {
+				const returnAll = this.getNodeParameter('returnAll', i, false) as boolean;
+
+				const { records, warning } = await niboListRequest.call(
+					this,
+					i,
+					endpoint,
+					SCHEDULE_ORDER_BY,
+					{
+						returnAll,
+						limit: returnAll ? 0 : (this.getNodeParameter('limit', i) as number),
+						filter: listFilter.call(this, i, options, scheduleFilterFieldTypes),
+						failOnIncomplete: failOnIncomplete.call(this, i, options),
+						interval,
+					},
+				);
+
+				records.forEach((record, index) => {
+					const normalized = normalizeSchedule(record);
+					const json =
+						warning !== undefined && index === records.length - 1
+							? { ...normalized, _niboPaginationWarning: warning }
+							: normalized;
+
+					returnData.push({ json, pairedItem: { item: i } });
+				});
+			} else if (operation === 'get') {
+				const id = recordId.call(this, collection.idParameter, i);
+				const record = await niboApiRequest.call(
+					this,
+					i,
+					'GET',
+					`${READ_BY_ID}/${encodeURIComponent(id)}`,
+				);
+
+				returnData.push({
+					json: normalizeSchedule(ofThisKind.call(this, record, collection, id, i)),
+					pairedItem: { item: i },
+				});
+			} else {
+				throw new NodeOperationError(
+					this.getNode(),
+					`The operation "${operation}" is not supported`,
+					{ itemIndex: i },
+				);
+			}
+		} catch (error) {
+			if (this.continueOnFail()) {
+				returnData.push({
+					json: { error: (error as Error).message },
+					pairedItem: { item: i },
+				});
+				continue;
+			}
+			throw error instanceof NodeApiError
+				? error
+				: new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
+		}
+	}
+
+	return returnData;
+}
+
+/**
+ * The record, once it is settled that it is the kind that was asked for.
+ *
+ * The endpoint that reads by ID is universal, so a debit ID pasted into the
+ * credit resource answers 200 with a debit record — cheerfully, and with
+ * nothing in the answer to suggest anything went wrong. A workflow that asked
+ * for a receivable and got a payable back would not notice, and that is exactly
+ * the swap this refuses to make. The error names what the ID really is, because
+ * that is the sentence that ends the search.
+ *
+ * A record that does not say what it is cannot be refused for being the wrong
+ * thing: guessing would break reads that work.
+ */
+function ofThisKind(
+	this: IExecuteFunctions,
+	value: unknown,
+	collection: IScheduleCollection,
+	id: string,
+	itemIndex: number,
+): IDataObject {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		throw new NodeOperationError(this.getNode(), `Nibo returned no record for the ID "${id}"`, {
+			itemIndex,
+		});
+	}
+
+	const record = value as IDataObject;
+	const type = typeof record.type === 'string' ? record.type.trim().toLowerCase() : '';
+
+	if (type !== '' && type !== collection.type) {
+		const found = Object.values(SCHEDULES).find((other) => other.type === type);
+
+		throw new NodeOperationError(
+			this.getNode(),
+			`The ID "${id}" belongs to a ${found?.noun ?? `schedule of type "${record.type}"`}`,
+			{
+				itemIndex,
+				description: `This is the ${collection.noun} resource, and Nibo answered that ID with a record of the other kind. The API reads both kinds through one endpoint, so the wrong resource would otherwise hand back the wrong record without a word. Switch the resource, or check where the ID came from.`,
+			},
+		);
+	}
+
+	return record;
+}
