@@ -209,14 +209,59 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 		return request.mock.calls[0][1].qs as IDataObject;
 	}
 
+	/**
+	 * The half that fits this kind of schedule, minus the automatic families that
+	 * cannot end in a schedule anybody can read.
+	 *
+	 * Measured on the cobaia on 2026-07-26, one representative of each family,
+	 * created for real and looked at on Nibo's own screen:
+	 *
+	 * - **Retentions** (`groupType` 3, the fourteen "Retido sobre…") are accepted
+	 *   by the API and then **show up broken**: the schedule displays one category
+	 *   inside it and another, without a value, outside.
+	 * - **"Outras receitas"** (7) does the same, and it was the one that caught
+	 *   this — a schedule of Alvaro's, in the browser.
+	 * - **Discounts** (1) are refused by the API itself, on both sides:
+	 *   *"Categoria de juros, multa ou desconto invalida"*.
+	 *
+	 * Filtered on the server, in the call that was already being made. The
+	 * operator was measured too: `groupType ne 1 and groupType ne 3` answers 200
+	 * on this API, which does not accept every OData expression.
+	 */
 	it.each([
-		['creditSchedule', "type eq 'in'"],
-		['debitSchedule', "type eq 'out'"],
-	])('asks %s only for the categories that fit it', async (resource, filter) => {
+		['creditSchedule', "type eq 'in' and groupType ne 1 and groupType ne 3 and groupType ne 7"],
+		['debitSchedule', "type eq 'out' and groupType ne 1 and groupType ne 3 and groupType ne 7"],
+	])('asks %s only for the categories that fit it and can be scheduled', async (resource, filter) => {
 		const { loadScheduleCategories } = await import('../resources/category/load');
 		await loadScheduleCategories.call(loadContext({ authMode: 'credential', resource }));
 
 		expect(querySent().$filter).toBe(filter);
+	});
+
+	// One call, as before: the exclusion rides along with the filter that was
+	// already there rather than costing a second read or a pass in the browser.
+	it('leaves them out on the server, in the one call it already made', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		await loadScheduleCategories.call(
+			loadContext({ authMode: 'credential', resource: 'creditSchedule' }),
+		);
+
+		expect(request).toHaveBeenCalledTimes(1);
+	});
+
+	/**
+	 * And the family that stays, which is what keeps this a measurement rather
+	 * than a hunch: interest (`groupType` 2, Juros Recebidos and Juros Pagos) was
+	 * created for real and reads correctly on the Nibo screen, so it goes on being
+	 * offered even though Nibo owns it and nobody can edit it.
+	 */
+	it('goes on offering the interest categories, which were measured to work', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		await loadScheduleCategories.call(
+			loadContext({ authMode: 'credential', resource: 'creditSchedule' }),
+		);
+
+		expect(querySent().$filter).not.toContain('groupType ne 2');
 	});
 
 	it('names the credential when it calls, so the token comes from it', async () => {

@@ -26,6 +26,35 @@ const KIND_NAMED: Record<string, string> = {
 };
 
 /**
+ * The families of category a schedule cannot be filed under, whatever the API
+ * answers when you try.
+ *
+ * Nibo owns 28 of the 50 categories an organization starts with — the ones
+ * nobody can edit, filled in by Nibo itself when a receipt carries interest, a
+ * tax is withheld or an amount has nowhere else to go. Measured on the cobaia on
+ * 2026-07-26, one representative of each family, created for real and looked at
+ * on Nibo's own screen:
+ *
+ * | `groupType` | Family | What happens |
+ * |---|---|---|
+ * | 1 | Descontos Concedidos / Recebidos | The API refuses it: *"Categoria de juros, multa ou desconto invalida"* — measured on both sides |
+ * | 3 | The fourteen "Retido sobre…" | Accepted, then **broken on the Nibo screen**: one category inside the schedule and another, without a value, outside it |
+ * | 7 | Outras receitas | The same, and this is the one that caught it — a schedule of Alvaro's, in the browser |
+ *
+ * Interest (2) is **not** here: it was created the same way and reads correctly
+ * on the screen, so it goes on being offered. Fines (4) and the "Pagamento de …
+ * Retido" family (5, the ones nobody can edit) are not here either — they are
+ * accepted by the API and nobody has yet looked at one on the screen. Leaving
+ * them means the list can still offer something that turns out broken; taking
+ * them out would mean hiding a category on a guess, and this project measures
+ * instead. They come out the day a measurement says to.
+ *
+ * A category left out of the list is not out of reach: the field takes an ID
+ * from an expression, exactly as it did before there was a list at all.
+ */
+const NOT_FOR_A_SCHEDULE = [1, 3, 7];
+
+/**
  * The list behind the Category field of a schedule.
  *
  * It talks to the API on its own rather than through `transport/request.ts`,
@@ -74,7 +103,14 @@ export async function loadScheduleCategories(
 	// starts. (`group/order` does not exist: HTTP 500.)
 	const qs: IDataObject = { $orderby: 'group/referenceCode,order,name', $top: 500 };
 	if (fits !== undefined) {
-		qs.$filter = `type eq '${fits}'`;
+		// The half that fits, and the automatic families that cannot be scheduled
+		// at all — both on the server, in this one call. `groupType ne …` was
+		// measured to answer 200 on 2026-07-26; this API accepts nothing like it
+		// on every field, so the operator is evidence and not an assumption.
+		qs.$filter = [
+			`type eq '${fits}'`,
+			...NOT_FOR_A_SCHEDULE.map((family) => `groupType ne ${family}`),
+		].join(' and ');
 	}
 
 	const response = await this.helpers.httpRequestWithAuthentication.call(this, CREDENTIAL_NAME, {
@@ -102,7 +138,7 @@ export async function loadScheduleCategories(
 		// Neither is on the screen, so the emptiness has to carry them.
 		const kind = KIND_NAMED[fits ?? ''] ?? '';
 		throw new NodeOperationError(this.getNode(), 'Nibo answered with no categories to choose from', {
-			description: `The list is always read with the credential selected above, and shows only the ${kind === '' ? 'categories' : `${kind} categories`} — the ones that fit this kind of schedule. So either that organization has none of them, or the credential is not the organization you meant. Every Nibo organization starts from the same chart of accounts, so the names alone will not tell two of them apart; read the list with the Category resource if you need to see all of them, including the other half.`,
+			description: `The list is always read with the credential selected above, and shows only the ${kind === '' ? 'categories' : `${kind} categories`} — the ones that fit this kind of schedule, leaving out the automatic ones Nibo fills in itself, which a schedule cannot be filed under. So either that organization has none of them, or the credential is not the organization you meant. Every Nibo organization starts from the same chart of accounts, so the names alone will not tell two of them apart; read the list with the Category resource if you need to see all of them, including the other half.`,
 		});
 	}
 

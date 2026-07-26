@@ -360,6 +360,29 @@ describe('executeSchedule — the error that is really about the category', () =
 	});
 
 	/**
+	 * The third sentence of this family, and the one that names a category kind
+	 * without saying which field carries it.
+	 *
+	 * Measured on the cobaia on 2026-07-26, on both sides: a discount category —
+	 * "Descontos Recebidos" on a receivable, "Descontos Concedidos" on a payable —
+	 * is refused with *"Categoria de juros, multa ou desconto invalida"*. Those
+	 * categories are Nibo's own, filled in when a receipt carries interest or a
+	 * discount, and they are not something a schedule is filed under. The list on
+	 * the field no longer offers them; this is for the ID that came from somewhere
+	 * else.
+	 */
+	it('explains the refusal of one of Nibo automatic categories', async () => {
+		create.mockRejectedValue(apiError('Categoria de juros, multa ou desconto invalida'));
+
+		const failure = executeSchedule.call(context(CREATE), 'creditSchedule', 'create');
+
+		await expect(failure).rejects.toThrow(/Categoria de juros, multa ou desconto invalida/);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/automatic categor/i),
+		});
+	});
+
+	/**
 	 * Measured on the cobaia on 2026-07-26, both ways: with the split off, two
 	 * category lines are refused with *"Utilize apenas uma categoria"*; turned on
 	 * in Nibo, the same two are accepted and the schedule's amount comes back as

@@ -392,6 +392,21 @@ const SIGNED_BY_THE_CATEGORY = /valor do agendamento.*(positivo|negativo)/i;
  */
 const ONE_CATEGORY_ONLY = /apenas uma categoria/i;
 
+/**
+ * The refusal that names a kind of category without naming the field it came in.
+ *
+ * Measured on the cobaia on 2026-07-26, on both sides: a discount category —
+ * "Descontos Recebidos" on a receivable, "Descontos Concedidos" on a payable —
+ * answers *"Categoria de juros, multa ou desconto invalida"*. Those belong to
+ * Nibo, which writes them itself when a receipt carries interest or a discount,
+ * and a schedule is not filed under one.
+ *
+ * Since 0.8.1 the list does not offer them, so this is for an ID that came from
+ * an expression or a paste — and for the sibling families that the API accepts
+ * and Nibo's own screen then cannot draw.
+ */
+const NIBO_OWN_CATEGORY = /categoria de juros, multa ou desconto/i;
+
 function aboutTheCategory(error: NodeApiError, operation: string): NodeApiError {
 	if (operation !== 'create' && operation !== 'update') {
 		return error;
@@ -401,6 +416,11 @@ function aboutTheCategory(error: NodeApiError, operation: string): NodeApiError 
 
 	if (SIGNED_BY_THE_CATEGORY.test(said)) {
 		error.description = `${error.description ?? ''}\n\nThis usually means the category does not match the kind of schedule: a revenue category cannot carry a payment, nor an expense category a receipt. It is the category's type that decides the sign of the line, which is why the API reports it as a problem with the amount. Pick the category from the list on the field, or read the right ID for this organization with the Category resource.`.trim();
+		return error;
+	}
+
+	if (NIBO_OWN_CATEGORY.test(said)) {
+		error.description = `${error.description ?? ''}\n\nThis category is one of Nibo's own automatic categories — interest, fines and discounts, which Nibo writes itself when a receipt or a payment carries one. A schedule cannot be filed under it. Pick a category from the list on the field, which offers the organization's own chart of accounts, or read the right ID with the Category resource.`.trim();
 		return error;
 	}
 
