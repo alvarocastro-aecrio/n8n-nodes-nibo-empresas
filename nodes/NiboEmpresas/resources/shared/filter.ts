@@ -1,4 +1,9 @@
-import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
+import type {
+	IDataObject,
+	IExecuteFunctions,
+	INodeProperties,
+	INodePropertyOptions,
+} from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 
 import type { IODataCondition, ODataFieldType } from '../../transport/odata';
@@ -32,6 +37,15 @@ export interface IFilterField {
 	/** The path as the API names it, e.g. `document/number` or `stakeholder/name` */
 	path: string;
 	type: ODataFieldType;
+	/**
+	 * The answers a field of type `options` can take — required for that type and
+	 * meaningless for every other.
+	 *
+	 * The API takes the same quoted text either way; what the list buys is the
+	 * person not having to guess that a category's type is spelled `in` and not
+	 * `revenue`, `Receita` or `IN`.
+	 */
+	choices?: INodePropertyOptions[];
 }
 
 export interface IFilterMenu {
@@ -227,6 +241,11 @@ function conditionFields(menu: IFilterMenu): INodeProperties[] {
 				default: 'gt',
 			},
 		]),
+		// One declaration per field rather than one per type, which is what every
+		// other kind gets. Two closed lists in one menu do not hold the same
+		// choices, and a shared box would offer one field the other's answers —
+		// which the API would then reject for a reason nothing on the screen shows.
+		...menu.fields.filter((field) => field.type === 'options').flatMap(choiceFields),
 		...forType('text', [
 			{
 				displayName: 'Value',
@@ -270,6 +289,44 @@ function conditionFields(menu: IFilterMenu): INodeProperties[] {
 	];
 }
 
+/**
+ * The operator and the value box of one closed-list field.
+ *
+ * Both are shown only for this field's own path, which is what keeps two lists
+ * in one menu from sharing a box. The default is the first choice, so a row
+ * added and left untouched is still a whole condition — and it is unpacked into
+ * a name first because the n8n linter reads defaults straight from the source
+ * and reports `a[0].b` as no default at all.
+ */
+function choiceFields(field: IFilterField): INodeProperties[] {
+	const choices = field.choices ?? [];
+	const firstChoice = String(choices[0]?.value ?? '');
+	const show = { field: [field.path] };
+
+	return [
+		{
+			displayName: 'Operator',
+			name: 'operator',
+			type: 'options',
+			options: [
+				{ name: 'Is', value: 'eq' },
+				{ name: 'Is Not', value: 'ne' },
+			],
+			default: 'eq',
+			displayOptions: { show },
+		},
+		{
+			displayName: 'Value',
+			name: 'optionsValue',
+			type: 'options',
+			options: choices,
+			default: firstChoice,
+			description: `Which ${field.label.toLowerCase()} to look for`,
+			displayOptions: { show },
+		},
+	];
+}
+
 /** One row of the condition builder, as the editor stores it */
 interface IFilterRow {
 	field?: string;
@@ -280,6 +337,8 @@ interface IFilterRow {
 	booleanValue?: boolean;
 	/** The box of an amount */
 	numberValue?: number;
+	/** The list of a field whose answers are a closed set */
+	optionsValue?: string;
 	/** The picker of a date field */
 	dateValue?: string;
 }
@@ -365,6 +424,9 @@ function filterValue(row: IFilterRow, type: ODataFieldType | undefined): unknown
 	}
 	if (type === 'number') {
 		return row.numberValue;
+	}
+	if (type === 'options') {
+		return row.optionsValue;
 	}
 	if (type === 'date') {
 		return row.dateValue;
