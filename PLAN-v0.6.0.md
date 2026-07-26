@@ -1,0 +1,239 @@
+# PLANO DE IMPLEMENTAÇÃO — v0.6.0
+
+> **Não é spec.** A spec é o `DESIGN.md` e o `CONTRATO-API.md` (repo de planejamento) —
+> daqui valem principalmente a Parte 1 (anatomia da API) e o anexo A.2 (ordem de
+> construção). Convenção igual à dos planos anteriores.
+>
+> 🔒 Escrito para ser seguro em repositório público (CLAUDE §6, regra 8): nenhum nome de
+> cliente, ID de workflow, ID de credencial — e **nenhum token**, nem o da empresa cobaia.
+
+**Escopo da v0.6.0:** **agendamentos** — contas a receber e contas a pagar. Dois recursos
+novos, **Credit Schedule** e **Debit Schedule**, com as mesmas cinco operações dos
+stakeholders: Get Many, Get, Create, Update, Delete.
+
+**Prova o quê:** que o núcleo construído até a 0.5.x **paga a segunda família de graça**.
+Paginação, ciclo seguro de Update, filtro assistido, erros legíveis — tudo já existe; esta
+versão os aponta para a fatia que mais destrava: os agendamentos respondem por **~40 dos
+nodes HTTP Request** dos workflows ativos, a maior fatia que resta (anexo A.2 do contrato).
+
+**Decidido com o Alvaro em 2026-07-26:** dois recursos no menu (não um recurso com campo
+de tipo), e **as cinco operações de uma vez** (não leitura primeiro e escrita depois).
+
+**Fora de escopo:** a varredura de auditoria `GET /schedules` (crédito+débito juntos),
+anexos e anotações de agendamento (fatia 5 do A.2), baixa de agendamento — payments e
+receipts (fatia 4), parcelamento, e qualquer mudança nos recursos já publicados.
+
+---
+
+## 1. Medições — o que a API respondeu
+
+### 1.1 De hoje (2026-07-26), só com `GET` (`$top=1`), contra a cobaia
+
+| Medição | Resposta |
+|---|---|
+| Envelope de `/schedules/credit`, `/schedules/debit` e `/schedules` | ✅ `{items, count}` nas três |
+| `$orderby=scheduleId` com `$skip` | ✅ 200 nas três coleções |
+| **`$orderby=id`** | ❌ 500 — `Could not find a property named 'id' on type '…ScheduleFullViewDto'` |
+| `$skip` sem `$orderby` | ❌ 500, como nos stakeholders |
+| `contains(description,…)` · `contains(reference,…)` · `contains(stakeholder/name,…)` · `tolower()` | ✅ 200 |
+| `dueDate` · `scheduleDate` · `accrualDate` · `createDate` · `updateDate` com `ge`/`gt` | ✅ 200 |
+| **`value gt 100` · `value gt 100.50`** — número, sem aspas | ✅ 200 |
+| `isPaid` · `isDued` · `isFlagged` · `hasInvoice` com `eq` | ✅ 200 |
+| `stakeholder/id eq <guid sem aspas>` · `scheduleId eq <guid>` | ✅ 200 |
+| **`isDeleted eq false`** | ❌ 500 — o campo não existe aqui |
+| **`costCenterValueType eq 0`** | ❌ 500 — enum não compara, como nos stakeholders |
+
+**A chave de paginação mudou de nome.** Nos stakeholders é `id`; aqui é **`scheduleId`**,
+e `id` derruba com 500. O `paginate.ts` já recebe a chave por parâmetro desde a 0.2.0 —
+esta é a primeira coleção que usa essa porta.
+
+**O filtro ganhou um tipo.** `value` compara como número, sem aspas, com casas decimais.
+O construtor da 0.5.0 conhece texto, sim-ou-não e data; ganha `number`.
+
+### 1.2 Do contrato (medições de 2026-07-23/25, na cobaia)
+
+| Fato | Consequência para o node |
+|---|---|
+| `POST /schedules/credit` responde **string JSON crua** com o GUID criado | O parse defensivo do `niboCreate` já cobre; o read-back devolve o registro inteiro |
+| `/FormatType=json` é redundante no POST de schedules e **404 em todo PUT** | Create usa o caminho simples + read-back |
+| **`GET /schedules/credit/{id}` é universal**: aceita ID de débito e responde `type: "Debit"`. `GET /schedules/debit/{id}` e `GET /schedules/{id}` são **404** | Toda leitura por ID passa pelo endpoint universal — inclusive o read-back do Create e o ciclo do Update do débito |
+| `PUT` bem-sucedido responde `{}` ou 204; malformado responde **`{"Messages":[""]}` com HTTP 200 e nada gravado** | O ciclo seguro (GET → merge → PUT → GET) já trata os dois |
+| Obrigatórios do POST: `stakeholderId`, `scheduleDate`, `dueDate`, `categories: [{categoryId, value}]` | O formulário do Create pede exatamente isso |
+| **`accrualDate` omitido → a API copia o `dueDate`**, silenciosamente | Campo de primeira classe no Create, nunca escondido em menu (contrato §3.4) |
+| **Débito: `value` negativo no GET, positivo no POST** | Ver decisão 5 |
+| **`stakeholderId` da raiz vem zerado** (`00000000-…`) no GET; o real está em `stakeholder.id` | Ver decisão 4 |
+| O POST de schedules usa **`isFlagged`** (payments usa `isFlag`) | Grafia fixa no payload; ninguém digita |
+
+### 1.3 Pendentes — medir **antes** da fatia de escrita, na cobaia (regra 3 permite)
+
+| ☐ | `PUT /schedules/debit/{id}` existe? (a referência marca "a validar") |
+| ☐ | `DELETE /schedules/debit/{id}` existe? (idem) |
+| ☐ | Formato da resposta do `POST /schedules/debit` (só o de crédito foi medido) |
+| ☐ | O shape que o `PUT` aceita: o registro lido volta inteiro? `categories` volta como foi? qual o sinal do `value` no PUT de débito? |
+| ☐ | O sinal do `value` no `GET /schedules/debit` da cobaia — decide o texto do campo Value no filtro (decisão 5) |
+
+Nenhuma dessas medições bloqueia as fatias de leitura; todas bloqueiam as de escrita.
+
+---
+
+## 2. Decisões de recorte
+
+1. **Dois recursos, um handler** *(decidido pelo Alvaro)*. `Credit Schedule` e
+   `Debit Schedule` entram no menu Resource — em ordem alfabética, entrelaçados com os
+   stakeholders — e dividem um handler parametrizado por uma tabela, como os quatro
+   stakeholders dividem o deles desde a 0.1.0. Cada um tem seu campo de ID
+   (`creditScheduleId`, `debitScheduleId`): nome de parâmetro é contrato.
+2. **As cinco operações de uma vez** *(decidido pelo Alvaro)*. A versão só fecha com o
+   aceite completo — leitura e escrita — na cobaia.
+3. **Get confere o tipo.** A busca por ID é o endpoint universal, que aceita ID de
+   qualquer tipo e responde o que aquele ID for. Um ID de débito colado no recurso de
+   crédito **falha com mensagem clara** ("this ID belongs to a debit schedule") em vez de
+   devolver silenciosamente um registro do outro tipo — que é exatamente a troca que um
+   workflow não percebe.
+4. **`stakeholderId` da raiz é consertado em toda leitura.** O GET responde a raiz zerada
+   e o valor real dentro de `stakeholder.id`; o normalize copia o real para a raiz. É
+   defeito puro da API — não há leitura em que o GUID zerado seja a resposta certa.
+5. **O sinal do débito não é tocado na leitura.** O valor sai como a API responde
+   (negativo no débito, se a medição 1.3 confirmar) — inverter valor financeiro na saída
+   criaria um node que soma diferente da API que ele embrulha. Na **escrita** o usuário
+   digita positivo, como a própria API exige. O campo Value do filtro do débito ganha a
+   descrição que explica o sinal, com o texto decidido pela medição 1.3.
+6. **Categorias como o array que a API pede.** O Create exige `categories`; a UI oferece
+   uma fixedCollection múltipla — Category ID + Value por linha, pelo menos uma. O valor
+   do agendamento é a soma das linhas, regra da API, dita na descrição do campo.
+7. **`accrualDate` (competência) é campo de primeira classe no Create**, visível ao lado
+   do vencimento, nunca dentro de Additional Fields — contrato §3.4, assimetria 1. Vazio,
+   a descrição avisa: a API copia o vencimento, e a receita/despesa cai no mês do
+   vencimento.
+8. **O cardápio de filtro é fechado e medido**, como na 0.5.0: só entra campo da tabela
+   1.1. `type` fica fora (é constante dentro de cada coleção), `isDeleted` e
+   `costCenterValueType` ficam fora (500). A UI das condições e a escolha do `$filter`
+   saem do arquivo dos stakeholders para um módulo compartilhado, **sem mudança de
+   comportamento** — os testes existentes dos stakeholders são a prova da extração.
+
+---
+
+## 3. Arquitetura — onde cada comportamento mora
+
+| Camada | O que ganha na 0.6.0 |
+|---|---|
+| `transport/odata.ts` | O tipo `number`: literal sem aspas, validado numérico. Puro, como o resto |
+| `transport/save.ts` | Opção `readEndpoint` em `niboCreate` e `niboSafeUpdate` — o read-back e o ciclo do Update leem no endpoint universal, escrevem no próprio. Default: o endpoint de escrita (zero mudança para stakeholders) |
+| `transport/paginate.ts` · `request.ts` · `merge.ts` · `errors.ts` | **Nada** |
+| `resources/shared/filter.ts` **(novo)** | A UI das condições (factory por cardápio) e o `listFilter` parametrizado — stakeholder e schedule consomem daqui |
+| `resources/schedule/description.ts` **(novo)** | Os dois recursos, operações, formulários e o cardápio de filtro |
+| `resources/schedule/execute.ts` **(novo)** | Handler parametrizado credit/debit: tabela de endpoints, endpoint universal de leitura, checagem de tipo no Get |
+| `resources/schedule/normalize.ts` **(novo)** | `stakeholderId` da raiz; o payload de escrita (categories, `isFlagged`, competência) |
+| `resources/stakeholder/*` | Só a mudança de importar o filtro do módulo compartilhado |
+| `NiboEmpresas.node.ts` | Roteia os dois recursos novos; a credencial ganha os dois na lista do `displayOptions` (padrão de UI travado — regra 1 da memória do projeto, com teste guardando) |
+
+---
+
+## 4. Campos na UI (nome de parâmetro é contrato — CLAUDE decisão 9)
+
+| Parâmetro | Onde | O que é |
+|---|---|---|
+| `creditScheduleId` · `debitScheduleId` | Get, Update, Delete | O ID do agendamento, um por recurso |
+| `stakeholderId` | Create (obrigatório) | GUID do contato — normalmente expressão lendo do item |
+| `dueDate` | Create (obrigatório) | Vencimento |
+| `scheduleDate` | Create (obrigatório) | Data prevista de pagamento/recebimento |
+| `accrualDate` | Create (primeira classe, opcional) | Competência — vazio, a API copia o vencimento |
+| `categories` | Create (fixedCollection múltipla, obrigatória) | Linhas de Category ID + Value |
+| `additionalFields` | Create | Description, Reference |
+| `updateFields` | Update | Os mesmos campos, todos opcionais |
+| `returnAll` · `limit` · `filters` · `filterCombine` | Get Many | Herdados do padrão 0.5.x |
+| `options.filter` | Get Many | O OData cru, herdado — escrever nele esconde as condições (0.5.2) |
+
+**Cardápio do filtro** (alfabético, como o linter exige):
+
+| Na UI | Caminho | Tipo |
+|---|---|---|
+| Accrual Date | `accrualDate` | data |
+| Created At | `createDate` | data |
+| Description | `description` | texto |
+| Due Date | `dueDate` | data |
+| Has Invoice | `hasInvoice` | sim-ou-não |
+| Is Flagged | `isFlagged` | sim-ou-não |
+| Is Overdue | `isDued` | sim-ou-não |
+| Is Paid | `isPaid` | sim-ou-não |
+| Reference | `reference` | texto |
+| Schedule Date | `scheduleDate` | data |
+| Stakeholder Name | `stakeholder/name` | texto |
+| Updated At | `updateDate` | data |
+| Value | `value` | **número** |
+
+Armadilhas de linter já conhecidas: opções em ordem alfabética, `default` literal,
+descrição de booleano começa com "Whether", nada de `{{ $json… }}` em descrição.
+
+---
+
+## 5. Fatias, com teste antes do código
+
+1. **`transport/odata.ts` — o tipo número** *(commit próprio)*. Testes: `value gt 100` sem
+   aspas; decimal com ponto; **vírgula decimal vira ponto** (`100,50` → `100.50` — a caixa
+   da UI entrega número, mas uma expressão pode entregar o texto que o item trouxe);
+   vazio ignorado; texto não-numérico falha em vez de virar expressão inválida.
+2. **Extração do filtro para `resources/shared/filter.ts`** *(commit próprio)*. Zero
+   mudança de comportamento: os testes 0.5.x dos stakeholders passam intactos — eles são
+   o critério da fatia.
+3. **`resources/schedule/description.ts`** *(commit próprio)*. Os dois recursos no menu e
+   na lista da credencial, formulários da seção 4, cardápio medido. Testes: a credencial
+   lista os seis resources; competência é primeira classe; o cardápio não oferece `type`
+   nem `isDeleted`; Value é número.
+4. **Leitura: `execute.ts` + `normalize.ts` — Get Many e Get** *(commit próprio)*.
+   Testes: `$orderby=scheduleId`; endpoint por recurso; Get no endpoint universal; ID do
+   outro tipo falha com a mensagem do tipo real; `stakeholderId` da raiz consertado.
+5. **Medição de escrita na cobaia** *(sem código; resultado anotado neste arquivo)*: a
+   tabela 1.3 inteira. Cria, lê, atualiza e apaga **na cobaia**, que termina com zero
+   registros.
+6. **`transport/save.ts`: `readEndpoint`** *(commit próprio)*. Testes: read-back e ciclo
+   de Update leem no universal e escrevem no próprio; stakeholders seguem como estão.
+7. **Escrita: Create, Update, Delete** *(commit próprio)*. Testes com o que a fatia 5
+   mediu: payload de categorias, competência, `isFlagged`, sinal do débito na escrita,
+   confirmação do Update, Delete devolve `{id, deleted: true}`.
+8. **README + bump 0.6.0** *(commit próprio)*: seção Schedules, os dois recursos, a
+   competência, o sinal do débito, histórico.
+
+---
+
+## 6. Onde cada regra inviolável continua atendida (CLAUDE §6)
+
+| Regra | Na v0.6.0 |
+|---|---|
+| 3 — escrita só na cobaia | As fatias 5 e o aceite escrevem **só na cobaia**, que termina **com zero registros** |
+| 4 — nenhum token em código ou commit | Nada novo toca token |
+| 5 — zero dep de runtime | `dependencies` segue `{}` |
+| Decisão 9 — inglês | Campos, operadores, descrições e README |
+| 7 — instalação real | A 0.6.0 fecha com a tabela da seção 7 |
+| 8 — repo público | Este plano não nomeia cliente, workflow nem credencial |
+
+---
+
+## 7. Teste e aceite
+
+**Gate local:** `npm run lint`, `npm run lint:community`, `npm test`, `npm run build`,
+`npm pack` — todos verdes.
+
+**Teste de instalação real (regra 7)**, com a 0.6.0 instalada pela tela Community Nodes,
+contra a cobaia:
+
+| ☐ | Get Many nos dois recursos, com filtro assistido: *Due Date depois de* + *Is Paid é falso*; *Value maior que* com centavos |
+| ☐ | Get devolve o agendamento pelo ID; ID de débito no recurso de crédito **falha dizendo o tipo real** |
+| ☐ | Create de um recebimento na cobaia devolve o registro completo, com a categoria da linha |
+| ☐ | Create de um pagamento digitado **positivo** funciona; o GET seguinte mostra o sinal que a medição 1.3 documentou |
+| ☐ | Competência deixada vazia → o registro volta com competência igual ao vencimento (o aviso do campo diz a verdade) |
+| ☐ | Update de description confirma pela releitura; os demais campos intactos |
+| ☐ | Delete dos dois; **a cobaia termina com zero agendamentos** |
+| ☐ | Regressão: os quatro stakeholders filtram e escrevem como na 0.5.2 |
+| ☐ | CI verde; scanner oficial sem achados |
+
+---
+
+## 8. Sequência
+
+Fatias pequenas, teste antes do código, commit por fatia, push a cada fatia, tag e
+publicação **só com o OK do Alvaro**:
+
+1. Número no construtor → 2. extração do filtro → 3. descrição → 4. leitura →
+5. medição de escrita na cobaia → 6. `readEndpoint` → 7. escrita → 8. README + bump →
+9. publicar → aceite real → fechar a tabela da seção 7.
