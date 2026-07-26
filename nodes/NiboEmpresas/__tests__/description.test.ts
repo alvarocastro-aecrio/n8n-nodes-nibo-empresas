@@ -1,4 +1,10 @@
-import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
+import type {
+	INodeParameters,
+	INodeProperties,
+	INodePropertyOptions,
+	INodeTypeDescription,
+} from 'n8n-workflow';
+import { NodeHelpers } from 'n8n-workflow';
 
 import { NiboEmpresas } from '../NiboEmpresas.node';
 
@@ -529,5 +535,106 @@ describe('NiboEmpresas — the assisted filter', () => {
 
 			expect(names).toEqual([...names].sort());
 		}
+	});
+});
+
+/**
+ * What the editor actually draws, decided by the editor's own function.
+ *
+ * Every other test here reads `displayOptions` and trusts our reading of it.
+ * This one hands the node's parameters to `NodeHelpers.displayParameter` — the
+ * same call the editor makes to decide whether a field is on the screen — and
+ * asks it. It is the difference between "the rule is written down" and "the
+ * rule does what we think it does".
+ */
+describe('NiboEmpresas — what the editor draws for each filter type', () => {
+	const NODE = { typeVersion: 1 };
+
+	/**
+	 * What the editor holds for a node whose author only chose these values.
+	 *
+	 * The editor does not ask about the raw stored parameters: it fills in the
+	 * default of every parameter it is showing first (`getNodeParameters` with
+	 * `returnDefaults`), and asks about the result. That is why a node saved
+	 * before Filter Type existed still lands in the assisted mode — the default
+	 * is filled in for it — and simulating only the second step would answer
+	 * that such a node is shown no filter at all, which is not what happens.
+	 */
+	function asTheEditorHoldsIt(chosen: INodeParameters): INodeParameters {
+		return NodeHelpers.getNodeParameters(
+			description.properties,
+			chosen,
+			true,
+			false,
+			NODE,
+			description as INodeTypeDescription,
+		) as INodeParameters;
+	}
+
+	/** Whether the editor would draw this top-level parameter, given these node values */
+	function drawn(name: string, chosen: INodeParameters): boolean {
+		const values = asTheEditorHoldsIt(chosen);
+		const parameter = description.properties.find((prop) => prop.name === name);
+
+		expect(parameter).toBeDefined();
+		return NodeHelpers.displayParameter(
+			values,
+			parameter as INodeProperties,
+			NODE,
+			description as INodeTypeDescription,
+			values,
+		);
+	}
+
+	/** The same question for a field inside the Options collection */
+	function drawnInOptions(name: string, chosen: INodeParameters): boolean {
+		const values = asTheEditorHoldsIt(chosen);
+		const options = description.properties[description.properties.length - 1];
+		const field = ((options?.options ?? []) as INodeProperties[]).find(
+			(one) => one.name === name,
+		);
+
+		expect(field).toBeDefined();
+		return NodeHelpers.displayParameter(
+			(values.options ?? {}) as INodeParameters,
+			field as INodeProperties,
+			NODE,
+			description as INodeTypeDescription,
+			values,
+		);
+	}
+
+	const CONDITIONS = { resource: 'customer', operation: 'list', filterType: 'conditions' };
+	const ODATA = { resource: 'customer', operation: 'list', filterType: 'odata' };
+
+	it('draws the condition builder, and no OData box, on Conditions', () => {
+		expect(drawn('filters', CONDITIONS)).toBe(true);
+		expect(drawn('filterCombine', CONDITIONS)).toBe(true);
+		expect(drawnInOptions('filter', CONDITIONS)).toBe(false);
+	});
+
+	// This is the whole request: turn the OData on and the new filters go away,
+	// leaving only the OData filter.
+	it('drops the condition builder and offers only the OData box on OData Expression', () => {
+		expect(drawn('filters', ODATA)).toBe(false);
+		expect(drawn('filterCombine', ODATA)).toBe(false);
+		expect(drawnInOptions('filter', ODATA)).toBe(true);
+	});
+
+	// A node saved before Filter Type existed has no value for it, and the
+	// editor falls back to the default — which is the assisted mode.
+	it('draws the condition builder for a node that never chose a filter type', () => {
+		const saved = { resource: 'customer', operation: 'list' };
+
+		expect(drawn('filters', saved)).toBe(true);
+		expect(drawnInOptions('filter', saved)).toBe(false);
+	});
+
+	// And nothing to filter means no filter fields at all.
+	it('draws neither on an operation that reads a single record', () => {
+		const one = { resource: 'customer', operation: 'get', filterType: 'odata' };
+
+		expect(drawn('filters', one)).toBe(false);
+		expect(drawnInOptions('filter', one)).toBe(false);
 	});
 });
