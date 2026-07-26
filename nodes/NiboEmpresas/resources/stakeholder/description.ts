@@ -12,7 +12,7 @@ import { filterFieldTypes, filterProperties } from '../shared/filter';
 interface IStakeholderType {
 	/** The `resource` value, which is also the word used in the action texts */
 	value: string;
-	/** How the editor names one of them */
+	/** How a field that asks for one of them is labelled — "Customer ID" */
 	label: string;
 	/** How the action texts name many of them */
 	plural: string;
@@ -21,6 +21,23 @@ interface IStakeholderType {
 	/** An employee is a person; the other three can be a company */
 	isPerson?: boolean;
 }
+
+/**
+ * The word that gathers the four on the Resource menu, and with it in the
+ * Actions tab of the editor.
+ *
+ * The tab is built by walking the Resource options in the order they are
+ * declared and turning each one into a heading — read in the n8n 2.18.5 source
+ * on 2026-07-26, where actions are never re-sorted. Seven names in one
+ * alphabetical row put "Credit Schedule" between "Category" and "Customer",
+ * which reads as a list of unrelated things.
+ *
+ * A prefix fixes that without buying an exception: the linter wants the options
+ * alphabetical, and `Category` < `Contact` < `Schedule` already is. What Nibo's
+ * own screen calls these is *Contatos*, and the README has called them contacts
+ * since the first version.
+ */
+const FAMILY = 'Contact';
 
 // Alphabetical by label: it is the order the editor shows and the order the
 // n8n linter requires of an options list.
@@ -43,9 +60,21 @@ const EVERY_TYPE = TYPES.map((type) => type.value);
 
 /** The Resource options, and the list the credential has to name — see the node description */
 export const stakeholderResources: INodePropertyOptions[] = TYPES.map((type) => ({
-	name: type.label,
+	name: `${FAMILY} - ${type.label}`,
 	value: type.value,
 }));
+
+/**
+ * The noun with the article English wants in front of it.
+ *
+ * "Create a employee" was on the screen from 0.4.0 to 0.8.1: the sentence is
+ * built from the resource, and nobody reads their own labels out loud. The vowel
+ * rule is enough for every noun this API has — it is spelling, not phonetics, so
+ * a future "hour" or "user" would need more than this.
+ */
+function withArticle(noun: string): string {
+	return `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}`;
+}
 
 // Alphabetical by name, which is what the n8n linter requires and what the
 // editor shows in this exact order.
@@ -63,19 +92,19 @@ export const stakeholderOperations: INodeProperties[] = TYPES.map((type) => ({
 		{
 			name: 'Create',
 			value: 'create',
-			action: `Create a ${type.value}`,
-			description: `Add a ${type.value} to the organization`,
+			action: `Create ${withArticle(type.value)}`,
+			description: `Add ${withArticle(type.value)} to the organization`,
 		},
 		{
 			name: 'Delete',
 			value: 'delete',
-			action: `Delete a ${type.value}`,
-			description: `Remove a ${type.value} from the organization`,
+			action: `Delete ${withArticle(type.value)}`,
+			description: `Remove ${withArticle(type.value)} from the organization`,
 		},
 		{
 			name: 'Get',
 			value: 'get',
-			action: `Get a ${type.value}`,
+			action: `Get ${withArticle(type.value)}`,
 			description: `Retrieve one ${type.value} by ID`,
 		},
 		{
@@ -87,7 +116,7 @@ export const stakeholderOperations: INodeProperties[] = TYPES.map((type) => ({
 		{
 			name: 'Update',
 			value: 'update',
-			action: `Update a ${type.value}`,
+			action: `Update ${withArticle(type.value)}`,
 			description: `Change the fields given below, leaving every other field of the ${type.value} as it is`,
 		},
 	],

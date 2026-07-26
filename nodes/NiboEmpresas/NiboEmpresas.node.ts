@@ -41,12 +41,19 @@ import { executeStakeholder } from './resources/stakeholder/execute';
 import { searchScheduleStakeholders } from './resources/stakeholder/search';
 
 /**
- * Every resource the node offers, in one alphabetical list.
+ * Every resource the node offers, in one alphabetical list — which since 0.8.2
+ * is also a list grouped by family.
  *
- * The families are interleaved rather than grouped: the editor shows this list
- * as it is declared, the n8n linter wants it alphabetical, and whoever is
- * looking for "Debit Schedule" is looking for the letter D, not for a family
- * they would have to know the node has.
+ * The editor shows this list as it is declared, and it builds the **Actions** tab
+ * from the same order, one heading per entry ("Contact - Employee actions") and
+ * no sorting of its own — read in the n8n 2.18.5 source on 2026-07-26. Seven
+ * bare names alphabetically put "Credit Schedule" between "Category" and
+ * "Customer", so the tab read as a pile of unrelated things.
+ *
+ * Each family carries its word in the option name, and the sort below then does
+ * the grouping for free: `Category` < `Contact` < `Schedule`. That is why this is
+ * a prefix and not a hand-written order — the n8n linter wants these
+ * alphabetical, and this way it still is.
  */
 const RESOURCES: INodePropertyOptions[] = [
 	...stakeholderResources,

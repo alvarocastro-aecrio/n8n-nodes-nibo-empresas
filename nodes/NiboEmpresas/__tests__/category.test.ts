@@ -424,19 +424,49 @@ describe('NiboEmpresas — Category on the screen', () => {
 		return ((field?.options ?? []) as INodePropertyOptions[]).map((option) => option.value as string);
 	}
 
-	it('joins the menu in its alphabetical place', () => {
+	/**
+	 * The menu reads as three families instead of seven names in a row, and the
+	 * Actions tab of the editor reads the same way — it is built by walking these
+	 * options in the order they are declared, and it turns each of them into a
+	 * heading ("Contact - Customer actions"). Read in the n8n 2.18.5 source on
+	 * 2026-07-26: actions are never re-sorted there, so this list is the order.
+	 *
+	 * The prefix does the grouping without costing the alphabetical order the n8n
+	 * linter wants, which is the whole reason it is a prefix and not a hand-made
+	 * order: Category < Contact < Schedule.
+	 */
+	it('joins a menu that reads by family, and is still alphabetical', () => {
 		const names = (property('resource')?.options as INodePropertyOptions[]).map(
 			(option) => option.name,
 		);
 
 		expect(names).toEqual([
 			'Category',
-			'Credit Schedule',
-			'Customer',
-			'Debit Schedule',
-			'Employee',
-			'Partner',
-			'Supplier',
+			'Contact - Customer',
+			'Contact - Employee',
+			'Contact - Partner',
+			'Contact - Supplier',
+			'Schedule - Credit',
+			'Schedule - Debit',
+		]);
+		expect(names).toEqual([...names].sort());
+	});
+
+	// A label is a word; a `value` is a contract. The words above changed in
+	// 0.8.2 and these did not, which is why no saved workflow noticed.
+	it('renames nothing a saved workflow depends on', () => {
+		const values = (property('resource')?.options as INodePropertyOptions[]).map(
+			(option) => option.value,
+		);
+
+		expect(values).toEqual([
+			'category',
+			'customer',
+			'employee',
+			'partner',
+			'supplier',
+			'creditSchedule',
+			'debitSchedule',
 		]);
 	});
 

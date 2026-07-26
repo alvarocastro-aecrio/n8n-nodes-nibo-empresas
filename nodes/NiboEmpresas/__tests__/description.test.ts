@@ -167,20 +167,69 @@ describe('NiboEmpresas — the four stakeholder types', () => {
 		}
 	});
 
+	/**
+	 * The four read as one family on the menu and in the Actions tab, which is
+	 * the same list — the editor turns each option into a heading of its own
+	 * ("Contact - Employee actions"). What Nibo's own screen calls these is
+	 * *Contatos*, and the README has called them contacts since the first
+	 * version, so that is the word.
+	 */
+	it('gives the four one family word on the menu', () => {
+		const options = property('resource')?.options as INodePropertyOptions[];
+		const family = options.filter((option) => TYPES.includes(option.value as string));
+
+		expect(family.map((option) => option.name)).toEqual([
+			'Contact - Customer',
+			'Contact - Employee',
+			'Contact - Partner',
+			'Contact - Supplier',
+		]);
+	});
+
+	/**
+	 * "Create a employee" was on the screen from 0.4.0 to 0.8.1, because the word
+	 * is built from the resource and nobody reads their own labels out loud. The
+	 * article now follows the noun.
+	 */
+	it('writes "an employee" where English asks for it', () => {
+		const operations = declarations('operation').find((prop) =>
+			(prop.displayOptions?.show?.resource ?? []).includes('employee'),
+		);
+
+		expect((operations?.options as INodePropertyOptions[]).map((option) => option.action)).toEqual([
+			'Create an employee',
+			'Delete an employee',
+			'Get an employee',
+			'Get many employees',
+			'Update an employee',
+		]);
+	});
+
+	it('leaves the other three with the article they already had', () => {
+		const operations = declarations('operation').find((prop) =>
+			(prop.displayOptions?.show?.resource ?? []).includes('customer'),
+		);
+		const actions = (operations?.options as INodePropertyOptions[]).map((option) => option.action);
+
+		expect(actions).toContain('Create a customer');
+		expect(actions).toContain('Get many customers');
+	});
+
 	// A parameter name is a contract, and `customerId` is already published, so
 	// each type carries its own rather than everyone sharing a renamed one.
-	it('names the ID field after the type it belongs to', () => {
-		for (const [resource, parameter] of [
-			['customer', 'customerId'],
-			['employee', 'employeeId'],
-			['partner', 'partnerId'],
-			['supplier', 'supplierId'],
+	it('names the ID field after the type it belongs to, with no family word on it', () => {
+		for (const [resource, parameter, label] of [
+			['customer', 'customerId', 'Customer ID'],
+			['employee', 'employeeId', 'Employee ID'],
+			['partner', 'partnerId', 'Partner ID'],
+			['supplier', 'supplierId', 'Supplier ID'],
 		]) {
 			const field = declarations(parameter)[0];
 
 			expect(field?.displayOptions?.show?.resource).toEqual([resource]);
 			expect(field?.displayOptions?.show?.operation).toEqual(['delete', 'get', 'update']);
 			expect(field?.required).toBe(true);
+			expect(field?.displayName).toBe(label);
 		}
 	});
 
@@ -569,19 +618,35 @@ describe('NiboEmpresas — the two schedule resources', () => {
 		);
 	}
 
-	// Interleaved, not appended: whoever is looking for "Debit Schedule" is
-	// looking for the letter D, not for a family they would have to know exists.
-	// (Which names are on the menu is checked in category.test.ts, where the
-	// newest one is added — here it is only that the two land in their places.)
-	it('puts the two in their alphabetical places, between the contacts', () => {
+	/**
+	 * Grouped since 0.8.2, where they used to be interleaved with the contacts —
+	 * alphabetically, which put Credit Schedule between Category and Customer.
+	 * That reads fine as seven names and badly as an Actions tab, which is built
+	 * from this very order and turns each entry into a heading of its own.
+	 *
+	 * The two sit under one family word now, and the list is still alphabetical:
+	 * the prefix is what buys both at once.
+	 */
+	it('puts the two under the Schedule family, after the contacts', () => {
 		const names = (property('resource')?.options as INodePropertyOptions[]).map(
 			(option) => option.name,
 		);
 
 		expect(names).toEqual([...names].sort());
-		expect(names.indexOf('Credit Schedule')).toBeLessThan(names.indexOf('Customer'));
-		expect(names.indexOf('Customer')).toBeLessThan(names.indexOf('Debit Schedule'));
-		expect(names.indexOf('Debit Schedule')).toBeLessThan(names.indexOf('Employee'));
+		expect(names.filter((name) => name.startsWith('Schedule - '))).toEqual([
+			'Schedule - Credit',
+			'Schedule - Debit',
+		]);
+		expect(names.indexOf('Contact - Supplier')).toBeLessThan(names.indexOf('Schedule - Credit'));
+	});
+
+	// The family word is on the menu and nowhere else: the field that asks for an
+	// ID still says what it asks for, without a prefix in front of it.
+	it('keeps the ID fields named after the schedule itself', () => {
+		expect(forResource('creditScheduleId', 'creditSchedule')?.displayName).toBe(
+			'Credit Schedule ID',
+		);
+		expect(forResource('debitScheduleId', 'debitSchedule')?.displayName).toBe('Debit Schedule ID');
 	});
 
 	// The cost of the credential trick (see the block at the top): a resource

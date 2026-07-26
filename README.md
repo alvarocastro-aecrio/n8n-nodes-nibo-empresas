@@ -24,11 +24,13 @@ n8n-nodes-nibo-empresas
 
 Seven resources in three families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
 
-| Family | Resources | What they are |
+| Family | Resources, as the menu names them | What they are |
 |---|---|---|
-| **Contacts** | Customer · Employee · Partner · Supplier | Who you buy from, sell to, employ or share the company with |
-| **Schedules** | Credit Schedule · Debit Schedule | Accounts receivable and accounts payable — an amount due on a date |
+| **Contacts** | Contact - Customer · Contact - Employee · Contact - Partner · Contact - Supplier | Who you buy from, sell to, employ or share the company with |
+| **Schedules** | Schedule - Credit · Schedule - Debit | Accounts receivable and accounts payable — an amount due on a date |
 | **Category** | Category | The chart of accounts a schedule is filed under. **Get Many** only |
+
+The family word is part of each name on purpose: the editor builds its **Actions** tab from the Resource menu in the order it is declared, so the names are what put a family together there instead of scattering it alphabetically between the others. It is a label and nothing else — the value the workflow stores (`customer`, `creditSchedule`, …) has never changed.
 
 Contacts and schedules have the same five operations each. **Category has only Get Many**, because that is the only route the API offers for it.
 
@@ -260,7 +262,7 @@ Developed and tested against n8n **2.18.5** (self-hosted), on a clean instance, 
 
 ## Usage
 
-Add the **Nibo Empresas** node to a workflow, select the credential, pick a resource — Customer, Employee, Partner, Supplier, Credit Schedule, Debit Schedule or Category — and run **Get Many**. Each record becomes one n8n item.
+Add the **Nibo Empresas** node to a workflow, select the credential, pick a resource — the menu reads *Category*, then the four *Contact - …*, then *Schedule - Credit* and *Schedule - Debit* — and run **Get Many**. Each record becomes one n8n item.
 
 Writing works the same way: **Create** takes what that resource cannot be created without, **Update** takes an ID and only the fields you want changed, and **Delete** takes an ID. Each input item is one operation, and each answers with the record as Nibo has it.
 
@@ -303,6 +305,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.7.8 | The per-line field is labelled **Detail**, following what Nibo's own screen calls *Detalhamento*. Label only: the parameter is still `description`, which is what the API calls the field and what a node saved under 0.7.7 already carries |
 | 0.8.0 | **The contact of a schedule is chosen by searching.** What 0.7.0 did for the category, now for the stakeholder — but as a search rather than a list, because an organization can hold thousands of customers and loading them would be 28 calls to open a field. What is typed goes to the server. The list offers only the kinds the API accepts on each side: customer or partner on a credit schedule, supplier, employee or partner on a debit one, measured as a full matrix against the API. **By ID** stays, so an expression still gets in, and a node saved under 0.7.x keeps working untouched. The same search is offered inside *Update Fields*, so changing a contact is choosing one as well |
 | 0.8.1 | **The category list stops offering what a schedule cannot be filed under.** A schedule created with *"Outras receitas"* is accepted by the API and then shows up broken on Nibo's own screen — one category inside the entry, another outside it with no value. Measured family by family against the API: withheld-tax categories do the same, discounts are refused by the API itself, and interest reads correctly and stays on the list. The three that cannot work are filtered out on the server, in the call the field already made, and the node now explains the API's *"Categoria de juros, multa ou desconto invalida"* when an ID from an expression runs into it |
+| 0.8.2 | **The Actions tab reads by family.** The editor builds that tab from the Resource menu in the order it is declared, one heading per resource and no sorting of its own — so seven bare names in alphabetical order put *Credit Schedule* between *Category* and *Customer*, and the tab looked like a pile of unrelated things. Each resource now carries its family word (*Contact - Customer*, *Schedule - Credit*), which groups the menu **and** stays alphabetical, so nothing had to be forced. Labels only: the values a workflow stores are untouched, and the ID fields are still *Customer ID* and *Credit Schedule ID*. Also fixed, from the same look at the screen: the node had been offering *"Create a employee"* since 0.4.0 |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer

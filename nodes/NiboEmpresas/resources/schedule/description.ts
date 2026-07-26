@@ -17,8 +17,10 @@ import { filterFieldTypes, filterProperties } from '../shared/filter';
 interface IScheduleType {
 	/** The `resource` value */
 	value: string;
-	/** How the editor names one of them */
+	/** How a field that asks for one of them is labelled — "Credit Schedule ID" */
 	label: string;
+	/** How the Resource menu names it under the family word — "Credit" */
+	side: string;
 	/** How a sentence names one of them */
 	noun: string;
 	/** How a sentence names many of them */
@@ -34,10 +36,22 @@ interface IScheduleType {
 // Alphabetical by label, which is the order the editor shows and the order the
 // n8n linter requires of an options list. The node interleaves these with the
 // stakeholders to keep that true across the whole menu.
+/**
+ * The word that gathers the two on the Resource menu, and with it in the Actions
+ * tab — which is the same list, walked in this order, one heading per entry
+ * (n8n 2.18.5 source, read on 2026-07-26).
+ *
+ * Alphabetically these used to fall either side of "Customer", so the tab read
+ * as six unrelated things. The prefix groups them and stays alphabetical —
+ * `Category` < `Contact` < `Schedule` — so no linter exception is needed.
+ */
+const FAMILY = 'Schedule';
+
 const TYPES: IScheduleType[] = [
 	{
 		value: 'creditSchedule',
 		label: 'Credit Schedule',
+		side: 'Credit',
 		noun: 'credit schedule',
 		plural: 'credit schedules',
 		idParameter: 'creditScheduleId',
@@ -47,6 +61,7 @@ const TYPES: IScheduleType[] = [
 	{
 		value: 'debitSchedule',
 		label: 'Debit Schedule',
+		side: 'Debit',
 		noun: 'debit schedule',
 		plural: 'debit schedules',
 		idParameter: 'debitScheduleId',
@@ -59,7 +74,7 @@ const EVERY_TYPE = TYPES.map((type) => type.value);
 
 /** The Resource options, and part of the list the credential has to name */
 export const scheduleResources: INodePropertyOptions[] = TYPES.map((type) => ({
-	name: type.label,
+	name: `${FAMILY} - ${type.side}`,
 	value: type.value,
 	description: `An entry of ${type.alsoKnownAs}, due on a date and split into categories`,
 }));
