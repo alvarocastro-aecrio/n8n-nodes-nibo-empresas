@@ -222,6 +222,62 @@ describe('buildODataFilter — the number type', () => {
 	});
 });
 
+/**
+ * The type v0.7.0 adds, and the categories are what asked for it: `type` holds
+ * one of two words, `in` or `out`, and offering it as free text would be asking
+ * someone to guess which.
+ *
+ * It is a text literal in every other respect — quoted, apostrophe doubled —
+ * because that is what the API takes. Measured on 2026-07-26 against
+ * `/categories`: `type eq 'in'` and `type ne 'in'` both answer 200. Worth
+ * saying out loud, because the same thing is not true everywhere: on the
+ * stakeholders `document/type eq 'Cpf'` is a 500, which is why that field is
+ * not on their menu at all.
+ */
+describe('buildODataFilter — the options type', () => {
+	function choice(parts: Partial<IODataCondition>): IODataCondition {
+		return { field: 'type', operator: 'eq', value: 'in', type: 'options', ...parts };
+	}
+
+	it.each([
+		['eq', "type eq 'in'"],
+		['ne', "type ne 'in'"],
+	])('writes %s as the quoted literal the API takes', (operator, expected) => {
+		expect(buildODataFilter([choice({ operator })], 'and')).toBe(expected);
+	});
+
+	it('writes the other choice the same way', () => {
+		expect(buildODataFilter([choice({ value: 'out' })], 'and')).toBe("type eq 'out'");
+	});
+
+	// The value comes from a closed list, so this can only reach it through an
+	// expression — but the escaping is the text one, and it costs nothing to keep.
+	it('escapes an apostrophe, exactly as a text value does', () => {
+		expect(buildODataFilter([choice({ value: "D'ALESSANDRO" })], 'and')).toBe(
+			"type eq 'D''ALESSANDRO'",
+		);
+	});
+
+	it('skips a condition whose choice was left empty', () => {
+		expect(buildODataFilter([choice({ value: '' })], 'and')).toBe('');
+	});
+
+	// Two operators and no more: a list of two words has nothing to be greater
+	// than, and `contains` on it is a question nobody means to ask.
+	it.each(['contains', 'gt', 'startswith'])('refuses %s, which no choice can be asked', (operator) => {
+		expect(() => buildODataFilter([choice({ operator })], 'and')).toThrow(new RegExp(operator));
+	});
+
+	it('joins a choice with the conditions around it', () => {
+		const filter = buildODataFilter(
+			[choice({}), { field: 'name', operator: 'contains', value: 'Receita', type: 'text' }],
+			'and',
+		);
+
+		expect(filter).toBe("type eq 'in' and contains(name,'Receita')");
+	});
+});
+
 describe('buildODataFilter — joining conditions', () => {
 	const TWO: IODataCondition[] = [
 		{ field: 'name', operator: 'contains', value: 'ACME', type: 'text' },

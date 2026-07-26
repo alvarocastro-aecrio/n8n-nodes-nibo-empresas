@@ -21,8 +21,14 @@
  * through it without a line of it changing.
  */
 
-/** What the value is, which is what decides how the literal is written */
-export type ODataFieldType = 'text' | 'boolean' | 'number' | 'date';
+/**
+ * What the value is, which is what decides how the literal is written.
+ *
+ * `options` is a text value from a closed list — the API takes the same quoted
+ * literal, and what the list buys is the person not having to guess which words
+ * are on it.
+ */
+export type ODataFieldType = 'text' | 'boolean' | 'number' | 'options' | 'date';
 
 export interface IODataCondition {
 	/** The field path as the API names it, e.g. `name` or `document/number` */
@@ -55,6 +61,11 @@ const OPERATORS_OF: Record<ODataFieldType, string[]> = {
 	// literal bare: an amount is the one type where "exactly this" and "more
 	// than this" are both ordinary questions.
 	number: ['eq', 'ne', 'gt', 'ge', 'lt', 'le'],
+	// Two, and no more: a list of a few words has nothing to be greater than.
+	// Measured on 2026-07-26 on `/categories`, where `type eq 'in'` answers 200 —
+	// which is not a given, since the same shape is a 500 on the stakeholders'
+	// `document/type`. A closed list is only offered where it was measured.
+	options: ['eq', 'ne'],
 	date: ['gt', 'ge', 'lt', 'le'],
 };
 
@@ -126,6 +137,10 @@ function writeCondition(condition: IODataCondition): string | undefined {
 		return date === '' ? undefined : `${field} ${operator} ${date}`;
 	}
 
+	// Text, and `options` with it: a choice from a closed list is a text value
+	// that happens to have been picked rather than typed, and the API takes the
+	// very same quoted literal for both. The list is a fact about the UI, not
+	// about the expression, so it earns no branch here.
 	const text = String(condition.value ?? '');
 	if (text === '') {
 		return undefined;

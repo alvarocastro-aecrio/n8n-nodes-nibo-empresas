@@ -47,8 +47,8 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Official n8n scanner — second net, checks provenance (which lint
-      # cannot see). It is NOT the gate: it exits 0 even on lint findings,
-      # which is why lint:community runs before publish above.
+      # cannot see). It is NOT the publish gate: lint:community runs before
+      # publish above, because by the time this step runs the package is out.
       # Pinned to the version just published: without it the scanner resolves
       # "latest", which seconds after publish is still the PREVIOUS release —
       # on v0.2.0 it scanned 0.1.4 and reported on the wrong package.
@@ -57,14 +57,26 @@ jobs:
       # things that need a moment to settle: npm serving the new version, and
       # GitHub serving the source the provenance attests to (on v0.2.1 that
       # fetch answered 404, and the very same scan passed minutes later).
+      #
+      # The success LINE is what is checked, never the exit code. This tool
+      # exits 0 whatever happens: on lint findings, and — measured on v0.6.0 —
+      # when it fails to analyse the package at all (`Failed to analyze:
+      # TypeError` out of its own dependency, on a runner forced onto Node 24).
+      # That release went green here having scanned nothing; run by hand on
+      # Node 22 the very same version passed clean. A step that cannot tell
+      # "passed" from "never ran" guarantees nothing while looking like it does.
       - name: Scan published package
         run: |
           version="${GITHUB_REF_NAME#v}"
+          package="n8n-nodes-nibo-empresas@$version"
           for delay in 20 40 60; do
             sleep "$delay"
-            if npx @n8n/scan-community-package "n8n-nodes-nibo-empresas@$version"; then
+            output="$(npx @n8n/scan-community-package "$package" 2>&1 || true)"
+            echo "$output"
+            if grep -qF 'has passed all security checks' <<<"$output"; then
               exit 0
             fi
             echo "::notice::scan not conclusive yet — retrying"
           done
-          echo "::warning::the official scan did not pass here; run it by hand before trusting this release"
+          echo "::error::the official scan never said $package passed. Either it found something or it could not analyse the package — the output above says which. Run 'npx @n8n/scan-community-package $package' by hand before trusting this release."
+          exit 1
