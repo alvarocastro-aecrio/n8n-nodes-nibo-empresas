@@ -59,7 +59,20 @@ export async function loadScheduleCategories(
 	const credentials = await this.getCredentials(CREDENTIAL_NAME);
 	const baseUrl = ((credentials.baseUrl as string) || DEFAULT_BASE_URL).replace(/\/+$/, '');
 
-	const qs: IDataObject = { $orderby: 'id', $top: 500 };
+	// Grouped, then in the order the organization itself put them in, then by
+	// name — and sorted by the server, so `order` never has to be read back.
+	//
+	// `order` is the field the Nibo screen writes when categories are dragged
+	// about. It is null until somebody does that (all 22 of the test company's
+	// are), which is why the name is the last key rather than the only one.
+	//
+	// `group/referenceCode` is here and reaches no screen. It is the only thing
+	// that puts Receitas before Custos before Despesas before Investimento
+	// before Financiamento — the sequence a chart of accounts is read in, and
+	// the cash-flow statement it mirrors. Sorting the group names as text would
+	// open the list on "Atividades de financiamento", which is where nobody
+	// starts. (`group/order` does not exist: HTTP 500.)
+	const qs: IDataObject = { $orderby: 'group/referenceCode,order,name', $top: 500 };
 	if (fits !== undefined) {
 		qs.$filter = `type eq '${fits}'`;
 	}
@@ -93,43 +106,30 @@ export async function loadScheduleCategories(
 		});
 	}
 
-	return records.map(asOption).sort(byReferenceCode);
+	// Whatever order the server answered in is the order shown. Re-sorting here
+	// would throw away `order`, which is the one key that carries a decision the
+	// organization actually took.
+	return records.map(asOption);
 }
 
 /**
- * One line of the chart of accounts as the editor shows it: the code next to the
- * name, because that is how an accountant finds one, and the group underneath.
+ * One line of the chart of accounts as the editor shows it: the name, and the
+ * group under it — the two things the Nibo screen itself shows.
+ *
+ * The reference code was in front of the name until 0.7.3 and that was a
+ * mistake. It is an internal code of the standard chart of accounts, it appears
+ * nowhere in Nibo's own interface, and unfamiliar numbers in front of familiar
+ * names are what made a list that was working perfectly look like another
+ * company's. What is not on their screen does not go on ours.
  */
 function asOption(record: IDataObject): INodePropertyOptions {
-	const name = String(record.name ?? '').trim();
-	const code = String(record.referenceCode ?? '').trim();
 	const group = (record.group ?? {}) as IDataObject;
 	const groupName = String(group.name ?? '').trim();
 
 	return {
-		name: code === '' ? name : `${code} · ${name}`,
+		name: String(record.name ?? '').trim(),
 		value: String(record.id ?? ''),
 		description: groupName === '' ? undefined : groupName,
 	};
 }
 
-/**
- * By reference code, which is the order a chart of accounts is read in —
- * `1.1.001` before `1.1.002` before `2.1.001`, never alphabetical by name.
- *
- * Sorted here rather than by the API: `$orderby=referenceCode` was not among
- * what was measured, and 22 lines is not something to page. A category the
- * organization typed itself may carry no code, and it goes last rather than
- * first, where an empty string would otherwise put it.
- */
-function byReferenceCode(one: INodePropertyOptions, other: INodePropertyOptions): number {
-	const code = (option: INodePropertyOptions): string =>
-		option.name.includes(' · ') ? option.name.split(' · ')[0] : '';
-
-	const [left, right] = [code(one), code(other)];
-	if (left === '' || right === '') {
-		return left === right ? one.name.localeCompare(other.name) : left === '' ? 1 : -1;
-	}
-
-	return left.localeCompare(right, undefined, { numeric: true });
-}

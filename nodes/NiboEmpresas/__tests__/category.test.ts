@@ -181,7 +181,13 @@ describe('executeCategory — the filter it sends', () => {
  * load options on a field nested in a fixedCollection, as this one is.
  */
 describe('loadScheduleCategories — the list on the Category field', () => {
-	const REVENUE = { id: 'rev', name: 'Receita com vendas', referenceCode: '1.1.001', type: 'in' };
+	const REVENUE = {
+		id: 'rev',
+		name: 'Receita com vendas',
+		referenceCode: '1.1.001',
+		type: 'in',
+		group: { name: 'Receitas operacionais' },
+	};
 	const COST = { id: 'cost', name: 'Custos produto vendido', referenceCode: '2.1.001', type: 'out' };
 
 	let request: jest.Mock;
@@ -223,43 +229,80 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 	});
 
 	// A chart of accounts is read by its code, not alphabetically.
-	it('orders the list by reference code', async () => {
+	/**
+	 * The order is the server's, and the key says what a person means by it:
+	 * grouped, then in whatever order the organization dragged them into on the
+	 * Nibo screen, then by name.
+	 *
+	 * `group/referenceCode` is in there and never appears on screen. It is the
+	 * only thing that puts Receitas before Custos before Despesas — the sequence
+	 * a chart of accounts is read in — where sorting the group names as text
+	 * would open on "Atividades de financiamento".
+	 */
+	it('asks the server for the categories grouped and in the organization order', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		await loadScheduleCategories.call(
+			loadContext({ authMode: 'credential', resource: 'creditSchedule' }),
+		);
+
+		expect(querySent().$orderby).toBe('group/referenceCode,order,name');
+	});
+
+	// Whatever the server sends back is the order shown: re-sorting it here
+	// would throw away the `order` field, which is the one thing that carries
+	// what the organization itself decided.
+	it('keeps the order the API answered with, without re-sorting it', async () => {
 		const { loadScheduleCategories } = await import('../resources/category/load');
 		const list = await loadScheduleCategories.call(
 			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [
-				{ id: 'c', name: 'Água', referenceCode: '3.1.009', type: 'out' },
-				{ id: 'a', name: 'Receita com vendas', referenceCode: '1.1.001', type: 'in' },
-				{ id: 'b', name: 'Receita com serviços', referenceCode: '1.1.002', type: 'in' },
+				{ id: 'c', name: 'Água', type: 'out', group: { name: 'Despesas operacionais' } },
+				{ id: 'a', name: 'Receita com vendas', type: 'in', group: { name: 'Receitas operacionais' } },
+				{ id: 'b', name: 'Receita com serviços', type: 'in', group: { name: 'Receitas operacionais' } },
 			]),
 		);
 
-		expect(list.map((option) => option.value)).toEqual(['a', 'b', 'c']);
+		expect(list.map((option) => option.value)).toEqual(['c', 'a', 'b']);
 	});
 
-	it('shows the code next to the name, and hands back the ID', async () => {
+	/**
+	 * The name alone, and the group underneath it — the two things the Nibo
+	 * screen itself shows.
+	 *
+	 * `referenceCode` used to be in front of the name, and it was a mistake:
+	 * it is an internal code of the standard chart of accounts that appears
+	 * nowhere in Nibo, and unfamiliar numbers in front of familiar names are
+	 * what made a working list look like another company's.
+	 */
+	it('shows the name alone, with the group under it', async () => {
 		const { loadScheduleCategories } = await import('../resources/category/load');
 		const [option] = await loadScheduleCategories.call(
 			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [REVENUE]),
 		);
 
-		expect(option.name).toContain('1.1.001');
-		expect(option.name).toContain('Receita com vendas');
+		expect(option.name).toBe('Receita com vendas');
+		expect(option.description).toBe('Receitas operacionais');
 		expect(option.value).toBe('rev');
 	});
 
-	// A category the organization typed itself may have no code at all, and it is
-	// still a category somebody has to be able to pick.
-	it('keeps a category with no reference code, and puts it last', async () => {
+	it('never puts the reference code on the screen, wherever it appears in the data', async () => {
 		const { loadScheduleCategories } = await import('../resources/category/load');
 		const list = await loadScheduleCategories.call(
+			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [REVENUE]),
+		);
+
+		expect(JSON.stringify(list)).not.toContain('1.1.001');
+	});
+
+	it('still lists a category that carries no group at all', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		const [option] = await loadScheduleCategories.call(
 			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [
-				{ id: 'none', name: 'Sem código', type: 'in' },
-				REVENUE,
+				{ id: 'none', name: 'Sem grupo', type: 'in' },
 			]),
 		);
 
-		expect(list.map((option) => option.value)).toEqual(['rev', 'none']);
-		expect(list[1].name).toBe('Sem código');
+		expect(option.name).toBe('Sem grupo');
+		expect(option.description).toBeUndefined();
 	});
 
 	/**
