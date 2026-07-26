@@ -4,14 +4,17 @@ import { sleep } from 'n8n-workflow';
 import { NiboEmpresas } from '../NiboEmpresas.node';
 import { executeCategory } from '../resources/category/execute';
 import { niboListRequest } from '../transport/paginate';
+import { niboApiRequest } from '../transport/request';
 
 jest.mock('../transport/paginate');
+jest.mock('../transport/request');
 jest.mock('n8n-workflow', () => ({
 	...jest.requireActual('n8n-workflow'),
 	sleep: jest.fn().mockResolvedValue(undefined),
 }));
 
 const listRequest = niboListRequest as jest.MockedFunction<typeof niboListRequest>;
+const apiRequest = niboApiRequest as jest.MockedFunction<typeof niboApiRequest>;
 
 const NODE: INode = {
 	id: 'test-node',
@@ -39,8 +42,13 @@ function optionsSentToTransport(): IDataObject {
 beforeEach(() => {
 	listRequest.mockReset();
 	listRequest.mockResolvedValue({ records: [], count: 0 });
+	apiRequest.mockReset();
+	apiRequest.mockResolvedValue([]);
 	(sleep as jest.MockedFunction<typeof sleep>).mockClear();
 });
+
+/** A GUID with the shape the API insists on, for the reads that take one */
+const GUID = 'fcc630b8-e63a-44d2-aa55-981aec3d8d02';
 
 /**
  * The resource v0.7.0 exists for. Creating a schedule needs a category ID, and
@@ -98,9 +106,14 @@ describe('executeCategory — Get Many', () => {
 		expect(items[1].json._niboPaginationWarning).toContain('incomplete');
 	});
 
-	// `GET /categories/{id}` is a 404 and `POST /categories` was never measured,
-	// so neither is offered — and asking for one says so rather than trying.
-	it.each(['get', 'create', 'update', 'delete'])('refuses "%s", which this API has no route for', async (operation) => {
+	/**
+	 * The two the API genuinely has no route for, in either path — measured on
+	 * 2026-07-26: `PUT /schedules/categories/{id}` and
+	 * `DELETE /schedules/categories/{id}` are both 404, as they are under
+	 * `/categories`. That is what makes creating a category an act with no way
+	 * back, and it is why these two are not on the menu.
+	 */
+	it.each(['update', 'delete'])('refuses "%s", which this API has no route for', async (operation) => {
 		await expect(
 			executeCategory.call(context({}), 'category', operation),
 		).rejects.toThrow(new RegExp(operation));
@@ -110,6 +123,206 @@ describe('executeCategory — Get Many', () => {
 		await expect(executeCategory.call(context({}), 'costCenter', 'list')).rejects.toThrow(
 			/costCenter/,
 		);
+	});
+});
+
+/**
+ * Get, and the door it goes through.
+ *
+ * `GET /categories/{id}` is a 404 and always was — that measurement was right.
+ * What was wrong was the conclusion drawn from it: the get-by-id of this API is
+ * `GET /schedules/categories/{id}`, and it answers 200. It is still not what
+ * this operation calls, and the reason is the asymmetry measured on 2026-07-26:
+ * that door drops `subgroupId` and `subgroupName` from the record, so Get and
+ * Get Many would answer two different shapes of the same category. The third
+ * door — the list filtered by `id eq` — answers exactly what Get Many answers.
+ */
+describe('executeCategory — Get', () => {
+	it('reads the one record through the list, so it matches what Get Many answers', async () => {
+		listRequest.mockResolvedValue({ records: [{ id: GUID, name: 'Água' }], count: 1 });
+
+		const items = await executeCategory.call(context({ categoryId: GUID }), 'category', 'get');
+
+		expect(listRequest.mock.calls[0][1]).toBe('/categories');
+		expect(items[0].json).toEqual({ id: GUID, name: 'Água' });
+	});
+
+	/**
+	 * Bare, and this is the one place in this API where quoting is wrong.
+	 * `id eq '<guid>'` answers 500 — *Found operand types 'Edm.Guid' and
+	 * 'Edm.String'* — which is the opposite of what every text filter here
+	 * requires. Measured on 2026-07-26, and again on the cost centres.
+	 */
+	it('writes the GUID without quotes, which is what this comparison takes', async () => {
+		listRequest.mockResolvedValue({ records: [{ id: GUID }], count: 1 });
+
+		await executeCategory.call(context({ categoryId: GUID }), 'category', 'get');
+
+		expect(optionsSentToTransport().filter).toBe(`id eq ${GUID}`);
+	});
+
+	// The 500 above is reachable from any pasted value, so the shape is checked
+	// here rather than found out from the server.
+	it('refuses an ID that is not a GUID instead of sending a filter the API answers 500 to', async () => {
+		const failure = executeCategory.call(context({ categoryId: 'Água' }), 'category', 'get');
+
+		await expect(failure).rejects.toThrow(/GUID/i);
+		expect(listRequest).not.toHaveBeenCalled();
+	});
+
+	it('refuses an empty ID', async () => {
+		await expect(executeCategory.call(context({}), 'category', 'get')).rejects.toThrow(/ID/);
+		expect(listRequest).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * A filtered list that matches nothing is a 200 with an empty envelope — for
+	 * the API that is not an error at all. For an operation that asks for one
+	 * record by ID it is, and this is where it becomes one.
+	 */
+	it('turns an empty answer into "not found", which is what this operation asked about', async () => {
+		listRequest.mockResolvedValue({ records: [], count: 0 });
+
+		await expect(
+			executeCategory.call(context({ categoryId: GUID }), 'category', 'get'),
+		).rejects.toThrow(new RegExp(GUID));
+	});
+});
+
+/**
+ * The groups of the chart of accounts — five on the test company, and the level
+ * `GET /categories` never shows.
+ */
+describe('executeCategory — Get Many Groups', () => {
+	it('reads the groups where the writing family lives, not under /categories', async () => {
+		await executeCategory.call(context({ returnAll: true }), 'category', 'groups');
+
+		expect(listRequest.mock.calls[0][1]).toBe('/schedules/categories/groups');
+	});
+
+	/**
+	 * `$skip` with no `$orderby` is a 500 here as it is everywhere else in this
+	 * API, so a key is always sent — and which key was measured on 2026-07-26,
+	 * because two of the obvious ones are wrong in different ways:
+	 * `$orderby=id` answers 200 and **does not sort**, which is a paging key that
+	 * silently loses records. `referenceCode` sorts, is unique across the groups,
+	 * and puts them in the order a chart of accounts is read in.
+	 */
+	it('pages by the key that was measured to sort, never by id', async () => {
+		await executeCategory.call(context({ returnAll: true }), 'category', 'groups');
+
+		expect(listRequest.mock.calls[0][2]).toBe('referenceCode');
+		expect(listRequest.mock.calls[0][2]).not.toBe('id');
+	});
+
+	it('forwards Return All, the limit and the strict scan like every other scan', async () => {
+		await executeCategory.call(context({ returnAll: false, limit: 3 }), 'category', 'groups');
+
+		expect(optionsSentToTransport()).toMatchObject({
+			returnAll: false,
+			limit: 3,
+			failOnIncomplete: true,
+		});
+	});
+
+	it('hands back one item per group, out of the envelope', async () => {
+		listRequest.mockResolvedValue({
+			records: [
+				{ id: 'a', name: 'Receitas operacionais', referenceCode: '1' },
+				{ id: 'b', name: 'Custos operacionais', referenceCode: '2' },
+			],
+			count: 2,
+		});
+
+		const items = await executeCategory.call(context({ returnAll: true }), 'category', 'groups');
+
+		expect(items.map((item) => item.json.name)).toEqual([
+			'Receitas operacionais',
+			'Custos operacionais',
+		]);
+	});
+
+	// The assisted filter was measured against `/categories` and nothing else.
+	it('sends no filter, because this menu was never measured against this route', async () => {
+		await executeCategory.call(
+			context({ returnAll: true, filters: { conditions: [{ field: 'name', operator: 'eq', value: 'x' }] } }),
+			'category',
+			'groups',
+		);
+
+		expect(optionsSentToTransport().filter).toBeUndefined();
+	});
+});
+
+/**
+ * The whole hierarchy, and the only place the subgroups exist.
+ *
+ * Measured on 2026-07-26: three subgroups on the test company, and not one of
+ * them appears in `GET /categories` — only the `subgroupId` of the categories
+ * inside them. So this is not a convenience view of the list; it is the level
+ * the list cannot show.
+ */
+describe('executeCategory — Get Tree', () => {
+	const TREE = [
+		{ id: 'g1', name: 'Receitas operacionais', referenceCode: 1, children: [] },
+		{ id: 'g2', name: 'Custos operacionais', referenceCode: 2, children: [] },
+	];
+
+	it('reads the tree and never goes through the pager', async () => {
+		apiRequest.mockResolvedValue(TREE);
+
+		await executeCategory.call(context({}), 'category', 'tree');
+
+		expect(apiRequest.mock.calls[0][1]).toBe('GET');
+		expect(apiRequest.mock.calls[0][2]).toBe('/schedules/categories/tree');
+		expect(listRequest).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * A bare array, like `/employees` and `/partners` — no `{items, count}` in
+	 * sight. Looking for `items` here would answer nothing at all, every time.
+	 */
+	it('takes the bare array the route answers, one item per group', async () => {
+		apiRequest.mockResolvedValue(TREE);
+
+		const items = await executeCategory.call(context({}), 'category', 'tree');
+
+		expect(items).toHaveLength(2);
+		expect(items[0].json).toEqual(TREE[0]);
+	});
+
+	it('sends neither flag when neither was turned on', async () => {
+		apiRequest.mockResolvedValue(TREE);
+
+		await executeCategory.call(context({}), 'category', 'tree');
+
+		expect(apiRequest.mock.calls[0][3]).toEqual({});
+	});
+
+	/**
+	 * Both were measured to answer 200 on 2026-07-26, and the second filters for
+	 * real: it drops interest, fines and "Outras receitas" from the answer, and
+	 * shows a subgroup the call without it did not.
+	 */
+	it('sends each flag under the name the API knows it by, only when it is on', async () => {
+		apiRequest.mockResolvedValue(TREE);
+
+		await executeCategory.call(
+			context({ includeDeleted: true, nfseValueOnly: true }),
+			'category',
+			'tree',
+		);
+
+		expect(apiRequest.mock.calls[0][3]).toEqual({
+			IncludeDeletedCategory: true,
+			CanComposeNFSeValueOnly: true,
+		});
+	});
+
+	it('fails rather than guessing when the route answers something that is not a tree', async () => {
+		apiRequest.mockResolvedValue({ items: [] });
+
+		await expect(executeCategory.call(context({}), 'category', 'tree')).rejects.toThrow(/tree/i);
 	});
 });
 
@@ -478,17 +691,51 @@ describe('NiboEmpresas — Category on the screen', () => {
 		expect(credential.displayOptions?.show?.resource).toContain('category');
 	});
 
-	it('offers one operation, because the API has one route', () => {
+	/**
+	 * Four, where 0.8.2 offered one. The catalogue had `POST`, `PUT`, `DELETE`
+	 * and `GET /categories/{id}` all marked 404 and concluded "a category is
+	 * read-only in this API". The 404s were real; the conclusion was not — the
+	 * writing family lives under `/schedules/categories`, and create, get-by-id,
+	 * groups and tree all answer 200 there.
+	 *
+	 * Update and Delete are still absent, and that is not caution: they are 404
+	 * in **both** paths, measured on 2026-07-26.
+	 */
+	it('offers the four operations the API was measured to answer, and no more', () => {
 		const operations = forCategory('operation');
 
-		expect(optionValues(operations)).toEqual(['list']);
+		expect(optionValues(operations)).toEqual(['get', 'list', 'groups', 'tree']);
 		expect(operations?.default).toBe('list');
 	});
 
-	it('offers Return All and Limit, as every scan does', () => {
+	it('leaves Update and Delete off the menu, being 404 in either path', () => {
+		expect(optionValues(forCategory('operation'))).not.toContain('update');
+		expect(optionValues(forCategory('operation'))).not.toContain('delete');
+	});
+
+	it('asks for an ID on Get, and only there', () => {
+		expect(forCategory('categoryId')?.displayOptions?.show?.operation).toEqual(['get']);
+		expect(forCategory('categoryId')?.required).toBe(true);
+	});
+
+	// Groups is a scan like any other: an envelope with a count, walked by pages.
+	it('offers Return All and Limit on both scans', () => {
 		for (const name of ['returnAll', 'limit']) {
-			expect(forCategory(name)?.displayOptions?.show?.operation).toEqual(['list']);
+			expect(forCategory(name)?.displayOptions?.show?.operation).toEqual(['list', 'groups']);
 		}
+	});
+
+	it('offers the two tree flags on the tree alone', () => {
+		for (const name of ['includeDeleted', 'nfseValueOnly']) {
+			expect(forCategory(name)?.type).toBe('boolean');
+			expect(forCategory(name)?.default).toBe(false);
+			expect(forCategory(name)?.displayOptions?.show?.operation).toEqual(['tree']);
+		}
+	});
+
+	// The assisted filter was measured against `/categories` and nowhere else.
+	it('keeps the assisted filter on Get Many alone', () => {
+		expect(forCategory('filters')?.displayOptions?.show?.operation).toEqual(['list']);
 	});
 
 	/** The fields of one row of this resource's condition builder */

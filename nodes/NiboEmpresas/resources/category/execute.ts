@@ -2,11 +2,23 @@ import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-wor
 import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboListRequest } from '../../transport/paginate';
+import { niboApiRequest } from '../../transport/request';
 import { listFilter } from '../shared/filter';
-import { failOnIncomplete, requestInterval } from '../shared/options';
+import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { categoryFilterFieldTypes } from './description';
 
 const CATEGORIES = '/categories';
+
+/**
+ * Where the rest of the family lives.
+ *
+ * Not under `/categories`, which is the whole finding of 0.9.0: the four routes
+ * this project had recorded as 404 were 404 at that address and nowhere else.
+ * Get-by-id, groups and tree all answer 200 here.
+ */
+const SCHEDULE_CATEGORIES = '/schedules/categories';
+const CATEGORY_GROUPS = `${SCHEDULE_CATEGORIES}/groups`;
+const CATEGORY_TREE = `${SCHEDULE_CATEGORIES}/tree`;
 
 /**
  * The paging key. `id` is unique and immutable here, and the API answers 500 to
@@ -18,10 +30,38 @@ const CATEGORIES = '/categories';
 const CATEGORY_ORDER_BY = 'id';
 
 /**
- * One operation, and no normalizer: what the API answers here needs no
- * repairing. Every other resource of this node has an asymmetry to settle —
- * `Cnpj` against `CNPJ`, a zeroed contact at the root — and this one has none,
- * so the records travel exactly as they came.
+ * The paging key of the groups, and it is not `id` — measured on 2026-07-26,
+ * because the obvious answer is wrong in the way that is hardest to notice.
+ *
+ * `$orderby=id` answers **200 and does not sort**: the groups come back in the
+ * same arbitrary order as with no key at all. A paging key that does not order
+ * is a scan that can read one record twice and miss another, with nothing in
+ * any answer to say so. `referenceCode` sorts, is unique across the groups, and
+ * puts them in the order a chart of accounts is read in — Receitas, Custos,
+ * Despesas, Investimento, Financiamento — which is the same key the category
+ * list has sorted by since 0.7.3.
+ *
+ * `$skip` without any `$orderby` is a 500 here too, as everywhere else.
+ */
+const GROUP_ORDER_BY = 'referenceCode';
+
+/**
+ * The shape this API insists on for an ID, and the one place it insists on it
+ * without quotes.
+ *
+ * `id eq '<guid>'` answers HTTP 500 — *Found operand types 'Edm.Guid' and
+ * 'Edm.String'* — which is the opposite of what every text comparison in this
+ * API requires. So the value is checked here: a filter built out of anything
+ * else reaches the server as a 500 that says nothing about the field it came
+ * from.
+ */
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * No normalizer: what the API answers here needs no repairing. Every other
+ * resource of this node has an asymmetry to settle — `Cnpj` against `CNPJ`, a
+ * zeroed contact at the root — and this one has none, so the records travel
+ * exactly as they came.
  */
 export async function executeCategory(
 	this: IExecuteFunctions,
@@ -43,43 +83,79 @@ export async function executeCategory(
 				await sleep(interval);
 			}
 
-			if (operation !== 'list') {
-				// `GET /categories/{id}` is a 404 and creating one was never measured.
-				// An operation the API has no route for fails here rather than being
-				// offered on the screen and discovered at run time.
+			if (operation === 'list' || operation === 'groups') {
+				const groups = operation === 'groups';
+				const returnAll = this.getNodeParameter('returnAll', i, false) as boolean;
+
+				const { records, warning } = await niboListRequest.call(
+					this,
+					i,
+					groups ? CATEGORY_GROUPS : CATEGORIES,
+					groups ? GROUP_ORDER_BY : CATEGORY_ORDER_BY,
+					{
+						returnAll,
+						limit: returnAll ? 0 : (this.getNodeParameter('limit', i) as number),
+						// The assisted filter was measured against `/categories` and
+						// against nothing else, so it is not offered on the groups and
+						// does not travel there either.
+						filter: groups
+							? undefined
+							: listFilter.call(this, i, options, categoryFilterFieldTypes),
+						failOnIncomplete: failOnIncomplete.call(this, i, options),
+						interval,
+					},
+				);
+
+				records.forEach((record, index) => {
+					// A result that may be incomplete says so on its last item, so a
+					// workflow reading only the data still sees it.
+					const json =
+						warning !== undefined && index === records.length - 1
+							? { ...record, _niboPaginationWarning: warning }
+							: record;
+
+					returnData.push({ json, pairedItem: { item: i } });
+				});
+			} else if (operation === 'get') {
+				returnData.push({
+					json: await oneCategory.call(this, i, recordId.call(this, 'categoryId', i), interval),
+					pairedItem: { item: i },
+				});
+			} else if (operation === 'tree') {
+				// The whole hierarchy in one answer, and a **bare array** — no
+				// `{items, count}`, like `/employees` and `/partners`. It takes no
+				// page and no filter, so it never goes near the pager.
+				const qs: IDataObject = {};
+				if (this.getNodeParameter('includeDeleted', i, false) as boolean) {
+					qs.IncludeDeletedCategory = true;
+				}
+				if (this.getNodeParameter('nfseValueOnly', i, false) as boolean) {
+					qs.CanComposeNFSeValueOnly = true;
+				}
+
+				const answer = await niboApiRequest.call(this, i, 'GET', CATEGORY_TREE, qs);
+				if (!Array.isArray(answer)) {
+					throw new NodeOperationError(this.getNode(), 'Nibo did not answer with a category tree', {
+						itemIndex: i,
+						description:
+							'This route answers a bare array, one element per group of the chart of accounts, and something else arrived. Nothing was read.',
+					});
+				}
+
+				answer.forEach((node) => {
+					returnData.push({ json: node as IDataObject, pairedItem: { item: i } });
+				});
+			} else {
+				// `PUT` and `DELETE /schedules/categories/{id}` are 404, exactly as
+				// they are under `/categories` — measured on 2026-07-26. An operation
+				// the API has no route for fails here rather than being offered on
+				// the screen and discovered at run time.
 				throw new NodeOperationError(
 					this.getNode(),
 					`The operation "${operation}" is not supported`,
 					{ itemIndex: i },
 				);
 			}
-
-			const returnAll = this.getNodeParameter('returnAll', i, false) as boolean;
-
-			const { records, warning } = await niboListRequest.call(
-				this,
-				i,
-				CATEGORIES,
-				CATEGORY_ORDER_BY,
-				{
-					returnAll,
-					limit: returnAll ? 0 : (this.getNodeParameter('limit', i) as number),
-					filter: listFilter.call(this, i, options, categoryFilterFieldTypes),
-					failOnIncomplete: failOnIncomplete.call(this, i, options),
-					interval,
-				},
-			);
-
-			records.forEach((record, index) => {
-				// A result that may be incomplete says so on its last item, so a
-				// workflow reading only the data still sees it.
-				const json =
-					warning !== undefined && index === records.length - 1
-						? { ...record, _niboPaginationWarning: warning }
-						: record;
-
-				returnData.push({ json, pairedItem: { item: i } });
-			});
 		} catch (error) {
 			if (this.continueOnFail()) {
 				returnData.push({
@@ -95,4 +171,62 @@ export async function executeCategory(
 	}
 
 	return returnData;
+}
+
+/**
+ * One category, read through the list filtered by its ID.
+ *
+ * There is a get-by-id — `GET /schedules/categories/{id}`, 200 since forever
+ * and only found on 2026-07-26 — and this deliberately does not call it. What
+ * it answers is not the record `GET /categories` answers: `subgroupId` and
+ * `subgroupName` are simply absent from it, and `group.shortName` comes back
+ * carrying the category's own `shortName`. A Get built on that door would hand
+ * back a category with no subgroup while Get Many showed the same category with
+ * one — a difference the node would be inventing, on the record a workflow is
+ * most likely to compare.
+ *
+ * So the third door: `GET /categories?$filter=id eq <guid>`, which answers the
+ * complete record. Measured on the test company on 2026-07-26, along with the
+ * reason the GUID travels bare.
+ *
+ * An empty answer is a 200 with an empty envelope. For the API that is not an
+ * error — a filter matched nothing — but for an operation that asked for one
+ * record by ID it is exactly what "not found" means, and it is said here.
+ */
+async function oneCategory(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	id: string,
+	interval: number,
+): Promise<IDataObject> {
+	if (!GUID.test(id)) {
+		throw new NodeOperationError(this.getNode(), `The category ID "${id}" is not a GUID`, {
+			itemIndex,
+			description:
+				'A category is read by the GUID Nibo returns in its ID field, such as 2efffcd0-8730-4348-86da-6d9a95be6149. This comparison is made against a GUID column, so anything else answers HTTP 500 with a message about operand types rather than "not found" — which is why the value is refused here instead of sent.',
+		});
+	}
+
+	const { records } = await niboListRequest.call(this, itemIndex, CATEGORIES, CATEGORY_ORDER_BY, {
+		returnAll: false,
+		limit: 1,
+		// Bare, and this is the one comparison in this API where quoting is the
+		// mistake: `id eq '<guid>'` answers 500, *Found operand types 'Edm.Guid'
+		// and 'Edm.String'*. Built here rather than through the filter builder for
+		// that very reason — every literal it writes is quoted.
+		filter: `id eq ${id}`,
+		// One record cannot be an incomplete scan of a collection.
+		failOnIncomplete: false,
+		interval,
+	});
+
+	if (records.length === 0) {
+		throw new NodeOperationError(this.getNode(), `Nibo returned no category for the ID "${id}"`, {
+			itemIndex,
+			description:
+				'The ID is a well-formed GUID and no category of this organization carries it. A category ID belongs to one organization, so an ID that works for one credential is not found with another — every Nibo organization starts from the same chart of accounts, with different IDs behind the same names.',
+		});
+	}
+
+	return records[0];
 }
