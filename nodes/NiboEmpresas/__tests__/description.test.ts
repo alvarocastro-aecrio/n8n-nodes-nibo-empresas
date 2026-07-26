@@ -741,7 +741,13 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 		}>)[0];
 
 		expect(line.values.map((field) => field.name)).toEqual(['categoryId', 'value', 'description']);
-		expect(line.values.find((field) => field.name === 'description')?.type).toBe('string');
+
+		const detail = line.values.find((field) => field.name === 'description');
+
+		expect(detail?.type).toBe('string');
+		// "Detalhamento" on the Nibo screen. The label follows theirs; the
+		// parameter keeps the API's own name, which a saved node depends on.
+		expect(detail?.displayName).toBe('Detail');
 	});
 
 	/**

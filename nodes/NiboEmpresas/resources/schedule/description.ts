@@ -176,7 +176,11 @@ const CATEGORIES: INodeProperties = {
 					// answers with it, accents included. The project's reference had
 					// the field marked suspicious after a payload that once crashed
 					// the server — that turned out to be the encoding, not this.
-					displayName: 'Description',
+					// "Detalhamento" on the Nibo screen, so the label follows theirs.
+					// The parameter keeps `description`, which is what the API calls
+					// this field and what a node saved under 0.7.7 already carries —
+					// a label is a word, a parameter name is a contract.
+					displayName: 'Detail',
 					name: 'description',
 					type: 'string',
 					default: '',
