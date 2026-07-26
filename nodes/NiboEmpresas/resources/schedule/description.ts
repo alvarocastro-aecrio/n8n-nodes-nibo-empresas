@@ -129,7 +129,7 @@ const CATEGORIES: INodeProperties = {
 	placeholder: 'Add Category',
 	default: {},
 	description:
-		'The lines this schedule is split into. The amount of the schedule is their sum — this API keeps no total of its own. Splitting across several categories is a Nibo feature not every organization has: where it is missing, the API refuses a second line with "Utilize apenas uma categoria", and the node says what that means.',
+		'The lines this schedule is split into. The amount of the schedule is their sum — this API keeps no total of its own. Splitting across several categories has to be enabled for the organization in Nibo: where it is off, the API refuses a second line with "Utilize apenas uma categoria", and the node says what that means.',
 	options: [
 		{
 			displayName: 'Category',

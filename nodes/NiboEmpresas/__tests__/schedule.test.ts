@@ -360,12 +360,12 @@ describe('executeSchedule — the error that is really about the category', () =
 	});
 
 	/**
-	 * Measured on the cobaia on 2026-07-26, while adding the per-line detail: a
-	 * creation with two category lines is refused with *"Utilize apenas uma
-	 * categoria"*. Splitting an amount across categories is a Nibo feature not
-	 * every organization has, and the node cannot know which — so it says what
-	 * the refusal means and what to do, rather than pretending the field never
-	 * offered more than one line.
+	 * Measured on the cobaia on 2026-07-26, both ways: with the split off, two
+	 * category lines are refused with *"Utilize apenas uma categoria"*; turned on
+	 * in Nibo, the same two are accepted and the schedule's amount comes back as
+	 * their sum. It is a setting of the organization and the API never says
+	 * whether it is on — so the node explains the refusal and, above all, says
+	 * that it can be turned on.
 	 */
 	it('explains the refusal of a schedule split across several categories', async () => {
 		create.mockRejectedValue(apiError('Utilize apenas uma categoria.'));
@@ -386,7 +386,7 @@ describe('executeSchedule — the error that is really about the category', () =
 
 		await expect(failure).rejects.toThrow(/Utilize apenas uma categoria/);
 		await expect(failure).rejects.toMatchObject({
-			description: expect.stringMatching(/one category line/i),
+			description: expect.stringMatching(/enabled for the organization in Nibo/i),
 		});
 	});
 

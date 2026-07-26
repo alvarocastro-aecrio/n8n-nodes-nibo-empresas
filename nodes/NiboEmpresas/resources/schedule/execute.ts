@@ -341,11 +341,12 @@ const SIGNED_BY_THE_CATEGORY = /valor do agendamento.*(positivo|negativo)/i;
  * The other refusal that is about the category lines, and the one the field
  * itself promises away.
  *
- * Measured on the cobaia on 2026-07-26: a creation with two lines answers
- * *"Utilize apenas uma categoria"*. Splitting an amount across categories is a
- * Nibo feature that not every organization has, and nothing in the API says
- * which — so the node cannot offer one line here and several there. It offers
- * several, and explains this refusal when it comes.
+ * Measured on the cobaia on 2026-07-26, both ways: with the split off, a
+ * creation with two lines answers *"Utilize apenas uma categoria"*; with it
+ * turned on in Nibo, the same two lines are accepted and the schedule's amount
+ * comes back as their sum. It is a setting of the organization and nothing in
+ * the API says whether it is on — so the node cannot offer one line here and
+ * several there. It offers several, and explains this refusal when it comes.
  */
 const ONE_CATEGORY_ONLY = /apenas uma categoria/i;
 
@@ -362,7 +363,7 @@ function aboutTheCategory(error: NodeApiError, operation: string): NodeApiError 
 	}
 
 	if (ONE_CATEGORY_ONLY.test(said)) {
-		error.description = `${error.description ?? ''}\n\nThis organization takes one category line per schedule. Splitting an amount across categories is a Nibo feature not every organization has, and nothing in the API says which do — so the field offers several lines and this is where the answer comes. Leave a single line under Categories, or split the amount into one schedule per category.`.trim();
+		error.description = `${error.description ?? ''}\n\nSplitting an amount across categories has to be enabled for the organization in Nibo, and it is not by default. Nothing in the API says whether it is, so the field offers as many lines as you like and this is where the answer arrives. Turn the split on in Nibo, leave a single line under Categories, or make one schedule per category.`.trim();
 		return error;
 	}
 
