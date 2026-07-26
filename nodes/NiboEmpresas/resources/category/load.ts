@@ -26,32 +26,6 @@ const KIND_NAMED: Record<string, string> = {
 };
 
 /**
- * The mark that tells a heading from a category.
- *
- * n8n's dropdown for an `options` parameter is a flat `v-for` — there is no
- * option group in it, and `INodePropertyOptions` carries no way to make a row
- * unselectable (read out of the 2.18.5 source: `name`, `value`, `action`,
- * `description`, and nothing else that would help). A heading could therefore
- * only ever be an ordinary row that reads like one, and can be clicked like one.
- *
- * 0.7.4 offered such rows and 0.7.5 took them away — but a node saved in
- * between can still be carrying one, so the mark and the two readers below
- * stay. The write side uses them to tell that author what happened instead of
- * letting the API answer "Categoria não encontrada", which explains nothing.
- */
-const HEADING = '__nibo_group__';
-
-/** Whether a stored category ID is really one of the headings in the list */
-export function isGroupHeading(categoryId: string): boolean {
-	return categoryId.startsWith(HEADING);
-}
-
-/** The group a heading stands for, for the message that refuses it */
-export function groupOfHeading(categoryId: string): string {
-	return categoryId.slice(HEADING.length).trim();
-}
-
-/**
  * The list behind the Category field of a schedule.
  *
  * It talks to the API on its own rather than through `transport/request.ts`,
@@ -134,37 +108,28 @@ export async function loadScheduleCategories(
 
 	// Whatever order the server answered in is the order shown. Re-sorting here
 	// would throw away `order`, which is the one key that carries a decision the
-	// organization actually took — and it is what makes the groups arrive in
-	// blocks, which is the only reason a heading can be inserted at all.
-	return withGroupsNamedOnce(records);
+	// organization actually took.
+	return records.map(asOption);
 }
 
 /**
- * The list, with each group named once — on the first row of its block.
+ * One line of the chart of accounts as the editor shows it: the name, and the
+ * group under it — the two things the Nibo screen itself shows.
  *
- * n8n's dropdown is a flat `v-for`: there is no option group in it, and
- * `INodePropertyOptions` has no way to mark a row unselectable. 0.7.4 tried
- * inserting rows that read like headings; on screen it looked wrong, and every
- * one of them was clickable. So the group is written where a row already is,
- * and left off the rows that follow it — the list divides visually without a
- * single line in it that is not a category.
- *
- * It relies on the records arriving grouped, which is exactly what the
- * `$orderby` above asks the server for. A category carrying no group names
- * nothing and is simply listed.
+ * The reference code was in front of the name until 0.7.3 and that was a
+ * mistake. It is an internal code of the standard chart of accounts, it appears
+ * nowhere in Nibo's own interface, and unfamiliar numbers in front of familiar
+ * names are what made a list that was working perfectly look like another
+ * company's. What is not on their screen does not go on ours.
  */
-function withGroupsNamedOnce(records: IDataObject[]): INodePropertyOptions[] {
-	let current: string | undefined;
+function asOption(record: IDataObject): INodePropertyOptions {
+	const group = (record.group ?? {}) as IDataObject;
+	const groupName = String(group.name ?? '').trim();
 
-	return records.map((record) => {
-		const group = String(((record.group ?? {}) as IDataObject).name ?? '').trim();
-		const opens = group !== '' && group !== current;
-		current = group;
-
-		return {
-			name: String(record.name ?? '').trim(),
-			value: String(record.id ?? ''),
-			...(opens ? { description: group } : {}),
-		};
-	});
+	return {
+		name: String(record.name ?? '').trim(),
+		value: String(record.id ?? ''),
+		description: groupName === '' ? undefined : groupName,
+	};
 }
+

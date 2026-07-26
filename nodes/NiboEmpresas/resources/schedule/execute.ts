@@ -6,7 +6,6 @@ import { niboApiRequest } from '../../transport/request';
 import { niboCreate, niboSafeUpdate } from '../../transport/save';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
-import { groupOfHeading, isGroupHeading } from '../category/load';
 import { scheduleFilterFieldTypes } from './description';
 import { normalizeSchedule, onlyTheDay, scheduleComparable } from './normalize';
 
@@ -305,17 +304,6 @@ function categoryLines(
 				itemIndex,
 				description:
 					'Every line under Categories needs the ID of a financial category, as Nibo returns it in the ID field. It is usually an expression reading it from the incoming item.',
-			});
-		}
-
-		// The list opens each group with a heading, and n8n offers no way to make
-		// a row unselectable — so one can be clicked. Sent on, it would come back
-		// as "Categoria não encontrada", which explains nothing about what
-		// happened.
-		if (isGroupHeading(id)) {
-			throw new NodeOperationError(this.getNode(), 'A category line points at a group heading', {
-				itemIndex,
-				description: `"${groupOfHeading(id)}" is the name of a group in the list, not a category. Open the list again and pick one of the categories underneath it.`,
 			});
 		}
 

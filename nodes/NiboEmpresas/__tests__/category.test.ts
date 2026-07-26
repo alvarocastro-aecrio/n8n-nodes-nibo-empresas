@@ -252,7 +252,7 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 	// would throw away the `order` field, which is the one thing that carries
 	// what the organization itself decided.
 	it('keeps the order the API answered with, without re-sorting it', async () => {
-		const { loadScheduleCategories, isGroupHeading } = await import('../resources/category/load');
+		const { loadScheduleCategories } = await import('../resources/category/load');
 		const list = await loadScheduleCategories.call(
 			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [
 				{ id: 'c', name: 'Água', type: 'out', group: { name: 'Despesas operacionais' } },
@@ -261,11 +261,7 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 			]),
 		);
 
-		const categories = list
-			.map((option) => String(option.value))
-			.filter((value) => !isGroupHeading(value));
-
-		expect(categories).toEqual(['c', 'a', 'b']);
+		expect(list.map((option) => option.value)).toEqual(['c', 'a', 'b']);
 	});
 
 	/**
@@ -277,7 +273,7 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 	 * nowhere in Nibo, and unfamiliar numbers in front of familiar names are
 	 * what made a working list look like another company's.
 	 */
-	it('shows the name, with the group naming the block it opens', async () => {
+	it('shows the name alone, with the group under it', async () => {
 		const { loadScheduleCategories } = await import('../resources/category/load');
 		const [option] = await loadScheduleCategories.call(
 			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [REVENUE]),
@@ -297,69 +293,16 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 		expect(JSON.stringify(list)).not.toContain('1.1.001');
 	});
 
-	/**
-	 * The closest thing to a section this editor has, and the shape Alvaro chose
-	 * after seeing the alternatives on screen.
-	 *
-	 * n8n's dropdown is a flat `v-for` — there is no option group, and
-	 * `INodePropertyOptions` has no way to mark a row unselectable. Inserting rows
-	 * that read like headings was tried in 0.7.4 and looked wrong. So the group is
-	 * written once, on the first row of its block, and left off the rest: the list
-	 * divides visually without a single row that is not a category.
-	 */
-	it('names the group once, on the first item of each block', async () => {
+	it('still lists a category that carries no group at all', async () => {
 		const { loadScheduleCategories } = await import('../resources/category/load');
-		const list = await loadScheduleCategories.call(
-			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [
-				{ id: 'a', name: 'Receita com vendas', type: 'in', group: { name: 'Receitas operacionais' } },
-				{ id: 'b', name: 'Receita com serviços', type: 'in', group: { name: 'Receitas operacionais' } },
-				{ id: 'c', name: 'Venda de ativo fixo', type: 'in', group: { name: 'Atividades de investimento' } },
-			]),
-		);
-
-		expect(list.map((option) => [option.name, option.description])).toEqual([
-			['Receita com vendas', 'Receitas operacionais'],
-			['Receita com serviços', undefined],
-			['Venda de ativo fixo', 'Atividades de investimento'],
-		]);
-	});
-
-	// Every row is a category now: nothing in the list is unpickable-but-clickable.
-	it('puts no row in the list that is not a category', async () => {
-		const { loadScheduleCategories, isGroupHeading } = await import('../resources/category/load');
-		const list = await loadScheduleCategories.call(
-			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [REVENUE]),
-		);
-
-		expect(list.every((option) => !isGroupHeading(String(option.value)))).toBe(true);
-	});
-
-	/**
-	 * The guard stays, and only for this: a node saved under 0.7.4 can be carrying
-	 * a heading that version offered. It is worth one function to tell its author
-	 * what happened rather than let the API answer "Categoria não encontrada".
-	 */
-	it('still recognises a heading stored by the version that offered them', async () => {
-		const { isGroupHeading, groupOfHeading } = await import('../resources/category/load');
-
-		expect(isGroupHeading('__nibo_group__Receitas operacionais')).toBe(true);
-		expect(groupOfHeading('__nibo_group__Receitas operacionais')).toBe('Receitas operacionais');
-		expect(isGroupHeading('b7e23e05-25f8-4fe1-879f-f0ef62936663')).toBe(false);
-		expect(isGroupHeading('')).toBe(false);
-	});
-
-	// A category with no group cannot open a section, and must still be pickable.
-	it('still lists a category that carries no group at all, with no heading', async () => {
-		const { loadScheduleCategories } = await import('../resources/category/load');
-		const list = await loadScheduleCategories.call(
+		const [option] = await loadScheduleCategories.call(
 			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [
 				{ id: 'none', name: 'Sem grupo', type: 'in' },
 			]),
 		);
 
-		expect(list.map((option) => option.name)).toEqual(['Sem grupo']);
-		expect(list[0].description).toBeUndefined();
-		expect(list[0].value).toBe('none');
+		expect(option.name).toBe('Sem grupo');
+		expect(option.description).toBeUndefined();
 	});
 
 	/**

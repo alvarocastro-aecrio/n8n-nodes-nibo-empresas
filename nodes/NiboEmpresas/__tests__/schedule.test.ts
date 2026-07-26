@@ -561,29 +561,6 @@ describe('executeSchedule — Create', () => {
 		});
 	});
 
-	/**
-	 * The list opens each group with a heading row, and n8n has no way to make a
-	 * row unselectable — so a heading can be clicked. It must not travel to the
-	 * API as a category ID that never existed, where it would come back as
-	 * "Categoria não encontrada" and explain nothing.
-	 */
-	it('refuses a group heading picked from the list, naming the group', async () => {
-		const failure = executeSchedule.call(
-			context({
-				...CREATE_FORM,
-				categories: { category: [{ categoryId: '__nibo_group__Receitas operacionais', value: 10 }] },
-			}),
-			'creditSchedule',
-			'create',
-		);
-
-		await expect(failure).rejects.toThrow(/heading/i);
-		await expect(failure).rejects.toMatchObject({
-			description: expect.stringMatching(/Receitas operacionais/),
-		});
-		expect(create).not.toHaveBeenCalled();
-	});
-
 	// One letter apart from what a payment calls the same thing, and the wrong
 	// one is accepted and quietly ignored. Nobody types either.
 	it('spells the flag the way a schedule spells it', async () => {
