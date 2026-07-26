@@ -73,6 +73,24 @@ De brinde, a mesma tela confirmou três mudanças da 0.7.x rodando juntas: datas
 relógio** (`2026-12-01`), Description e Is Flagged **acima** de Categories, e a categoria
 mostrando só o nome.
 
+### 1.5 O contato pelo Update, medido na cobaia (2026-07-26)
+
+O código **compilado** rodado contra a API, um agendamento de crédito criado, trocado de
+contato quatro vezes e apagado no fim:
+
+| ☑ | O que foi feito | O que a API respondeu |
+|---|---|---|
+| ☑ | Criar escolhendo o contato pela busca (`{__rl, mode:'list', value}`) | Caiu no cliente escolhido |
+| ☑ | Update trocando o contato, na mesma forma do componente | Passou a ser o sócio |
+| ☑ | Update com o ID em **texto puro** (o que um node de antes da 0.8.0 carrega) | Voltou a ser o cliente |
+| ☑ | Update com o campo acrescentado e **vazio** | Recusado antes de qualquer chamada: *"This schedule names no contact"* |
+| ☑ | Update de outro campo, sem citar o contato | Contato intacto, descrição alterada |
+| ☑ | Apagar | Cobaia com **zero** agendamentos nos dois lados |
+
+E a medição que autorizou o campo dentro do menu, refeita no n8n **2.18.5 desta máquina**:
+**31 campos de nodes oficiais são `resourceLocator` dentro de `collection`** — Airtable,
+Discord, Gong e Google Calendar entre eles.
+
 ---
 
 ## 2. Decisões de recorte
@@ -144,15 +162,19 @@ mostrando só o nome.
 
 ## 6. Teste e aceite
 
-**Gate local:** `npm run lint`, `npm run lint:community`, `npm test`, `npm run build`,
-`npm pack` — todos verdes.
+**Gate local:** `npm run lint`, `npm run lint:community`, `npm test` (439), `npm run build`,
+`npm pack` — todos verdes em 2026-07-26.
 
-| ☐ | No Credit Schedule, o campo Stakeholder busca e lista **clientes e sócios** |
-| ☐ | No Debit Schedule, lista **fornecedores, funcionários e sócios** |
-| ☐ | Digitar parte de um nome busca no servidor e traz o contato |
-| ☐ | O modo "por ID" aceita um GUID colado e uma expressão |
-| ☐ | Criar um recebimento com um contato escolhido da lista funciona na cobaia |
-| ☐ | **Um node salvo na 0.7.8, com o ID em texto puro, executa sem ser tocado** |
-| ☐ | O que esse node antigo mostra na tela está documentado (medição 1.4) |
-| ☐ | Regressão: categoria, datas e detalhe da linha como na 0.7.8 |
-| ☐ | A cobaia termina com zero agendamentos |
+| ☑ | Item | Como foi conferido |
+|---|---|---|
+| ☑ | No Credit Schedule, o campo Stakeholder busca e lista **clientes e sócios** | A busca compilada contra a cobaia: 2 clientes + 1 sócio, cada opção dizendo o tipo |
+| ☑ | No Debit Schedule, lista **fornecedores, funcionários e sócios** | Mesma corrida: 1 de cada, e nenhum cliente |
+| ☑ | Digitar parte de um nome busca no servidor e traz o contato | `contains(tolower(name),'a')` foi para a API e voltou com os três do crédito |
+| ☑ | O modo "por ID" aceita um GUID colado | O ID em texto puro criou e atualizou de verdade (1.5). A **expressão** resolve antes do node, no editor, e não foi rodada na tela |
+| ☑ | Criar um recebimento com um contato escolhido da lista funciona na cobaia | Medição 1.5, item 1 |
+| ☑ | **Um node salvo na 0.7.8, com o ID em texto puro, executa sem ser tocado** | Medição 1.4 (criação) e 1.5 (update) |
+| ☑ | O que esse node antigo mostra na tela está documentado (medição 1.4) | Está na 1.4 e no README |
+| ☑ | Regressão: categoria, datas e detalhe da linha como na 0.7.8 | Datas e ordem do formulário vistas na tela (1.4); o resto, pela suíte |
+| ☑ | A cobaia termina com zero agendamentos | Conferido no fim da 1.5: crédito 0, débito 0 |
+| ☑ | **Instalação real (regra 7)** | O pacote `.tgz` da 0.8.0 instalado no n8n 2.18.5 de dev: sobe sem erro, o node carrega do pacote e traz a busca nos dois formulários |
+| ☐ | **Na tela**: o campo dentro de *Update Fields* abre a busca e escolhe um contato | Falta olhar no navegador — é a única parte que um comando não prova |
