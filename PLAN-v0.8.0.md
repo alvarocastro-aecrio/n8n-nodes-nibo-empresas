@@ -176,5 +176,12 @@ Discord, Gong e Google Calendar entre eles.
 | ☑ | O que esse node antigo mostra na tela está documentado (medição 1.4) | Está na 1.4 e no README |
 | ☑ | Regressão: categoria, datas e detalhe da linha como na 0.7.8 | Datas e ordem do formulário vistas na tela (1.4); o resto, pela suíte |
 | ☑ | A cobaia termina com zero agendamentos | Conferido no fim da 1.5: crédito 0, débito 0 |
-| ☑ | **Instalação real (regra 7)** | O pacote `.tgz` da 0.8.0 instalado no n8n 2.18.5 de dev: sobe sem erro, o node carrega do pacote e traz a busca nos dois formulários |
+| ☐ | **Instalação real (regra 7)** | **Aberta.** O `.tgz` da 0.8.0 foi instalado à mão no n8n de dev e o node carrega do pacote — o que prova o empacotamento, e só ele. A regra 7 pede a instalação **pela tela Community Nodes**, que só instala do npm: trava na publicação |
 | ☐ | **Na tela**: o campo dentro de *Update Fields* abre a busca e escolhe um contato | Falta olhar no navegador — é a única parte que um comando não prova |
+
+> ⚠️ **O número da versão na tela Community Nodes não acompanha um `.tgz` instalado à mão.**
+> O n8n carrega os nodes **varrendo a pasta** `~/.n8n/nodes/node_modules` (lido no fonte da
+> 2.18.5), mas a versão que a tela mostra vem da tabela `installed_packages`, escrita só
+> quando a instalação passa por aquela tela. Daí o código ser o da 0.8.0 e o rótulo dizer
+> 0.7.2 — a instância de dev fica com os dois desencontrados até a publicação. É mais uma
+> razão para a regra 7 ser o que é.
