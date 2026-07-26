@@ -307,7 +307,12 @@ function categoryLines(
 			});
 		}
 
-		return { categoryId: id, value };
+		// A line of its own detail, sent only when there is one. The rest of the
+		// payload follows the same rule, and on an update — where the whole array
+		// is replaced — leaving it out is what erases a detail that was there.
+		const detail = String((row as IDataObject).description ?? '').trim();
+
+		return detail === '' ? { categoryId: id, value } : { categoryId: id, value, description: detail };
 	});
 }
 
@@ -332,17 +337,34 @@ function categoryLines(
  */
 const SIGNED_BY_THE_CATEGORY = /valor do agendamento.*(positivo|negativo)/i;
 
+/**
+ * The other refusal that is about the category lines, and the one the field
+ * itself promises away.
+ *
+ * Measured on the cobaia on 2026-07-26: a creation with two lines answers
+ * *"Utilize apenas uma categoria"*. Splitting an amount across categories is a
+ * Nibo feature that not every organization has, and nothing in the API says
+ * which — so the node cannot offer one line here and several there. It offers
+ * several, and explains this refusal when it comes.
+ */
+const ONE_CATEGORY_ONLY = /apenas uma categoria/i;
+
 function aboutTheCategory(error: NodeApiError, operation: string): NodeApiError {
 	if (operation !== 'create' && operation !== 'update') {
 		return error;
 	}
 
 	const said = [error.message, error.description].filter(Boolean).join(' ');
-	if (!SIGNED_BY_THE_CATEGORY.test(said)) {
+
+	if (SIGNED_BY_THE_CATEGORY.test(said)) {
+		error.description = `${error.description ?? ''}\n\nThis usually means the category does not match the kind of schedule: a revenue category cannot carry a payment, nor an expense category a receipt. It is the category's type that decides the sign of the line, which is why the API reports it as a problem with the amount. Pick the category from the list on the field, or read the right ID for this organization with the Category resource.`.trim();
 		return error;
 	}
 
-	error.description = `${error.description ?? ''}\n\nThis usually means the category does not match the kind of schedule: a revenue category cannot carry a payment, nor an expense category a receipt. It is the category's type that decides the sign of the line, which is why the API reports it as a problem with the amount. Pick the category from the list on the field, or read the right ID for this organization with the Category resource.`.trim();
+	if (ONE_CATEGORY_ONLY.test(said)) {
+		error.description = `${error.description ?? ''}\n\nThis organization takes one category line per schedule. Splitting an amount across categories is a Nibo feature not every organization has, and nothing in the API says which do — so the field offers several lines and this is where the answer comes. Leave a single line under Categories, or split the amount into one schedule per category.`.trim();
+		return error;
+	}
 
 	return error;
 }

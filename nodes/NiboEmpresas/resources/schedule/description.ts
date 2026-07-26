@@ -129,7 +129,7 @@ const CATEGORIES: INodeProperties = {
 	placeholder: 'Add Category',
 	default: {},
 	description:
-		'The lines this schedule is split into. The amount of the schedule is their sum: this API keeps no total of its own, so a schedule of 1,000 is one line of 1,000 or two of 500.',
+		'The lines this schedule is split into. The amount of the schedule is their sum — this API keeps no total of its own. Splitting across several categories is a Nibo feature not every organization has: where it is missing, the API refuses a second line with "Utilize apenas uma categoria", and the node says what that means.',
 	options: [
 		{
 			displayName: 'Category',
@@ -169,6 +169,19 @@ const CATEGORIES: INodeProperties = {
 					default: 0,
 					description:
 						'The amount of this line. Always typed as a positive number, on both kinds of schedule — it is what the API takes on a write, and it is what decides the sign it answers with on a read.',
+				},
+				{
+					// Measured on the cobaia on 2026-07-26 before it was offered: the
+					// API takes a description inside a category line, stores it and
+					// answers with it, accents included. The project's reference had
+					// the field marked suspicious after a payload that once crashed
+					// the server — that turned out to be the encoding, not this.
+					displayName: 'Description',
+					name: 'description',
+					type: 'string',
+					default: '',
+					description:
+						'What this line is about, when the schedule is split into several and each needs saying. Left empty it is not sent at all, and the line carries no detail.',
 				},
 			],
 		},
@@ -373,19 +386,11 @@ export const scheduleFields: INodeProperties[] = [
 			},
 		},
 	},
-	{
-		...CATEGORIES,
-		required: true,
-		displayOptions: {
-			show: {
-				resource: EVERY_TYPE,
-				operation: ['create'],
-			},
-		},
-	},
 	// On the screen rather than in a menu since 0.7.1 — a schedule with no
 	// description is a line nobody can read later, and the flag belongs to the
-	// moment the entry is made.
+	// moment the entry is made. Above the category lines since 0.7.7: what the
+	// schedule IS comes before how its amount is split, because the split is
+	// the detail and the rest is the decision.
 	...firstClassFields().map(
 		(field): INodeProperties => ({
 			...field,
@@ -397,6 +402,16 @@ export const scheduleFields: INodeProperties[] = [
 			},
 		}),
 	),
+	{
+		...CATEGORIES,
+		required: true,
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['create'],
+			},
+		},
+	},
 	{
 		displayName: 'Additional Fields',
 		name: 'additionalFields',

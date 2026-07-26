@@ -359,6 +359,37 @@ describe('executeSchedule — the error that is really about the category', () =
 		});
 	});
 
+	/**
+	 * Measured on the cobaia on 2026-07-26, while adding the per-line detail: a
+	 * creation with two category lines is refused with *"Utilize apenas uma
+	 * categoria"*. Splitting an amount across categories is a Nibo feature not
+	 * every organization has, and the node cannot know which — so it says what
+	 * the refusal means and what to do, rather than pretending the field never
+	 * offered more than one line.
+	 */
+	it('explains the refusal of a schedule split across several categories', async () => {
+		create.mockRejectedValue(apiError('Utilize apenas uma categoria.'));
+
+		const failure = executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				categories: {
+					category: [
+						{ categoryId: 'a', value: 100 },
+						{ categoryId: 'b', value: 50 },
+					],
+				},
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		await expect(failure).rejects.toThrow(/Utilize apenas uma categoria/);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/one category line/i),
+		});
+	});
+
 	// The API's own sentence is the evidence; it must survive, not be replaced.
 	it('keeps what the API said', async () => {
 		create.mockRejectedValue(apiError('Valor do agendamento deve ser positivo'));
@@ -609,6 +640,43 @@ describe('executeSchedule — Create', () => {
 			description: 'DA VERSÃO ANTERIOR',
 			isFlagged: true,
 		});
+	});
+
+	/**
+	 * The detail of one line, which the API takes inside the line itself —
+	 * measured on the cobaia before it was offered, since the project's own
+	 * reference had flagged the field as suspicious.
+	 */
+	it('sends the detail of a category line when one was written', async () => {
+		await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				categories: {
+					category: [{ categoryId: 'cat', value: 10, description: 'serviços de setembro' }],
+				},
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent().categories).toEqual([
+			{ categoryId: 'cat', value: 10, description: 'serviços de setembro' },
+		]);
+	});
+
+	// A line without a detail sends no empty detail: the same rule the rest of
+	// the payload follows, and on an update it is what erases one.
+	it.each([[''], ['   '], [undefined]])('leaves the detail out when it is %s', async (description) => {
+		await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				categories: { category: [{ categoryId: 'cat', value: 10, description }] },
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent().categories).toEqual([{ categoryId: 'cat', value: 10 }]);
 	});
 
 	it('takes more than one category line', async () => {

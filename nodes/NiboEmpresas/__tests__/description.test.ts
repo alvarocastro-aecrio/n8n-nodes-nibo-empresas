@@ -721,12 +721,38 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 
 		expect(categories?.type).toBe('fixedCollection');
 		expect(categories?.typeOptions?.multipleValues).toBe(true);
-		expect(line.values.map((field) => field.name)).toEqual(['categoryId', 'value']);
 		expect(line.values.find((field) => field.name === 'value')?.type).toBe('number');
 	});
 
 	it('says that the amount of a schedule is the sum of its lines', () => {
 		expect(forSchedules('categories')?.description).toMatch(/sum/i);
+	});
+
+	/**
+	 * A line of its own detail. Measured on the cobaia on 2026-07-26 before it
+	 * was offered: the API takes `description` inside a category line, stores it
+	 * and answers with it — accents and all. The project's reference had it
+	 * marked suspicious, from a payload that once crashed the server; that turned
+	 * out to be the encoding, not this field.
+	 */
+	it('lets each category line carry its own detail', () => {
+		const line = ((forSchedules('categories')?.options ?? []) as Array<{
+			values: INodeProperties[];
+		}>)[0];
+
+		expect(line.values.map((field) => field.name)).toEqual(['categoryId', 'value', 'description']);
+		expect(line.values.find((field) => field.name === 'description')?.type).toBe('string');
+	});
+
+	/**
+	 * The order the form is filled in. What a schedule *is* — who, when, what it
+	 * is about — comes before how the amount is split, because the split is the
+	 * detail and the rest is the decision.
+	 */
+	it('asks what the schedule is before asking how it is split', () => {
+		for (const name of ['description', 'isFlagged']) {
+			expect(positionOf(name)).toBeLessThan(positionOf('categories'));
+		}
 	});
 
 	/**
