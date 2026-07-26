@@ -120,6 +120,12 @@ mostrando só o nome.
 3. **O handler lê as duas formas** *(commit próprio)*. Testes: objeto do componente, texto
    puro de um node antigo, e vazio recusado antes de qualquer chamada.
 4. **Medição 1.4 + README + bump 0.8.0** *(commit próprio)*.
+5. **O mesmo campo no Update Fields** *(commit próprio)* — a decisão 7, que as fatias 2 e 3
+   deixaram de fora ao cobrirem só a tela de criação. Testes: dentro do menu o parâmetro
+   continua `stakeholderId`, é `resourceLocator`, não é obrigatório e nomeia a mesma busca;
+   e o handler lê as duas formas também no update, deixa o contato em paz quando o campo
+   não foi acrescentado, e recusa o campo acrescentado e vazio — como já faz com as linhas
+   de categoria.
 
 ---
 

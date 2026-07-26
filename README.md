@@ -67,6 +67,8 @@ The partner is on both sides because capital is put in and drawn out. Anything e
 
 **By ID** is the other mode, and it is what a workflow chaining one node into the next has always used: paste the ID, or put an expression there.
 
+The same search is inside *Update Fields*, so changing the contact of a schedule is choosing one too. Left out of the menu the contact is not touched; added and left empty it is refused before anything is written, since a schedule with no contact is not a schedule this API keeps.
+
 > **Upgrading from 0.7.x?** Nothing to redo. A node saved before 0.8.0 stores the contact as a plain ID, and both the node and the editor go on reading it — measured, in a clean n8n and against the API. The only cosmetic loose end is that such a node opens with the mode selector blank; pick **By ID** when you are next in there.
 
 **The category is picked from a list** that reads like the Nibo screen: the name, with its group underneath. The options come clustered by group, in the sequence a chart of accounts is read — revenue, costs, expenses, investing, financing — and within a group in whatever order the organization arranged them in Nibo. Only the half that fits is offered: revenue categories under a Credit Schedule, expense ones under a Debit Schedule — see [Categories](#categories) for why that matters more than tidiness.
@@ -157,7 +159,7 @@ What the API refuses a creation without is asked for up front; everything else l
 - **Document Number takes digits only** — no dots, slashes or dashes.
 - **Email is one string holding every address, separated by commas** (`billing@example.com,accounts@example.com`). This API keeps a contact's e-mails in a single field, not in a list.
 
-**For a schedule** it is the **Stakeholder ID**, the **Due Date**, the **Schedule Date** and the **Categories** lines — plus **Accrual Date**, which is optional and still on the screen. See [Schedules](#schedules) for why.
+**For a schedule** it is the **Stakeholder**, the **Due Date**, the **Schedule Date** and the **Categories** lines — plus **Accrual Date**, which is optional and still on the screen. See [Schedules](#schedules) for why.
 
 ### Update
 
@@ -260,7 +262,7 @@ Add the **Nibo Empresas** node to a workflow, select the credential, pick a reso
 
 Writing works the same way: **Create** takes what that resource cannot be created without, **Update** takes an ID and only the fields you want changed, and **Delete** takes an ID. Each input item is one operation, and each answers with the record as Nibo has it.
 
-A common pair: read the contact with **Customer · Get Many**, filtered by name, then feed its `id` into **Credit Schedule · Create** as the **Stakeholder ID**. Pick the category from the list on that same form — or, when the workflow walks several organizations, read it per organization with **Category · Get Many** and set the field by expression.
+A common pair: read the contact with **Customer · Get Many**, filtered by name, then feed its `id` into **Credit Schedule · Create** — switch **Stakeholder** to *By ID* and put the expression there, which is what that mode is for. Pick the category from the list on that same form — or, when the workflow walks several organizations, read it per organization with **Category · Get Many** and set the field by expression.
 
 To read several organizations in a single node, switch **Authentication** to *API Token (Per Item)*, point the **API Token** field at the token carried by each input item, and send one item per organization — see [Authentication](#authentication).
 
@@ -297,7 +299,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.7.6 | **Due Date, Schedule Date and Accrual Date lose the clock.** They are days — the API takes `YYYY-MM-DD` and none of them has an hour — so offering a time was offering a decision that does not exist, and one with a wrong answer: the editor hands over the moment with its offset, and midnight in Brasília is the day before in UTC. The picker now stores the plain day. A node saved before this keeps working: the day is still cut out of whatever it carries |
 | 0.7.7 | Each **category line can carry its own Description**, measured against the API before being offered — the project's reference had that field flagged as suspicious after a payload that once crashed the server, which turned out to be the encoding rather than the field. **Description** and **Is Flagged** move above Categories, so the form asks what the schedule is before how its amount is split. And a finding that came with it: **splitting across several categories has to be enabled in Nibo** — with it off a second line is refused with *"Utilize apenas uma categoria"*, and the node now says so and what to do about it |
 | 0.7.8 | The per-line field is labelled **Detail**, following what Nibo's own screen calls *Detalhamento*. Label only: the parameter is still `description`, which is what the API calls the field and what a node saved under 0.7.7 already carries |
-| 0.8.0 | **The contact of a schedule is chosen by searching.** What 0.7.0 did for the category, now for the stakeholder — but as a search rather than a list, because an organization can hold thousands of customers and loading them would be 28 calls to open a field. What is typed goes to the server. The list offers only the kinds the API accepts on each side: customer or partner on a credit schedule, supplier, employee or partner on a debit one, measured as a full matrix against the API. **By ID** stays, so an expression still gets in, and a node saved under 0.7.x keeps working untouched |
+| 0.8.0 | **The contact of a schedule is chosen by searching.** What 0.7.0 did for the category, now for the stakeholder — but as a search rather than a list, because an organization can hold thousands of customers and loading them would be 28 calls to open a field. What is typed goes to the server. The list offers only the kinds the API accepts on each side: customer or partner on a credit schedule, supplier, employee or partner on a debit one, measured as a full matrix against the API. **By ID** stays, so an expression still gets in, and a node saved under 0.7.x keeps working untouched. The same search is offered inside *Update Fields*, so changing a contact is choosing one as well |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
