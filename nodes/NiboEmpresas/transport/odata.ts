@@ -27,8 +27,16 @@
  * `options` is a text value from a closed list — the API takes the same quoted
  * literal, and what the list buys is the person not having to guess which words
  * are on it.
+ *
+ * `guid` is the one type that looks like text and is not. A GUID column of this
+ * API is compared **bare**: `costCenterId eq '<guid>'` answers HTTP 500 —
+ * *Found operand types 'Edm.Guid' and 'Edm.String'* — while the same expression
+ * without the quotes answers 200. Measured on 2026-07-26 on `/costcenters` and
+ * on `/categories` alike. It is the exact opposite of what every text field
+ * here requires, which is why it is a type of its own rather than a special
+ * case somebody has to remember.
  */
-export type ODataFieldType = 'text' | 'boolean' | 'number' | 'options' | 'date';
+export type ODataFieldType = 'text' | 'boolean' | 'number' | 'options' | 'date' | 'guid';
 
 export interface IODataCondition {
 	/** The field path as the API names it, e.g. `name` or `document/number` */
@@ -67,7 +75,13 @@ const OPERATORS_OF: Record<ODataFieldType, string[]> = {
 	// `document/type`. A closed list is only offered where it was measured.
 	options: ['eq', 'ne'],
 	date: ['gt', 'ge', 'lt', 'le'],
+	// Two, and no more: an identifier is the same one or a different one. There
+	// is nothing to be greater than and no substring worth looking for.
+	guid: ['eq', 'ne'],
 };
+
+/** The shape a GUID column compares against — anything else is a 500, not a miss */
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Turns the conditions the editor collected into one `$filter` expression.
@@ -126,6 +140,24 @@ function writeCondition(condition: IODataCondition): string | undefined {
 		const amount = numberLiteral(condition.value);
 
 		return amount === undefined ? undefined : `${field} ${operator} ${amount}`;
+	}
+
+	if (condition.type === 'guid') {
+		const id = String(condition.value ?? '').trim();
+		if (id === '') {
+			return undefined;
+		}
+
+		// Refused here rather than sent, because the server's answer to a
+		// malformed one is a 500 about operand types that names neither the field
+		// nor the value — and a condition that fails is a scan that hands back
+		// nothing, which reads as "no records" to whoever is watching.
+		if (!GUID.test(id)) {
+			throw new Error(`The filter value "${id}" is not the ID this node can compare with`);
+		}
+
+		// Bare. See the note on the type: quoting this is the 500.
+		return `${field} ${operator} ${id}`;
 	}
 
 	if (condition.type === 'date') {

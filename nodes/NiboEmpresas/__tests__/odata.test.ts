@@ -278,6 +278,72 @@ describe('buildODataFilter — the options type', () => {
 	});
 });
 
+/**
+ * The type that looks like text and is not.
+ *
+ * A GUID column of this API is compared **bare**: `costCenterId eq '<guid>'`
+ * answers HTTP 500 — *Found operand types 'Edm.Guid' and 'Edm.String'* — while
+ * the same expression without quotes answers 200. Measured on 2026-07-26 on
+ * `/costcenters` and on `/categories` alike. It is the exact opposite of what
+ * every text field of this API requires, which is why it is a type rather than
+ * a special case somebody has to remember.
+ */
+describe('buildODataFilter — the guid type', () => {
+	const ID = '2efffcd0-8730-4348-86da-6d9a95be6149';
+
+	function identifier(parts: Partial<IODataCondition>): IODataCondition {
+		return { field: 'costCenterId', operator: 'eq', value: ID, type: 'guid', ...parts };
+	}
+
+	it.each([
+		['eq', `costCenterId eq ${ID}`],
+		['ne', `costCenterId ne ${ID}`],
+	])('writes %s bare, which is what an ID column takes', (operator, expected) => {
+		expect(buildODataFilter([identifier({ operator })], 'and')).toBe(expected);
+	});
+
+	it('never quotes the value, which is the 500', () => {
+		expect(buildODataFilter([identifier({})], 'and')).not.toContain("'");
+	});
+
+	it('takes an ID in capitals as it was typed', () => {
+		expect(buildODataFilter([identifier({ value: ID.toUpperCase() })], 'and')).toBe(
+			`costCenterId eq ${ID.toUpperCase()}`,
+		);
+	});
+
+	it('skips a condition whose ID was left empty', () => {
+		expect(buildODataFilter([identifier({ value: '' })], 'and')).toBe('');
+	});
+
+	/**
+	 * Refused here rather than sent. The server's answer to a malformed one is a
+	 * 500 about operand types that names neither the field nor the value, and a
+	 * condition that fails is a scan that returns nothing — which reads as "no
+	 * records" to whoever is watching.
+	 */
+	it('refuses a value that is not an ID instead of sending it', () => {
+		expect(() => buildODataFilter([identifier({ value: 'Filial Rio' })], 'and')).toThrow(
+			/Filial Rio/,
+		);
+	});
+
+	it.each(['contains', 'gt', 'startswith'])('refuses %s, which no ID can be asked', (operator) => {
+		expect(() => buildODataFilter([identifier({ operator })], 'and')).toThrow(
+			new RegExp(operator),
+		);
+	});
+
+	it('joins an ID with the conditions around it', () => {
+		const filter = buildODataFilter(
+			[identifier({}), { field: 'description', operator: 'contains', value: 'Rio', type: 'text' }],
+			'and',
+		);
+
+		expect(filter).toBe(`costCenterId eq ${ID} and contains(description,'Rio')`);
+	});
+});
+
 describe('buildODataFilter — joining conditions', () => {
 	const TWO: IODataCondition[] = [
 		{ field: 'name', operator: 'contains', value: 'ACME', type: 'text' },

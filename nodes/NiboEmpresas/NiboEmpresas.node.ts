@@ -31,6 +31,12 @@ import {
 	loadScheduleCategories,
 } from './resources/category/load';
 import {
+	costCenterFields,
+	costCenterOperations,
+	costCenterResources,
+} from './resources/costCenter/description';
+import { executeCostCenter } from './resources/costCenter/execute';
+import {
 	scheduleFields,
 	scheduleOperations,
 	scheduleResources,
@@ -63,6 +69,7 @@ const RESOURCES: INodePropertyOptions[] = [
 	...stakeholderResources,
 	...scheduleResources,
 	...categoryResources,
+	...costCenterResources,
 ].sort((one, other) => one.name.localeCompare(other.name));
 
 /** Which handler each resource belongs to — the whole of what the node knows about them */
@@ -81,6 +88,9 @@ const HANDLERS: Record<string, Handler> = {
 	),
 	...Object.fromEntries(
 		categoryResources.map((resource) => [resource.value as string, executeCategory]),
+	),
+	...Object.fromEntries(
+		costCenterResources.map((resource) => [resource.value as string, executeCostCenter]),
 	),
 };
 
@@ -181,9 +191,11 @@ export class NiboEmpresas implements INodeType {
 			...stakeholderOperations,
 			...scheduleOperations,
 			...categoryOperations,
+			...costCenterOperations,
 			...stakeholderFields,
 			...scheduleFields,
 			...categoryFields,
+			...costCenterFields,
 			{
 				displayName: 'Options',
 				name: 'options',

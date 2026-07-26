@@ -926,6 +926,7 @@ describe('NiboEmpresas — Category on the screen', () => {
 			'Contact - Employee',
 			'Contact - Partner',
 			'Contact - Supplier',
+			'Cost Center',
 			'Schedule - Credit',
 			'Schedule - Debit',
 		]);
@@ -945,6 +946,7 @@ describe('NiboEmpresas — Category on the screen', () => {
 			'employee',
 			'partner',
 			'supplier',
+			'costCenter',
 			'creditSchedule',
 			'debitSchedule',
 		]);

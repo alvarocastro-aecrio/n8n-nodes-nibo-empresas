@@ -241,6 +241,20 @@ function conditionFields(menu: IFilterMenu): INodeProperties[] {
 				default: 'gt',
 			},
 		]),
+		// An identifier is the same one or a different one, and there is nothing
+		// else to ask of it.
+		...forType('guid', [
+			{
+				displayName: 'Operator',
+				name: 'operator',
+				type: 'options',
+				options: [
+					{ name: 'Is', value: 'eq' },
+					{ name: 'Is Not', value: 'ne' },
+				],
+				default: 'eq',
+			},
+		]),
 		// One declaration per field rather than one per type, which is what every
 		// other kind gets. Two closed lists in one menu do not hold the same
 		// choices, and a shared box would offer one field the other's answers —
@@ -284,6 +298,17 @@ function conditionFields(menu: IFilterMenu): INodeProperties[] {
 				type: 'dateTime',
 				default: '',
 				description: 'The moment to compare with. A condition left empty here is ignored.',
+			},
+		]),
+		...forType('guid', [
+			{
+				displayName: 'Value',
+				name: 'guidValue',
+				type: 'string',
+				default: '',
+				placeholder: '2efffcd0-8730-4348-86da-6d9a95be6149',
+				description:
+					'The ID as Nibo returns it. It travels without quotes, which is what this API takes on an ID column and refuses everywhere else, so anything that is not an ID is refused before the request rather than answered with a 500 about operand types. A condition left empty here is ignored.',
 			},
 		]),
 	];
@@ -341,6 +366,8 @@ interface IFilterRow {
 	optionsValue?: string;
 	/** The picker of a date field */
 	dateValue?: string;
+	/** The box of an ID field, whose literal is the one this API takes bare */
+	guidValue?: string;
 }
 
 /**
@@ -430,6 +457,9 @@ function filterValue(row: IFilterRow, type: ODataFieldType | undefined): unknown
 	}
 	if (type === 'date') {
 		return row.dateValue;
+	}
+	if (type === 'guid') {
+		return row.guidValue;
 	}
 
 	return row.value;
