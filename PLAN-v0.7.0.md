@@ -71,15 +71,18 @@ da linha: uma categoria de despesa dentro de um recebimento torna o total negati
 validação reclama do total. É a mesma classe do `Tipo de Stakeholder inválido` que na
 verdade era encoding — erro que aponta para o lugar errado.
 
-### 1.3 Pendente — medir no editor **antes** de confiar na fatia 4
+### 1.3 Medido no fonte do n8n 2.18.5 (2026-07-26) — as duas respondem sim
 
-| ☐ | Dentro de um `loadOptionsMethod`, o `this.getNodeParameter('resource')` enxerga o recurso escolhido? É o que decide se a lista consegue se filtrar sozinha entre receita e despesa |
-| ☐ | Um `loadOptionsMethod` num campo que mora **dentro de um `fixedCollection`** é chamado pelo editor? |
+| ☑ | Pergunta | Resposta |
+|---|---|---|
+| ☑ | A lista enxerga o recurso escolhido? | ✅ **Sim.** `DynamicNodeParametersService.getWorkflow()` monta o nó temporário com **`parameters: currentNodeParameters`** — os parâmetros de agora do editor, não os salvos. `getCurrentNodeParameter('resource')` e `getNodeParameter('resource', …)` leem daí |
+| ☑ | O editor chama `loadOptionsMethod` num campo dentro de um `fixedCollection`? | ✅ **Sim.** **130 nodes oficiais** que vêm com esta versão fazem exatamente isso (ActiveCampaign, Airtable, ClickUp, Baserow…). E o `LoadOptionsContext` tem o prefixo `&`, que reescreve um caminho relativo a partir do `path` do campo sendo carregado — mecanismo que só existe porque esses campos são aninhados |
 
-As duas são do n8n, não do Nibo, e se medem abrindo o node no n8n de dev — sem tocar na
-API. Se a primeira falhar, o recorte muda: a lista passa a mostrar as duas metades com o
-tipo escrito no rótulo, e a decisão 2 vira um aviso em vez de um filtro. **Nenhuma das duas
-bloqueia as fatias 1, 2, 3 e 6.**
+**Uma diferença de assinatura que o código tem que respeitar:** em `ILoadOptionsFunctions`
+o `getNodeParameter` é `(nome, fallback, opções)` — **não tem índice de item**. O
+`niboApiRequest` do transporte chama `(nome, índice, fallback)`, então **a lista não passa
+pelo transporte**: ela fala com a API por conta própria, no modo credencial, que é o único
+em que ela existe (decisão 4).
 
 ### 1.4 O que **não** precisa ser medido, e por quê
 

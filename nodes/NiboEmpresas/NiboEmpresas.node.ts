@@ -25,6 +25,7 @@ import {
 	categoryResources,
 } from './resources/category/description';
 import { executeCategory } from './resources/category/execute';
+import { loadScheduleCategories } from './resources/category/load';
 import {
 	scheduleFields,
 	scheduleOperations,
@@ -224,6 +225,17 @@ export class NiboEmpresas implements INodeType {
 				],
 			},
 		],
+	};
+
+	/**
+	 * The lists the editor fills in by asking the API, rather than from a literal
+	 * in this file. Declared here because that is where n8n looks them up by name
+	 * — a `loadOptionsMethod` on a field is a key into this object.
+	 */
+	methods = {
+		loadOptions: {
+			loadScheduleCategories,
+		},
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {

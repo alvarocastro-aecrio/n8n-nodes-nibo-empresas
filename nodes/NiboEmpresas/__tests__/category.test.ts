@@ -168,6 +168,130 @@ describe('executeCategory — the filter it sends', () => {
 	});
 });
 
+/**
+ * The dropdown on the schedule's Category ID field.
+ *
+ * It does not go through the transport, and that is not laziness: in
+ * `ILoadOptionsFunctions` the signature is `getNodeParameter(name, fallback)`,
+ * with no item index, while the transport calls `(name, index, fallback)` —
+ * passing one through the other would read the index as the fallback. Measured
+ * in the n8n 2.18.5 source on 2026-07-26, along with the two facts this whole
+ * slice rests on: the context is built from the editor's CURRENT parameters, so
+ * it sees the resource being chosen; and 130 nodes shipping with that version
+ * load options on a field nested in a fixedCollection, as this one is.
+ */
+describe('loadScheduleCategories — the list on the Category field', () => {
+	const REVENUE = { id: 'rev', name: 'Receita com vendas', referenceCode: '1.1.001', type: 'in' };
+	const COST = { id: 'cost', name: 'Custos produto vendido', referenceCode: '2.1.001', type: 'out' };
+
+	let request: jest.Mock;
+
+	/** The editor's context for a field being loaded, in the mode that has a credential */
+	function loadContext(parameters: IDataObject, items: IDataObject[] = [REVENUE]) {
+		request = jest.fn().mockResolvedValue({ items, count: items.length });
+
+		return {
+			getCurrentNodeParameter: (name: string) => parameters[name],
+			getNode: () => NODE,
+			getCredentials: jest.fn().mockResolvedValue({ baseUrl: '' }),
+			helpers: { httpRequestWithAuthentication: request },
+		} as never;
+	}
+
+	/** The query string of the call the loader made */
+	function querySent(): IDataObject {
+		return request.mock.calls[0][1].qs as IDataObject;
+	}
+
+	it.each([
+		['creditSchedule', "type eq 'in'"],
+		['debitSchedule', "type eq 'out'"],
+	])('asks %s only for the categories that fit it', async (resource, filter) => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		await loadScheduleCategories.call(loadContext({ authMode: 'credential', resource }));
+
+		expect(querySent().$filter).toBe(filter);
+	});
+
+	it('names the credential when it calls, so the token comes from it', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		await loadScheduleCategories.call(
+			loadContext({ authMode: 'credential', resource: 'creditSchedule' }),
+		);
+
+		expect(request.mock.calls[0][0]).toBe('niboEmpresasApi');
+	});
+
+	// A chart of accounts is read by its code, not alphabetically.
+	it('orders the list by reference code', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		const list = await loadScheduleCategories.call(
+			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [
+				{ id: 'c', name: 'Água', referenceCode: '3.1.009', type: 'out' },
+				{ id: 'a', name: 'Receita com vendas', referenceCode: '1.1.001', type: 'in' },
+				{ id: 'b', name: 'Receita com serviços', referenceCode: '1.1.002', type: 'in' },
+			]),
+		);
+
+		expect(list.map((option) => option.value)).toEqual(['a', 'b', 'c']);
+	});
+
+	it('shows the code next to the name, and hands back the ID', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		const [option] = await loadScheduleCategories.call(
+			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [REVENUE]),
+		);
+
+		expect(option.name).toContain('1.1.001');
+		expect(option.name).toContain('Receita com vendas');
+		expect(option.value).toBe('rev');
+	});
+
+	// A category the organization typed itself may have no code at all, and it is
+	// still a category somebody has to be able to pick.
+	it('keeps a category with no reference code, and puts it last', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		const list = await loadScheduleCategories.call(
+			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [
+				{ id: 'none', name: 'Sem código', type: 'in' },
+				REVENUE,
+			]),
+		);
+
+		expect(list.map((option) => option.value)).toEqual(['rev', 'none']);
+		expect(list[1].name).toBe('Sem código');
+	});
+
+	it('answers an empty list rather than failing when the API has nothing', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		const list = await loadScheduleCategories.call(
+			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, []),
+		);
+
+		expect(list).toEqual([]);
+	});
+
+	/**
+	 * The mode where it cannot work, and the message that has to say why. The
+	 * shallow reason is that the list is loaded with the credential and there is
+	 * none here; the one that matters is that a category ID belongs to one
+	 * organization, so a category picked on screen would be right for one company
+	 * of a portfolio and wrong for all the others.
+	 */
+	it('refuses in the per-item token mode, and points at the resource instead', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		const failure = loadScheduleCategories.call(
+			loadContext({ authMode: 'field', resource: 'creditSchedule' }),
+		);
+
+		await expect(failure).rejects.toThrow(/per item/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/Category/),
+		});
+		expect(request).not.toHaveBeenCalled();
+	});
+});
+
 describe('NiboEmpresas — Category on the screen', () => {
 	const description = new NiboEmpresas().description;
 
