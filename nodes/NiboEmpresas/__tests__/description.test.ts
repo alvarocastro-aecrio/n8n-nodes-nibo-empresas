@@ -1069,6 +1069,18 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 	 * in a line" true rather than merely intended — and the crossed pair is the
 	 * refusal of this family that talks about the wrong thing.
 	 */
+	/**
+	 * And in the menu on an update, where everything that is changed rather than
+	 * set lives. A field left out of the menu is a field the schedule keeps —
+	 * which for the apportionment is the promise that matters, because a `PUT`
+	 * that does not mention `costCenters` makes it disappear.
+	 */
+	it('offers the apportionment inside Update Fields as well', () => {
+		expect(fieldsOf('updateFields')).toEqual(
+			expect.arrayContaining(['apportionBy', 'costCenters']),
+		);
+	});
+
 	it('collects one share per line, and the cost center from a list', () => {
 		const rows = (forSchedules('costCenters')?.options ?? []) as Array<{
 			name: string;

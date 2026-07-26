@@ -65,6 +65,11 @@ const DATE_FIELDS = ['accrualDate', 'dueDate', 'scheduleDate'];
  * The line ID is dropped for a third reason: every `PUT` recreates the lines
  * with new IDs, so it is never the ID that was read a moment earlier.
  *
+ * And since 0.9.0 the cost centre lines need the same treatment for a fourth
+ * reason: a **read answers both numbers** — `{costCenterId, percent, value,
+ * costCenterDescription}` — where the update asked for one of them. Comparing
+ * those two shapes as they stand can only ever say "not applied".
+ *
  * What a workflow receives is never this — it is the record as the API answered
  * it, `normalizeSchedule` and nothing more.
  */
@@ -84,6 +89,28 @@ export function scheduleComparable(record: IDataObject): IDataObject {
 			const amount = Number(value);
 
 			return { categoryId, value: Number.isFinite(amount) ? Math.abs(amount) : value };
+		});
+	}
+
+	if (Array.isArray(comparable.costCenters)) {
+		// Which of the two numbers is the one that was asked for. It sits at the
+		// root of the record, on the answer and on the change alike — the two
+		// always travel together, which is what makes this readable from either
+		// side.
+		const byValue = Number(comparable.costCenterValueType) === 0;
+
+		comparable.costCenters = comparable.costCenters.map((line) => {
+			const { costCenterId, percent, value } = (line ?? {}) as IDataObject;
+			const asked = byValue ? value : percent;
+			const share = Number(asked);
+
+			return {
+				costCenterId,
+				// The magnitude, and to the cent. The sign belongs to the collection
+				// here exactly as it does on a category line, and a percentage that
+				// comes back as 70.000001 is the same 70 that was asked for.
+				share: Number.isFinite(share) ? Math.round(Math.abs(share) * 100) / 100 : asked,
+			};
 		});
 	}
 

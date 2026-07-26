@@ -1090,6 +1090,149 @@ describe('executeSchedule — Update', () => {
 		).toEqual({ categories: [{ categoryId: 'one', value: 300 }] });
 	});
 
+	/**
+	 * The apportionment on an update, and the measurement that is the whole of
+	 * this slice.
+	 *
+	 * On 2026-07-26, on the test company: a `PUT` that does not mention
+	 * `costCenters` answers 204 and the apportionment **disappears** from the
+	 * record, while a `PUT` returning `costCenters` in the exact shape the `GET`
+	 * hands over keeps it. This node has always sent the whole record back — the
+	 * safe cycle reads, merges and writes — so the second is what it does, and
+	 * nothing about that had to change. This test is that fact, held in place.
+	 */
+	it('leaves the apportionment alone when the field was not added', async () => {
+		await executeSchedule.call(
+			context({ creditScheduleId: 'not-a-real-id', updateFields: { description: 'CHANGED' } }),
+			'creditSchedule',
+			'update',
+		);
+
+		expect(updateCall().changes).not.toHaveProperty('costCenters');
+		expect(updateCall().changes).not.toHaveProperty('costCenterValueType');
+	});
+
+	// The same rule the category lines follow, and the only thing a partial array
+	// could mean: the merge replaces an array whole.
+	it('replaces the apportionment whole when lines were added', async () => {
+		await executeSchedule.call(
+			context({
+				creditScheduleId: 'not-a-real-id',
+				updateFields: {
+					apportionBy: 'percent',
+					costCenters: {
+						costCenter: [
+							{ costCenterId: 'centre-a', share: 70 },
+							{ costCenterId: 'centre-b', share: 30 },
+						],
+					},
+				},
+			}),
+			'creditSchedule',
+			'update',
+		);
+
+		expect(updateCall().changes).toEqual({
+			costCenterValueType: 1,
+			costCenters: [
+				{ costCenterId: 'centre-a', percent: 70 },
+				{ costCenterId: 'centre-b', percent: 30 },
+			],
+		});
+	});
+
+	/**
+	 * Apportion By is what the number in a line means, so on its own it means
+	 * nothing: there is no line for it to describe. It travels only alongside
+	 * lines, which is what keeps this from silently rewriting the type of an
+	 * apportionment somebody else set.
+	 */
+	it('changes nothing when Apportion By was added with no line', async () => {
+		await executeSchedule.call(
+			context({
+				creditScheduleId: 'not-a-real-id',
+				updateFields: { apportionBy: 'value' },
+			}),
+			'creditSchedule',
+			'update',
+		);
+
+		// Nothing at all — which the transport then refuses as "an update that
+		// rewrites the record with itself", where every resource is caught.
+		expect(updateCall().changes).toEqual({});
+	});
+
+	/**
+	 * And lines added without it are refused rather than defaulted.
+	 *
+	 * On a creation Apportion By is always on the screen. Here it is an entry of
+	 * a menu, and lines added without it would be written under whichever key the
+	 * node happened to default to — turning the amounts of a value apportionment
+	 * into percentages, quietly, on a record that already had one.
+	 */
+	it('asks for Apportion By when lines were added without it', async () => {
+		const failure = executeSchedule.call(
+			context({
+				creditScheduleId: 'not-a-real-id',
+				updateFields: { costCenters: { costCenter: [{ costCenterId: 'centre-a', share: 70 }] } },
+			}),
+			'creditSchedule',
+			'update',
+		);
+
+		await expect(failure).rejects.toThrow(/how to read it/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/Apportion By/),
+		});
+	});
+
+	/**
+	 * Without this the confirmation would report every apportionment update as
+	 * having failed.
+	 *
+	 * The `GET` answers a line as `{costCenterId, percent, value,
+	 * costCenterDescription}` — both numbers and the name — where the update
+	 * asked for `{costCenterId, percent}`. Comparing those two shapes as they
+	 * stand can only ever say "not applied".
+	 */
+	it('compares an apportionment by the share that was actually asked for', async () => {
+		await executeSchedule.call(
+			context({ creditScheduleId: 'not-a-real-id', updateFields: { description: 'CHANGED' } }),
+			'creditSchedule',
+			'update',
+		);
+
+		const normalize = updateCall().options?.normalize;
+
+		expect(
+			normalize?.({
+				costCenterValueType: 1,
+				costCenters: [
+					{ costCenterId: 'centre-a', percent: 70, value: 858.28, costCenterDescription: 'Rio' },
+				],
+			}),
+		).toEqual({
+			costCenterValueType: 1,
+			costCenters: [{ costCenterId: 'centre-a', share: 70 }],
+		});
+	});
+
+	// And by the other number when the apportionment is by value — where the
+	// sign belongs to the collection, exactly as it does on a category line.
+	it('compares an apportionment by value by its amount, whatever sign it came back with', () => {
+		const { scheduleComparable } = jest.requireActual('../resources/schedule/normalize');
+
+		expect(
+			scheduleComparable({
+				costCenterValueType: 0,
+				costCenters: [{ costCenterId: 'centre-a', percent: 100, value: -300 }],
+			}),
+		).toEqual({
+			costCenterValueType: 0,
+			costCenters: [{ costCenterId: 'centre-a', share: 300 }],
+		});
+	});
+
 	// The whole record as the universal endpoint answers it is a valid write
 	// body, measured on both kinds — so nothing has to be taken out of it, which
 	// is the opposite of the stakeholders and their mirrored phone and e-mail.

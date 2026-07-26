@@ -610,6 +610,13 @@ export const scheduleFields: INodeProperties[] = [
 			...firstClassFields(),
 			...writableFields(),
 			CATEGORIES,
+			// The apportionment, in the menu like everything else that is changed
+			// rather than set. Measured on 2026-07-26: a PUT that does not mention
+			// costCenters makes the apportionment disappear — which is exactly what
+			// "a field you did not add is not touched" has to prevent, and does,
+			// because the safe cycle sends the stored record back whole.
+			APPORTION_BY,
+			COST_CENTERS,
 			{
 				displayName: 'Accrual Date',
 				name: 'accrualDate',
