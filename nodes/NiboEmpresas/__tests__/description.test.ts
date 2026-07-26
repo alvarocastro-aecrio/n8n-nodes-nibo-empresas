@@ -913,6 +913,39 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 		},
 	);
 
+	/**
+	 * The same search on the other form, which is the half of 0.8.0 that Update
+	 * would otherwise have missed: a contact is changed as often as it is chosen,
+	 * and knowing a GUID by heart is no easier there.
+	 *
+	 * A `resourceLocator` inside a `collection` is supported — read in the n8n
+	 * 2.18.5 source on 2026-07-26, where official nodes of this very version do
+	 * it — so this is the same field, not a second-class copy of it.
+	 */
+	it('searches for the contact inside Update Fields too', () => {
+		const field = inUpdateFields('stakeholderId');
+
+		expect(field?.type).toBe('resourceLocator');
+		expect((field?.modes ?? []).map((mode) => mode.name)).toEqual(['list', 'id']);
+		// Nothing in Update is mandatory: a contact left out is a contact kept.
+		expect(field?.required).toBeUndefined();
+	});
+
+	it('searches it with the method the node declares, exactly as Create does', () => {
+		const [list] = inUpdateFields('stakeholderId')?.modes ?? [];
+		const method = list.typeOptions?.searchListMethod as string;
+
+		expect(method).toBe(forSchedules('stakeholderId')?.modes?.[0].typeOptions?.searchListMethod);
+		expect(Object.keys(new NiboEmpresas().methods?.listSearch ?? {})).toContain(method);
+	});
+
+	/** A field offered inside the Update Fields menu of a schedule */
+	function inUpdateFields(name: string): INodeProperties | undefined {
+		return ((forSchedules('updateFields')?.options ?? []) as INodeProperties[]).find(
+			(field) => field.name === name,
+		);
+	}
+
 	// Same rule as the stakeholders: what can be set when creating can be
 	// changed later, and nothing in Update is mandatory.
 	it('offers under Update Fields everything Create asks for, all optional', () => {

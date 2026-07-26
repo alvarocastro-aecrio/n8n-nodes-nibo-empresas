@@ -905,6 +905,70 @@ describe('executeSchedule — Update', () => {
 		expect(updateCall().changes).toEqual({ description: '' });
 	});
 
+	/**
+	 * The contact of an update arrives in the same two shapes as the contact of a
+	 * creation, and is read by the same code — the field is the same field, and
+	 * the handler cannot tell which form it came from anyway.
+	 */
+	it('reads the contact of an update out of what the search component stores', async () => {
+		await executeSchedule.call(
+			context({
+				creditScheduleId: 'not-a-real-id',
+				updateFields: { stakeholderId: { __rl: true, mode: 'list', value: 'picked-from-the-list' } },
+			}),
+			'creditSchedule',
+			'update',
+		);
+
+		expect(updateCall().changes).toEqual({ stakeholderId: 'picked-from-the-list' });
+	});
+
+	it('still reads the plain ID an update saved before 0.8.0 carries', async () => {
+		await executeSchedule.call(
+			context({
+				creditScheduleId: 'not-a-real-id',
+				updateFields: { stakeholderId: 'saved-as-a-string' },
+			}),
+			'creditSchedule',
+			'update',
+		);
+
+		expect(updateCall().changes).toEqual({ stakeholderId: 'saved-as-a-string' });
+	});
+
+	/**
+	 * Added and left empty, it is refused rather than written — the same answer
+	 * the category lines give, and for the same reason: a schedule with no
+	 * contact is not a schedule this API keeps. Writing the emptiness would
+	 * either be refused by the API in words about something else, or take the
+	 * contact off a record nobody meant to touch.
+	 */
+	it.each([[{ __rl: true, mode: 'list', value: '' }], ['']])(
+		'refuses an update whose contact was added as %s',
+		async (stakeholderId) => {
+			const failure = executeSchedule.call(
+				context({ creditScheduleId: 'not-a-real-id', updateFields: { stakeholderId } }),
+				'creditSchedule',
+				'update',
+			);
+
+			await expect(failure).rejects.toThrow(/contact/i);
+			expect(safeUpdate).not.toHaveBeenCalled();
+		},
+	);
+
+	// And left out of the menu it is not touched, which is the whole promise of
+	// this operation.
+	it('leaves the contact alone when it was not added', async () => {
+		await executeSchedule.call(
+			context({ creditScheduleId: 'not-a-real-id', updateFields: { description: 'CHANGED' } }),
+			'creditSchedule',
+			'update',
+		);
+
+		expect(updateCall().changes).not.toHaveProperty('stakeholderId');
+	});
+
 	it('hands back the confirmed record, with the contact repaired', async () => {
 		safeUpdate.mockResolvedValue({
 			scheduleId: 'not-a-real-id',

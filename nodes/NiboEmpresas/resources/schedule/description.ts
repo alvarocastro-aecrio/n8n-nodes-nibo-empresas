@@ -193,6 +193,51 @@ const CATEGORIES: INodeProperties = {
 };
 
 /**
+ * The contact the schedule belongs to, on both forms that name one.
+ *
+ * A search since 0.8.0, and still called `stakeholderId`. The name is the
+ * contract; the handler reads both what this component stores and the plain
+ * string a node saved before it still carries.
+ *
+ * Declared once and used twice — on the create screen and inside Update Fields
+ * — because a `resourceLocator` is supported inside a `collection`, read in the
+ * n8n 2.18.5 source on 2026-07-26 where official nodes of this version do it.
+ * Two declarations would be two fields free to drift apart, and a contact is
+ * changed as often as it is chosen.
+ */
+const STAKEHOLDER: INodeProperties = {
+	displayName: 'Stakeholder',
+	name: 'stakeholderId',
+	type: 'resourceLocator',
+	default: { mode: 'list', value: '' },
+	description:
+		'The contact this schedule belongs to. The list is searched on the server and offers only the kinds the API accepts here — a customer or a partner on a credit schedule, a supplier, an employee or a partner on a debit one; anything else is refused with "Stakeholder is not compatible".',
+	modes: [
+		{
+			displayName: 'From List',
+			name: 'list',
+			type: 'list',
+			placeholder: 'Search for a contact…',
+			typeOptions: {
+				searchListMethod: 'searchScheduleStakeholders',
+				// Searched on the server: an organization can have thousands of
+				// customers, and filtering a page of them in the browser would
+				// only ever find what happened to be on that page.
+				searchable: true,
+				searchFilterRequired: false,
+			},
+		},
+		{
+			displayName: 'By ID',
+			name: 'id',
+			type: 'string',
+			placeholder: '2efffcd0-8730-4348-86da-6d9a95be6149',
+			hint: 'The ID as Nibo returns it, or an expression reading it from the incoming item',
+		},
+	],
+};
+
+/**
  * The two that are always on the screen when a schedule is created.
  *
  * They were under Additional Fields until 0.7.1, and Alvaro moved them out
@@ -306,39 +351,8 @@ export const scheduleFields: INodeProperties[] = [
 		}),
 	),
 	{
-		// A search since 0.8.0, and still called `stakeholderId`. The name is the
-		// contract; the handler reads both what this component stores and the
-		// plain string a node saved before it still carries.
-		displayName: 'Stakeholder',
-		name: 'stakeholderId',
-		type: 'resourceLocator',
+		...STAKEHOLDER,
 		required: true,
-		default: { mode: 'list', value: '' },
-		description:
-			'The contact this schedule belongs to. The list is searched on the server and offers only the kinds the API accepts here — a customer or a partner on a credit schedule, a supplier, an employee or a partner on a debit one; anything else is refused with "Stakeholder is not compatible".',
-		modes: [
-			{
-				displayName: 'From List',
-				name: 'list',
-				type: 'list',
-				placeholder: 'Search for a contact…',
-				typeOptions: {
-					searchListMethod: 'searchScheduleStakeholders',
-					// Searched on the server: an organization can have thousands of
-					// customers, and filtering a page of them in the browser would
-					// only ever find what happened to be on that page.
-					searchable: true,
-					searchFilterRequired: false,
-				},
-			},
-			{
-				displayName: 'By ID',
-				name: 'id',
-				type: 'string',
-				placeholder: '2efffcd0-8730-4348-86da-6d9a95be6149',
-				hint: 'The ID as Nibo returns it, or an expression reading it from the incoming item',
-			},
-		],
 		displayOptions: {
 			show: {
 				resource: EVERY_TYPE,
@@ -517,13 +531,11 @@ export const scheduleFields: INodeProperties[] = [
 				default: '',
 				description: 'The date the money is expected to move',
 			},
-			{
-				displayName: 'Stakeholder ID',
-				name: 'stakeholderId',
-				type: 'string',
-				default: '',
-				description: 'The ID of the contact this schedule belongs to',
-			},
+			// The same search the create screen offers, and the same parameter
+			// underneath: a node that added "Stakeholder ID" before 0.8.0 still
+			// carries `stakeholderId`, still finds it here, and its plain ID is
+			// still what the handler reads.
+			STAKEHOLDER,
 		]),
 		displayOptions: {
 			show: {

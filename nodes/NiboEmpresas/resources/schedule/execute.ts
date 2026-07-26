@@ -136,7 +136,10 @@ export async function executeSchedule(
 					i,
 					endpoint,
 					writePayload.call(this, i, {
-						stakeholderId: contactId.call(this, i),
+						// Handed over exactly as the field holds it: the payload builder
+						// is where either shape of it becomes an ID, on this operation
+						// and on the update alike.
+						stakeholderId: this.getNodeParameter('stakeholderId', i, ''),
 						dueDate: this.getNodeParameter('dueDate', i) as string,
 						scheduleDate: this.getNodeParameter('scheduleDate', i) as string,
 						accrualDate: this.getNodeParameter('accrualDate', i, '') as string,
@@ -217,7 +220,7 @@ const DATE_FIELDS = ['accrualDate', 'dueDate', 'scheduleDate'];
  * it `isFlag` on a payment, and the wrong one is accepted and quietly ignored.
  * Nobody types either.
  */
-const PLAIN_FIELDS = ['stakeholderId', 'description', 'isFlagged', 'reference'];
+const PLAIN_FIELDS = ['description', 'isFlagged', 'reference'];
 
 /**
  * Turns what the editor collected into the payload the API keeps.
@@ -237,6 +240,14 @@ function writePayload(
 	fields: IDataObject,
 ): IDataObject {
 	const payload: IDataObject = {};
+
+	// The contact is the one field that arrives in two shapes, and it is turned
+	// into an ID here so that a creation and an update read it the same way.
+	// Absent from the menu on an update, it is absent from the payload, which is
+	// what leaves the contact of the schedule as it is.
+	if (fields.stakeholderId !== undefined) {
+		payload.stakeholderId = contactId.call(this, fields.stakeholderId, itemIndex);
+	}
 
 	for (const field of PLAIN_FIELDS) {
 		if (fields[field] !== undefined) {
@@ -327,10 +338,11 @@ function categoryLines(
  *
  * Refused while it is still cheap to refuse: an empty contact would otherwise
  * reach the API as a missing stakeholder, answered for in its own way and at
- * its own moment.
+ * its own moment. On an update that refusal is the same one the category lines
+ * give — a field added and left empty is an unfinished row, and a schedule with
+ * no contact is not a schedule this API keeps.
  */
-function contactId(this: IExecuteFunctions, itemIndex: number): string {
-	const chosen = this.getNodeParameter('stakeholderId', itemIndex, '') as unknown;
+function contactId(this: IExecuteFunctions, chosen: unknown, itemIndex: number): string {
 	const raw =
 		typeof chosen === 'object' && chosen !== null ? (chosen as IDataObject).value : chosen;
 	const id = String(raw ?? '').trim();
@@ -339,7 +351,7 @@ function contactId(this: IExecuteFunctions, itemIndex: number): string {
 		throw new NodeOperationError(this.getNode(), 'This schedule names no contact', {
 			itemIndex,
 			description:
-				'Pick a contact in the Stakeholder field, or switch it to "By ID" and put the ID there — usually an expression reading it from the incoming item.',
+				'Pick a contact in the Stakeholder field, or switch it to "By ID" and put the ID there — usually an expression reading it from the incoming item. On an update, leaving the field out of Update Fields altogether keeps the contact the schedule already has.',
 		});
 	}
 
