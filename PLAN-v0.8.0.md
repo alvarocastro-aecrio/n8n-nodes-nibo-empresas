@@ -56,12 +56,22 @@ silêncio — que este projeto recusa — ou demora demais.
 | ☑ | O editor sabe ler um valor que não é `{__rl,…}`? | ✅ Sim, e em vários pontos: `isResourceLocatorValue(x) ? x.value : x` |
 | ☑ | Dá para pôr um `resourceLocator` dentro de um `collection` (o Update Fields)? | ✅ Sim — nodes oficiais desta versão fazem (Google Calendar) |
 
-### 1.4 Pendente — medir **antes** de publicar
+### 1.4 Medido no editor (2026-07-26) — o node antigo não perde nada
 
-| ☐ | O que o componente **desenha** para um node salvo com o texto puro? Se aparecer vazio, o campo precisa ser reescolhido, e isso vai escrito no README e dito ao Alvaro antes de qualquer publicação |
+Um node salvo com `stakeholderId` em texto puro, aberto no navegador contra a 0.8.0
+instalada num n8n 2.18.5 limpo:
 
-Mede-se no ambiente descartável já usado hoje: um node com `stakeholderId` em texto puro,
-aberto no navegador. **Não bloqueia nenhuma fatia de código** — bloqueia a publicação.
+| ☑ | O componente aparece? | ✅ Sim |
+| ☑ | O ID antigo aparece? | ✅ **Sim, na caixa**: `2efffcd0-8730-…` está lá e legível |
+| ☑ | O seletor de modo? | ⚠️ Fica **em branco** ("Mode…") em vez de marcar "By ID" |
+
+**Conclusão: não quebra.** O valor sobrevive na tela e em execução — as duas formas foram
+criadas de verdade na cobaia e caíram no contato certo. O único incômodo é cosmético: ao
+abrir um node antigo, o modo está em branco e vale escolher "By ID" para deixar arrumado.
+
+De brinde, a mesma tela confirmou três mudanças da 0.7.x rodando juntas: datas **sem
+relógio** (`2026-12-01`), Description e Is Flagged **acima** de Categories, e a categoria
+mostrando só o nome.
 
 ---
 

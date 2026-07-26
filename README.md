@@ -52,9 +52,22 @@ Every resource that works on a single record has its own ID field (**Customer ID
 
 **Credit Schedule** is money coming in, **Debit Schedule** is money going out. They are two resources rather than one resource with a type field, because the type is not a setting of the operation — it is which set of books the operation is about.
 
-Creating one asks for what the API refuses a creation without: the **Stakeholder ID** of the contact, the **Due Date**, the **Schedule Date** and at least one line under **Categories**. **Description** and **Is Flagged** are on the form too, since a schedule with no description is a line nobody can read later in Nibo. **Reference** lives under *Additional Fields*.
+Creating one asks for what the API refuses a creation without: the **Stakeholder**, the **Due Date**, the **Schedule Date** and at least one line under **Categories**. **Description** and **Is Flagged** are on the form too, since a schedule with no description is a line nobody can read later in Nibo. **Reference** lives under *Additional Fields*.
 
 On **Update** those two are back inside *Update Fields*, and that is deliberate: there, a field on the screen is a field that gets written, so a visible empty Description would erase the stored one every time anything else changed.
+
+**The contact is searched for, not pasted.** Type part of a name and the search runs **on the server** — an organization can hold thousands of customers, so nothing is loaded up front and nothing is silently capped. The list offers only the kinds the API accepts on that side, which is a rule of Nibo's and not of this node:
+
+| Schedule | Contacts offered |
+|---|---|
+| **Credit Schedule** | Customer · Partner |
+| **Debit Schedule** | Supplier · Employee · Partner |
+
+The partner is on both sides because capital is put in and drawn out. Anything else is refused by the API with *"Stakeholder is not compatible"*.
+
+**By ID** is the other mode, and it is what a workflow chaining one node into the next has always used: paste the ID, or put an expression there.
+
+> **Upgrading from 0.7.x?** Nothing to redo. A node saved before 0.8.0 stores the contact as a plain ID, and both the node and the editor go on reading it — measured, in a clean n8n and against the API. The only cosmetic loose end is that such a node opens with the mode selector blank; pick **By ID** when you are next in there.
 
 **The category is picked from a list** that reads like the Nibo screen: the name, with its group underneath. The options come clustered by group, in the sequence a chart of accounts is read — revenue, costs, expenses, investing, financing — and within a group in whatever order the organization arranged them in Nibo. Only the half that fits is offered: revenue categories under a Credit Schedule, expense ones under a Debit Schedule — see [Categories](#categories) for why that matters more than tidiness.
 
@@ -284,6 +297,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.7.6 | **Due Date, Schedule Date and Accrual Date lose the clock.** They are days — the API takes `YYYY-MM-DD` and none of them has an hour — so offering a time was offering a decision that does not exist, and one with a wrong answer: the editor hands over the moment with its offset, and midnight in Brasília is the day before in UTC. The picker now stores the plain day. A node saved before this keeps working: the day is still cut out of whatever it carries |
 | 0.7.7 | Each **category line can carry its own Description**, measured against the API before being offered — the project's reference had that field flagged as suspicious after a payload that once crashed the server, which turned out to be the encoding rather than the field. **Description** and **Is Flagged** move above Categories, so the form asks what the schedule is before how its amount is split. And a finding that came with it: **splitting across several categories has to be enabled in Nibo** — with it off a second line is refused with *"Utilize apenas uma categoria"*, and the node now says so and what to do about it |
 | 0.7.8 | The per-line field is labelled **Detail**, following what Nibo's own screen calls *Detalhamento*. Label only: the parameter is still `description`, which is what the API calls the field and what a node saved under 0.7.7 already carries |
+| 0.8.0 | **The contact of a schedule is chosen by searching.** What 0.7.0 did for the category, now for the stakeholder — but as a search rather than a list, because an organization can hold thousands of customers and loading them would be 28 calls to open a field. What is typed goes to the server. The list offers only the kinds the API accepts on each side: customer or partner on a credit schedule, supplier, employee or partner on a debit one, measured as a full matrix against the API. **By ID** stays, so an expression still gets in, and a node saved under 0.7.x keeps working untouched |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
