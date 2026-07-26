@@ -684,11 +684,15 @@ describe('executeStakeholder — the filter it sends', () => {
 		expect(filterSent()).toBe("contains(name,'LTDA') and isCompany eq true");
 	});
 
-	// Someone who wrote an expression by hand said something more specific than
-	// a menu can, so it is what the node sends.
-	it('lets the written expression override the conditions', async () => {
+	// Switch to OData and the conditions leave the screen. They have to leave
+	// what is sent with it: a field nobody can see must not be filtering
+	// underneath one that is.
+	it('sends only the expression in the OData mode, conditions or no conditions', async () => {
 		await executeStakeholder.call(
-			withConditions([{ field: 'name', operator: 'contains', value: 'ACME' }], {
+			context({
+				returnAll: true,
+				filterType: 'odata',
+				filters: { conditions: [{ field: 'name', operator: 'contains', value: 'ACME' }] },
 				options: { filter: "contains(name,'LTDA')" },
 			}),
 			'customer',
@@ -698,7 +702,21 @@ describe('executeStakeholder — the filter it sends', () => {
 		expect(filterSent()).toBe("contains(name,'LTDA')");
 	});
 
-	it('falls back to the conditions when the option is there but empty', async () => {
+	it('sends no filter in the OData mode when the expression is empty, rather than the hidden conditions', async () => {
+		await executeStakeholder.call(
+			context({
+				returnAll: true,
+				filterType: 'odata',
+				filters: { conditions: [{ field: 'name', operator: 'contains', value: 'ACME' }] },
+			}),
+			'customer',
+			'list',
+		);
+
+		expect(filterSent()).toBe('');
+	});
+
+	it('builds the conditions when the option was added and left blank', async () => {
 		await executeStakeholder.call(
 			withConditions([{ field: 'name', operator: 'contains', value: 'ACME' }], {
 				options: { filter: '   ' },
