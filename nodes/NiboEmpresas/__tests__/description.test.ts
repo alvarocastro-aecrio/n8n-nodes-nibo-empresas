@@ -386,9 +386,14 @@ describe('NiboEmpresas — the assisted filter', () => {
 		return ((field?.options ?? []) as INodePropertyOptions[]).map((option) => option.name);
 	}
 
-	it('starts assisted, and keeps the raw expression as the other mode', () => {
-		expect(optionValues(property('filterType'))).toEqual(['conditions', 'odata']);
-		expect(property('filterType')?.default).toBe('conditions');
+	// The conditions are simply what the node offers. Writing an expression by
+	// hand under Options is the exception, and adding it there is the whole
+	// switch — a second switch in the body could disagree with it, and that is
+	// how a filter ends up being one thing on the screen and another on the wire.
+	it('has no mode switch at all, only the conditions and the option', () => {
+		expect(property('filterType')).toBeUndefined();
+		expect(property('filters')).toBeDefined();
+		expect(option('filter')).toBeDefined();
 	});
 
 	/**
@@ -412,23 +417,29 @@ describe('NiboEmpresas — the assisted filter', () => {
 	// The two sets of fields are what Filter Type switches between, so the option
 	// is offered in the mode that is about it — and only on a scan, which is the
 	// only operation with anything to filter.
-	it('offers that option only in the OData mode of Get Many', () => {
-		expect(option('filter')?.displayOptions?.show).toEqual({
-			'/operation': ['list'],
-			'/filterType': ['odata'],
-		});
+	// Nothing to find first: it is on the Add option list of every scan.
+	it('offers that option on every Get Many, with no mode to choose first', () => {
+		expect(option('filter')?.displayOptions?.show).toEqual({ '/operation': ['list'] });
 	});
 
-	it('offers the three filter parameters on Get Many of all four types', () => {
-		for (const name of ['filterType', 'filters', 'filterCombine']) {
+	it('offers the two condition parameters on Get Many of all four types', () => {
+		for (const name of ['filters', 'filterCombine']) {
 			expect(property(name)?.displayOptions?.show?.operation).toEqual(['list']);
 			expect(property(name)?.displayOptions?.show?.resource).toEqual(TYPES);
 		}
 	});
 
-	it('shows the builder and its combine only in the assisted mode', () => {
+	/**
+	 * And they take themselves off the screen the moment that option carries an
+	 * expression. `exists` is how the editor spells "filled in" — not null, not
+	 * undefined, not empty — so an option added and left blank costs the
+	 * conditions nothing.
+	 */
+	it('hides the builder and its combine once the option carries an expression', () => {
 		for (const name of ['filters', 'filterCombine']) {
-			expect(property(name)?.displayOptions?.show?.filterType).toEqual(['conditions']);
+			expect(property(name)?.displayOptions?.hide).toEqual({
+				'/options.filter': [{ _cnd: { exists: true } }],
+			});
 		}
 	});
 
@@ -604,35 +615,48 @@ describe('NiboEmpresas — what the editor draws for each filter type', () => {
 		);
 	}
 
-	const CONDITIONS = { resource: 'customer', operation: 'list', filterType: 'conditions' };
-	const ODATA = { resource: 'customer', operation: 'list', filterType: 'odata' };
+	const GET_MANY = { resource: 'customer', operation: 'list' };
 
-	it('draws the condition builder, and no OData box, on Conditions', () => {
-		expect(drawn('filters', CONDITIONS)).toBe(true);
-		expect(drawn('filterCombine', CONDITIONS)).toBe(true);
-		expect(drawnInOptions('filter', CONDITIONS)).toBe(false);
+	it('draws the condition builder, and offers the OData box, on a plain Get Many', () => {
+		expect(drawn('filters', GET_MANY)).toBe(true);
+		expect(drawn('filterCombine', GET_MANY)).toBe(true);
+		expect(drawnInOptions('filter', GET_MANY)).toBe(true);
 	});
 
-	// This is the whole request: turn the OData on and the new filters go away,
-	// leaving only the OData filter.
-	it('drops the condition builder and offers only the OData box on OData Expression', () => {
-		expect(drawn('filters', ODATA)).toBe(false);
-		expect(drawn('filterCombine', ODATA)).toBe(false);
-		expect(drawnInOptions('filter', ODATA)).toBe(true);
+	/**
+	 * The request, in one test: fill the OData box in under Options and the new
+	 * filters go away, leaving only the OData filter.
+	 *
+	 * `_cnd: { exists: true }` is what the editor understands by "this field is
+	 * filled in" — it reads `!== null && !== undefined && !== ''` — and a `hide`
+	 * rule fires only when the value it names is there at all. That is what makes
+	 * one field able to answer for another without a mode switch between them.
+	 */
+	it('drops the condition builder once the OData box has an expression in it', () => {
+		const written = { ...GET_MANY, options: { filter: "contains(name,'LTDA')" } };
+
+		expect(drawn('filters', written)).toBe(false);
+		expect(drawn('filterCombine', written)).toBe(false);
+		expect(drawnInOptions('filter', written)).toBe(true);
 	});
 
-	// A node saved before Filter Type existed has no value for it, and the
-	// editor falls back to the default — which is the assisted mode.
-	it('draws the condition builder for a node that never chose a filter type', () => {
-		const saved = { resource: 'customer', operation: 'list' };
+	// Added and left blank is not a filter, and must not cost the conditions
+	// their place on the screen.
+	it('keeps the condition builder while the OData box is empty', () => {
+		const blank = { ...GET_MANY, options: { filter: '' } };
 
-		expect(drawn('filters', saved)).toBe(true);
-		expect(drawnInOptions('filter', saved)).toBe(false);
+		expect(drawn('filters', blank)).toBe(true);
+		expect(drawn('filterCombine', blank)).toBe(true);
+	});
+
+	// The option is opt-in: not adding it leaves everything as it was.
+	it('keeps the condition builder when the option was never added', () => {
+		expect(drawn('filters', { ...GET_MANY, options: { requestInterval: 500 } })).toBe(true);
 	});
 
 	// And nothing to filter means no filter fields at all.
 	it('draws neither on an operation that reads a single record', () => {
-		const one = { resource: 'customer', operation: 'get', filterType: 'odata' };
+		const one = { resource: 'customer', operation: 'get' };
 
 		expect(drawn('filters', one)).toBe(false);
 		expect(drawnInOptions('filter', one)).toBe(false);

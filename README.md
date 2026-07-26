@@ -42,16 +42,15 @@ Each resource has its own ID field (**Customer ID**, **Employee ID**, **Partner 
 |---|---|
 | **Return All** | Reads the whole collection instead of stopping at a limit |
 | **Limit** | How many records to return when *Return All* is off. The API caps every page at 500 records silently, so a higher limit is collected in several pages |
-| **Filter Type** | *Conditions* (the default) or *OData Expression* — see [Filtering](#filtering) |
-| **Filters** · **Combine Conditions** | The conditions to narrow the result by, joined by *And* or by *Or* |
+| **Filters** · **Combine Conditions** | The conditions to narrow the result by, joined by *And* or by *Or* — see [Filtering](#filtering) |
 
-Under **Options**, at the end of the node, *Return All* also brings **Fail on Incomplete Results** — see *Incomplete results* below — and *OData Expression* brings **Filter (OData)**.
+Under **Options**, at the end of the node, live **Filter (OData)** — for an expression written by hand — and **Fail on Incomplete Results**, which *Return All* brings with it (see *Incomplete results* below).
 
 ### Filtering
 
-The filter is narrowed **on the server**, so what does not match is never paged through in the first place. There are two ways to write it.
+The filter is narrowed **on the server**, so what does not match is never paged through in the first place. There are two ways to write it, and you never choose between them in a menu: the second one takes over the moment you use it.
 
-**Conditions** — the default. Pick a **Field**, an **Operator** and a **Value**, add as many conditions as you need, and join them with *And* or *Or*. The node writes the OData expression for you:
+**Conditions** — what the node asks for. Pick a **Field**, an **Operator** and a **Value**, add as many conditions as you need, and join them with *And* or *Or*. The node writes the OData expression for you:
 
 | You pick | What is sent |
 |---|---|
@@ -66,11 +65,11 @@ The operators you are offered depend on the field: text gets *Contains*, *Contai
 
 The fields on offer are the ones the API actually filters on, checked against it one by one: **Name**, **Document Number**, **Email**, **Phone**, **Trading Name**, **City**, **State**, **Is Company**, **Is Archived** and **Updated At**. The **document type** is deliberately not among them — `document/type eq 'Cpf'` is an HTTP 500, because that enum does not compare. Filter by **Document Number** instead.
 
-**OData Expression** — for everything the conditions cannot say, such as a nested group: `(contains(name,'ACME') or contains(name,'LTDA')) and isCompany eq true`. Switch *Filter Type* to it and the conditions give way to **Filter (OData)**, which you add under **Options** at the end of the node. The expression goes to the API as you wrote it, so quoting and escaping are yours to get right: accented text needs no treatment (`contains(name,'SERVIÇOS')`), an apostrophe does.
+**Filter (OData)** — under **Options**, at the end of the node, for everything the conditions cannot say: a nested group such as `(contains(name,'ACME') or contains(name,'LTDA')) and isCompany eq true`. The expression goes to the API as you wrote it, so quoting and escaping are yours to get right: accented text needs no treatment (`contains(name,'SERVIÇOS')`), an apostrophe does.
 
-**Filter Type decides, and nothing else does.** On *OData Expression* the expression is the whole filter: the conditions leave the screen, and they leave what is sent with it — a field you cannot see is never filtering underneath one you can. Switch back to *Conditions* and the conditions are what filters again.
+**Writing one in is the switch.** The moment that box carries an expression, the conditions leave the screen — and leave the request with them, so a field you cannot see is never filtering underneath one you can. Empty the box or remove the option and the conditions are back, exactly as you left them.
 
-> **Upgrading from 0.4.x or 0.5.0?** Nothing to redo. A node saved with a **Filter (OData)** goes on filtering by that expression exactly as it did, even though the box now lives under *Options*. Build conditions when you want them and the conditions take over.
+> **Upgrading from 0.4.x or 0.5.x?** Nothing to redo. A node saved with a **Filter (OData)** goes on filtering by that expression exactly as it did, even though the box now lives under *Options*.
 
 ### Create
 
@@ -204,7 +203,8 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.4.3 | **Fail on Incomplete Results** moves into **Options** and is now **on by default**: a scan that may have missed records fails instead of handing back a list that looks whole. Add the option and turn it off for reads where that does not matter. A node saved while it was a field of its own keeps the choice its author made |
 | 0.4.4 | **Employee, Partner and Supplier** join Customer, with the same five operations each — the API gives the four an identical contract, and the handler has been parameterized by type since 0.1.0, so this cost no new logic. Each resource carries its own ID field, and Employee is offered only a CPF |
 | 0.5.0 | **The assisted filter**: Get Many builds the OData expression from conditions — field, operator and value, joined by *And* or *Or* — instead of taking one written by hand. It exists for a defect, not for comfort: a name carrying an apostrophe (`D'ALESSANDRO`) made an invalid expression, and the API answered HTTP 500 with nothing pointing at the quote. Each type now gets the literal the API demands, quoted or bare, and the menu of fields holds only what the API was checked to filter on — the document type is not one of them. **Filter (OData)** is unchanged, undeprecated and still on screen, so a node saved before this version keeps filtering exactly as it did, with nothing to redo |
-| 0.5.1 | **Filter (OData)** moves into **Options**, at the end of the node, where the other operational adjustments already are: the body of the node asks only what the operation needs, and writing OData by hand is the exception rather than the way in. It appears there when *Filter Type* is *OData Expression* — and in that mode the expression is the **whole** filter: the conditions leave the screen and leave what is sent with it, so nothing filters from behind a field you cannot see. A node saved before this keeps filtering by the expression it already had, with nothing to redo |
+| 0.5.1 | **Filter (OData)** moves into **Options**, at the end of the node, where the other operational adjustments already are: the body asks only what the operation needs, and writing OData by hand is the exception rather than the way in |
+| 0.5.2 | The **Filter Type** selector is gone, and writing an expression into **Filter (OData)** is the switch itself: fill it in and the conditions leave the screen — and leave the request with them, so nothing filters from behind a field you cannot see. Empty it and the conditions are back. 0.5.1 had put the box behind that selector, which meant it was not on the *Add option* list until you had already chosen a mode — a switch you had to find before you could find the thing it switched |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer

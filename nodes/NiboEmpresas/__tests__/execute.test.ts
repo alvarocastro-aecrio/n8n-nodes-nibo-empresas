@@ -674,7 +674,6 @@ describe('executeStakeholder — the filter it sends', () => {
 		await executeStakeholder.call(
 			context({
 				returnAll: true,
-				filterType: 'odata',
 				options: { filter: "contains(name,'LTDA') and isCompany eq true" },
 			}),
 			'customer',
@@ -684,15 +683,14 @@ describe('executeStakeholder — the filter it sends', () => {
 		expect(filterSent()).toBe("contains(name,'LTDA') and isCompany eq true");
 	});
 
-	// Switch to OData and the conditions leave the screen. They have to leave
-	// what is sent with it: a field nobody can see must not be filtering
-	// underneath one that is.
-	it('sends only the expression in the OData mode, conditions or no conditions', async () => {
+	/**
+	 * Filling the expression in is what takes the conditions off the screen, so
+	 * it has to be what takes them out of the request too. A field nobody can see
+	 * must never be filtering underneath one they can.
+	 */
+	it('sends only the expression once one is written, conditions or no conditions', async () => {
 		await executeStakeholder.call(
-			context({
-				returnAll: true,
-				filterType: 'odata',
-				filters: { conditions: [{ field: 'name', operator: 'contains', value: 'ACME' }] },
+			withConditions([{ field: 'name', operator: 'contains', value: 'ACME' }], {
 				options: { filter: "contains(name,'LTDA')" },
 			}),
 			'customer',
@@ -702,18 +700,14 @@ describe('executeStakeholder — the filter it sends', () => {
 		expect(filterSent()).toBe("contains(name,'LTDA')");
 	});
 
-	it('sends no filter in the OData mode when the expression is empty, rather than the hidden conditions', async () => {
+	it('goes back to the conditions when the expression is taken out again', async () => {
 		await executeStakeholder.call(
-			context({
-				returnAll: true,
-				filterType: 'odata',
-				filters: { conditions: [{ field: 'name', operator: 'contains', value: 'ACME' }] },
-			}),
+			withConditions([{ field: 'name', operator: 'contains', value: 'ACME' }], { options: {} }),
 			'customer',
 			'list',
 		);
 
-		expect(filterSent()).toBe('');
+		expect(filterSent()).toBe("contains(name,'ACME')");
 	});
 
 	it('builds the conditions when the option was added and left blank', async () => {

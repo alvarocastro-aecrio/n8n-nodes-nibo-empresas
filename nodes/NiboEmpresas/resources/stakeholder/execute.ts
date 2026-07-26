@@ -256,32 +256,25 @@ interface IFilterRow {
 }
 
 /**
- * The `$filter` this item is read with. **Filter Type decides, and nothing
- * else does.**
+ * The `$filter` this item is read with, in the order the three answers beat
+ * each other.
  *
- * On *OData Expression* the expression is the whole answer: the conditions
- * disappear from the screen, and they disappear from what is sent with it. A
- * field that is not on the screen must not be filtering underneath it — that is
- * the same rule that took the raw expression out of hiding in 0.5.0, read from
- * the other side.
- *
- * On *Conditions* the conditions are the answer, and only when they build
- * nothing does the stored expression have anything to say. That is the
- * retaguarda: a node saved before 0.5.1 kept `filter` as a field of the body,
- * and it goes on filtering exactly as it did — the same rule the interval
- * (0.4.2) and the strict scan (0.4.3) already follow.
+ * 1. **The expression written by hand under Options wins.** Filling it in is
+ *    what takes the conditions off the screen, so it has to be what takes them
+ *    out of the request too. A field nobody can see must never be filtering
+ *    underneath one they can — the same rule, read from both sides, that this
+ *    version has been about all along.
+ * 2. **Otherwise the conditions are built.**
+ * 3. **Otherwise the expression a node saved before 0.5.2 still carries** in the
+ *    field of the body it was typed into, under this very name. That node goes
+ *    on filtering exactly as it did — the retaguarda the interval (0.4.2) and
+ *    the strict scan (0.4.3) already have. A fallback, never an override: it is
+ *    a value nobody can see any more either.
  */
 function listFilter(this: IExecuteFunctions, itemIndex: number, options: IDataObject): string {
-	// The Option holds it since 0.5.1; a node saved before that holds it in the
-	// field of the body it was typed into, under the very same name.
-	const written = (): string => {
-		const option = typeof options.filter === 'string' ? options.filter.trim() : '';
-
-		return option === '' ? String(this.getNodeParameter('filter', itemIndex, '') ?? '') : option;
-	};
-
-	if (this.getNodeParameter('filterType', itemIndex, 'conditions') === 'odata') {
-		return written();
+	const written = typeof options.filter === 'string' ? options.filter.trim() : '';
+	if (written !== '') {
+		return written;
 	}
 
 	const rows = ((this.getNodeParameter('filters', itemIndex, {}) as IDataObject).conditions ??
@@ -292,7 +285,7 @@ function listFilter(this: IExecuteFunctions, itemIndex: number, options: IDataOb
 		this.getNodeParameter('filterCombine', itemIndex, 'and') as string,
 	);
 
-	return built === '' ? written() : built;
+	return built === '' ? String(this.getNodeParameter('filter', itemIndex, '') ?? '') : built;
 }
 
 /**
@@ -319,7 +312,7 @@ function filterCondition(
 			{
 				itemIndex,
 				description:
-					'It is not one of the fields the API answers a filter on. Pick another field, or switch Filter Type to OData Expression and write the expression yourself.',
+					'It is not one of the fields the API answers a filter on. Pick another field, or write the expression yourself in Filter (OData), under Options at the end of the node.',
 			},
 		);
 	}

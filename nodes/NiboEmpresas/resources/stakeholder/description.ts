@@ -579,34 +579,11 @@ export const stakeholderFields: INodeProperties[] = [
 			},
 		},
 	},
-	{
-		displayName: 'Filter Type',
-		name: 'filterType',
-		type: 'options',
-		noDataExpression: true,
-		options: [
-			{
-				name: 'Conditions',
-				value: 'conditions',
-				description: 'Pick a field, an operator and a value, and let the node write the expression',
-			},
-			{
-				name: 'OData Expression',
-				value: 'odata',
-				description:
-					'Write the expression yourself, in Filter (OData) under Options at the end of the node',
-			},
-		],
-		default: 'conditions',
-		description:
-			'How the results are narrowed on the server. Conditions writes the expression for you, quoting each value and escaping the apostrophes an expression written by hand trips over. OData Expression takes the one you write in Filter (OData), under Options at the end of the node, and stays for everything the conditions do not cover, such as nested groups. A node saved before this field existed keeps filtering by the expression it already had, with nothing to redo.',
-		displayOptions: {
-			show: {
-				resource: EVERY_TYPE,
-				operation: ['list'],
-			},
-		},
-	},
+	// There is no mode switch here any more, and that is the point: writing an
+	// expression by hand under Options **is** the switch. A second one in the
+	// body would be a second way of saying the same thing, and two switches can
+	// disagree — which is exactly how a filter ends up being one thing on the
+	// screen and another on the wire.
 	{
 		displayName: 'Filters',
 		name: 'filters',
@@ -628,7 +605,14 @@ export const stakeholderFields: INodeProperties[] = [
 			show: {
 				resource: EVERY_TYPE,
 				operation: ['list'],
-				filterType: ['conditions'],
+			},
+			// Write an expression by hand and the conditions leave the screen —
+			// and leave the request with it, see `listFilter` in execute.ts. The
+			// editor reads `exists` as "filled in": not null, not undefined and
+			// not empty. Added and left blank is not a filter, so it costs the
+			// conditions nothing.
+			hide: {
+				'/options.filter': [{ _cnd: { exists: true } }],
 			},
 		},
 	},
@@ -646,12 +630,14 @@ export const stakeholderFields: INodeProperties[] = [
 		],
 		default: 'and',
 		description:
-			'How the conditions above are joined. One operator for all of them: a mix of the two, such as (A or B) and C, is what the OData Expression mode stays for.',
+			'How the conditions above are joined. One operator for all of them: a mix of the two, such as (A or B) and C, is what Filter (OData) under Options stays for.',
 		displayOptions: {
 			show: {
 				resource: EVERY_TYPE,
 				operation: ['list'],
-				filterType: ['conditions'],
+			},
+			hide: {
+				'/options.filter': [{ _cnd: { exists: true } }],
 			},
 		},
 	},
