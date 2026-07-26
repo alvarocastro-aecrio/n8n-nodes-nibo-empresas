@@ -10,8 +10,10 @@
  *
  * - **An apostrophe is escaped by doubling it.** `D''ALESSANDRO` answers 200.
  * - **Each type carries its own literal.** Text goes between single quotes;
- *   boolean and date go bare. Quoting a boolean (`isCompany eq 'true'`) is a
- *   500, and so is the OData v2 spelling of a date (`datetime'2020-01-01'`).
+ *   boolean, number and date go bare. Quoting a boolean (`isCompany eq 'true'`)
+ *   is a 500, quoting a number (`value gt '100'`) is a 500 naming the two types
+ *   it could not compare, and so is the OData v2 spelling of a date
+ *   (`datetime'2020-01-01'`).
  *
  * Pure by design — no `this`, no network, no idea that Nibo exists. It takes a
  * field path, an operator, a value and the value's type, and answers text. That
@@ -20,7 +22,7 @@
  */
 
 /** What the value is, which is what decides how the literal is written */
-export type ODataFieldType = 'text' | 'boolean' | 'date';
+export type ODataFieldType = 'text' | 'boolean' | 'number' | 'date';
 
 export interface IODataCondition {
 	/** The field path as the API names it, e.g. `name` or `document/number` */
@@ -49,6 +51,10 @@ const CONTAINS_IGNORING_CASE = 'containsIgnoreCase';
 const OPERATORS_OF: Record<ODataFieldType, string[]> = {
 	text: [CONTAINS_IGNORING_CASE, ...FUNCTION_OPERATORS, 'eq', 'ne'],
 	boolean: ['eq', 'ne'],
+	// All six measured on 2026-07-26 against `/schedules/credit`, each with the
+	// literal bare: an amount is the one type where "exactly this" and "more
+	// than this" are both ordinary questions.
+	number: ['eq', 'ne', 'gt', 'ge', 'lt', 'le'],
 	date: ['gt', 'ge', 'lt', 'le'],
 };
 
@@ -105,6 +111,12 @@ function writeCondition(condition: IODataCondition): string | undefined {
 		return `${field} ${operator} ${yes ? 'true' : 'false'}`;
 	}
 
+	if (condition.type === 'number') {
+		const amount = numberLiteral(condition.value);
+
+		return amount === undefined ? undefined : `${field} ${operator} ${amount}`;
+	}
+
 	if (condition.type === 'date') {
 		const date = String(condition.value ?? '').trim();
 
@@ -126,6 +138,48 @@ function writeCondition(condition: IODataCondition): string | undefined {
 	return FUNCTION_OPERATORS.includes(operator)
 		? `${operator}(${field},${quote(text)})`
 		: `${field} ${operator} ${quote(text)}`;
+}
+
+/**
+ * A number literal — bare, with its cents — or `undefined` when there is
+ * nothing to compare with.
+ *
+ * The editor collects an amount in a number box, so most of the time the value
+ * arrives as a number and there is nothing to do. The text path is for the
+ * other way in: an expression, reading whatever the incoming item carried. In
+ * this country that is written `100,50`, which is the same amount, so the
+ * decimal comma is read as the point it means.
+ *
+ * Everything else fails rather than travelling. `1.234,56` is the reason: read
+ * one way it is a thousand and read the other it is one and a bit, and nothing
+ * in the value says which — a filter that guessed would quietly return the
+ * wrong records, which is the direction a workflow deletes by.
+ */
+function numberLiteral(value: unknown): string | undefined {
+	if (typeof value === 'number') {
+		if (!Number.isFinite(value)) {
+			throw new Error(`The filter value "${value}" is not a number this node can compare with`);
+		}
+
+		return String(value);
+	}
+
+	const text = String(value ?? '')
+		.trim()
+		.replace(/^\+/, '');
+	if (text === '') {
+		return undefined;
+	}
+
+	// Only when there is no point to disagree with: `1.234,56` keeps its comma
+	// here and is refused below, which is the whole point.
+	const written = text.includes(',') && !text.includes('.') ? text.replace(',', '.') : text;
+
+	if (!/^-?\d+(\.\d+)?$/.test(written)) {
+		throw new Error(`The filter value "${text}" is not a number this node can compare with`);
+	}
+
+	return written;
 }
 
 /** A text literal: single quotes, and every apostrophe inside doubled */

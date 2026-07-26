@@ -133,6 +133,95 @@ describe('buildODataFilter — one literal per type', () => {
 	});
 });
 
+/**
+ * The type v0.6.0 adds, and the schedules are what asked for it: `value` is
+ * money, and money compares as a number.
+ *
+ * Measured against the API on 2026-07-26, on `/schedules/credit`: the six
+ * comparisons answer 200 with the literal bare, and `value gt '100'` answers
+ * **500** — *A binary operator with incompatible types was detected. Found
+ * operand types 'Edm.Decimal' and 'Edm.String'*. So a number is never quoted,
+ * for the same reason a boolean never is.
+ */
+describe('buildODataFilter — the number type', () => {
+	function amount(parts: Partial<IODataCondition>): IODataCondition {
+		return { field: 'value', operator: 'gt', value: 100, type: 'number', ...parts };
+	}
+
+	it.each([
+		['eq', 'value eq 100'],
+		['ne', 'value ne 100'],
+		['gt', 'value gt 100'],
+		['ge', 'value ge 100'],
+		['lt', 'value lt 100'],
+		['le', 'value le 100'],
+	])('writes %s with the literal bare, which is the only form the API takes', (operator, expected) => {
+		expect(buildODataFilter([amount({ operator })], 'and')).toBe(expected);
+	});
+
+	it('keeps the cents of a decimal', () => {
+		expect(buildODataFilter([amount({ value: 100.5 })], 'and')).toBe('value gt 100.5');
+	});
+
+	it('keeps a decimal handed over as text exactly as it was written', () => {
+		expect(buildODataFilter([amount({ value: '100.50' })], 'and')).toBe('value gt 100.50');
+	});
+
+	it('writes a negative amount, which is what a debit answers', () => {
+		expect(buildODataFilter([amount({ operator: 'lt', value: -100.5 })], 'and')).toBe(
+			'value lt -100.5',
+		);
+	});
+
+	it('writes a zero rather than treating it as a blank', () => {
+		expect(buildODataFilter([amount({ value: 0 })], 'and')).toBe('value gt 0');
+	});
+
+	/**
+	 * The box in the editor hands over a number, so this only happens through an
+	 * expression — and an expression reads whatever the incoming item carries,
+	 * which in this country is written with a comma. It is the same amount.
+	 */
+	it('reads a decimal comma as the decimal point it means', () => {
+		expect(buildODataFilter([amount({ value: '100,50' })], 'and')).toBe('value gt 100.50');
+	});
+
+	it('trims the text an expression handed over', () => {
+		expect(buildODataFilter([amount({ value: '  100.50  ' })], 'and')).toBe('value gt 100.50');
+	});
+
+	/**
+	 * Anything the node cannot read as one number fails here, instead of
+	 * travelling as an expression the API answers 500 to — or, worse, as a
+	 * number that means something else. `1.234,56` is the one that matters: read
+	 * one way it is a thousand, read the other it is one and a bit, and there is
+	 * nothing in the value that says which. Guessing would be a filter that
+	 * quietly returns the wrong records.
+	 */
+	it.each(['ACME', '1.234,56', '1,234.56', '100.50.25', '1e3', 'R$ 100'])(
+		'refuses %s instead of sending something the API has to reject',
+		(value) => {
+			expect(() => buildODataFilter([amount({ value })], 'and')).toThrow(/number/i);
+		},
+	);
+
+	it('refuses an operator no number can be asked for', () => {
+		expect(() => buildODataFilter([amount({ operator: 'contains' })], 'and')).toThrow(/contains/);
+	});
+
+	it('joins a number condition with the others', () => {
+		const filter = buildODataFilter(
+			[
+				{ field: 'isPaid', operator: 'eq', value: false, type: 'boolean' },
+				amount({ value: 100.5 }),
+			],
+			'and',
+		);
+
+		expect(filter).toBe('isPaid eq false and value gt 100.5');
+	});
+});
+
 describe('buildODataFilter — joining conditions', () => {
 	const TWO: IODataCondition[] = [
 		{ field: 'name', operator: 'contains', value: 'ACME', type: 'text' },
@@ -198,6 +287,15 @@ describe('buildODataFilter — what does not become a filter', () => {
 			buildODataFilter([{ field: 'updateDate', operator: 'gt', value: '', type: 'date' }], 'and'),
 		).toBe('');
 	});
+
+	it.each([[''], ['   '], [undefined], [null]])(
+		'skips a number condition whose value was left empty (%s)',
+		(value) => {
+			expect(
+				buildODataFilter([{ field: 'value', operator: 'gt', value, type: 'number' }], 'and'),
+			).toBe('');
+		},
+	);
 
 	// The one that has to survive: a boolean is never "empty", and `false` is an
 	// answer, not a blank.
