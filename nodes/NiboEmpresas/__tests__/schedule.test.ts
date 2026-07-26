@@ -1,5 +1,5 @@
 import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
-import { sleep } from 'n8n-workflow';
+import { NodeApiError, sleep } from 'n8n-workflow';
 
 import { NiboEmpresas } from '../NiboEmpresas.node';
 import { executeSchedule } from '../resources/schedule/execute';
@@ -318,6 +318,84 @@ describe('executeSchedule — Get', () => {
  * in `stakeholder.id`. There is no read where the zeroed GUID is the right
  * answer, so it is repaired on all of them.
  */
+/**
+ * The error that blames the wrong thing.
+ *
+ * Measured on the cobaia on 2026-07-26: a cost category on a receivable answers
+ * HTTP 500 `validation_error` — *"Valor do agendamento deve ser positivo"* — to
+ * someone who typed a positive number, and a revenue category on a payable
+ * answers the mirror of it. The category's type is what signs the line, so the
+ * total goes the wrong way and the validation complains about the total.
+ *
+ * The list on the field makes that unreachable for whoever picks from it. This
+ * is for whoever does not: an expression, or an ID pasted by hand.
+ */
+describe('executeSchedule — the error that is really about the category', () => {
+	function apiError(description: string) {
+		return new NodeApiError(
+			NODE,
+			{ error: { error: 'validation_error', error_description: description } },
+			{ message: `Nibo rejected the request: ${description}`, httpCode: '500' },
+		);
+	}
+
+	const CREATE = {
+		stakeholderId: 'contact',
+		dueDate: '2026-08-10',
+		scheduleDate: '2026-08-10',
+		categories: { category: [{ categoryId: 'wrong-kind', value: 100 }] },
+	};
+
+	it.each([
+		['creditSchedule', 'Valor do agendamento deve ser positivo'],
+		['debitSchedule', 'Valor do agendamento de pagamento deve ser negativo'],
+	])('tells a %s author that the category is the likely cause', async (resource, description) => {
+		create.mockRejectedValue(apiError(description));
+
+		const failure = executeSchedule.call(context(CREATE), resource, 'create');
+
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/categor/i),
+		});
+	});
+
+	// The API's own sentence is the evidence; it must survive, not be replaced.
+	it('keeps what the API said', async () => {
+		create.mockRejectedValue(apiError('Valor do agendamento deve ser positivo'));
+
+		const failure = executeSchedule.call(context(CREATE), 'creditSchedule', 'create');
+
+		await expect(failure).rejects.toThrow(/Valor do agendamento deve ser positivo/);
+	});
+
+	// Only where it can be true. A rejection about something else is not about a
+	// category, and a node that answered "it is probably the category" to every
+	// failure would be worse than one that said nothing.
+	it('says nothing extra about a rejection on another subject', async () => {
+		create.mockRejectedValue(apiError('Stakeholder não encontrado'));
+
+		const failure = executeSchedule.call(context(CREATE), 'creditSchedule', 'create');
+
+		await expect(failure).rejects.not.toMatchObject({
+			description: expect.stringMatching(/categor/i),
+		});
+	});
+
+	it('says nothing extra on a read, where no category was sent', async () => {
+		listRequest.mockRejectedValue(apiError('Valor do agendamento deve ser positivo'));
+
+		const failure = executeSchedule.call(
+			context({ returnAll: true }),
+			'creditSchedule',
+			'list',
+		);
+
+		await expect(failure).rejects.not.toMatchObject({
+			description: expect.stringMatching(/categor/i),
+		});
+	});
+});
+
 describe('normalizeSchedule — the contact the API forgets at the root', () => {
 	const ZEROED = '00000000-0000-0000-0000-000000000000';
 

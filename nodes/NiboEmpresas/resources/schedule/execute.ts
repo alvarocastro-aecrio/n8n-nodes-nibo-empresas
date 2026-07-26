@@ -193,7 +193,7 @@ export async function executeSchedule(
 				continue;
 			}
 			throw error instanceof NodeApiError
-				? error
+				? aboutTheCategory(error, operation)
 				: new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
 		}
 	}
@@ -303,6 +303,42 @@ function categoryLines(
 
 		return { categoryId: id, value };
 	});
+}
+
+/**
+ * The one refusal of this API that points at the wrong field, given the sentence
+ * that solves it.
+ *
+ * Measured on the cobaia on 2026-07-26. A cost category on a receivable answers
+ * *"Valor do agendamento deve ser positivo"* — to someone who typed a positive
+ * number, in a form with no negative in it — and a revenue category on a payable
+ * answers the mirror. The category's type is what signs the line, so the total
+ * goes the wrong way and the validation complains about the total. Nothing in
+ * the answer mentions the category.
+ *
+ * The list on the field makes this unreachable for whoever picks from it. This
+ * is for whoever does not: an expression, or an ID pasted by hand.
+ *
+ * Only on a write, and only on that sentence. A node that answered "it is
+ * probably the category" to every failure would be worse than one that said
+ * nothing, and the API's own words are the evidence — they are kept, and the
+ * hint is added underneath.
+ */
+const SIGNED_BY_THE_CATEGORY = /valor do agendamento.*(positivo|negativo)/i;
+
+function aboutTheCategory(error: NodeApiError, operation: string): NodeApiError {
+	if (operation !== 'create' && operation !== 'update') {
+		return error;
+	}
+
+	const said = [error.message, error.description].filter(Boolean).join(' ');
+	if (!SIGNED_BY_THE_CATEGORY.test(said)) {
+		return error;
+	}
+
+	error.description = `${error.description ?? ''}\n\nThis usually means the category does not match the kind of schedule: a revenue category cannot carry a payment, nor an expense category a receipt. It is the category's type that decides the sign of the line, which is why the API reports it as a problem with the amount. Pick the category from the list on the field, or read the right ID for this organization with the Category resource.`.trim();
+
+	return error;
 }
 
 /**
