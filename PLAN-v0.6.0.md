@@ -64,15 +64,36 @@ O construtor da 0.5.0 conhece texto, sim-ou-não e data; ganha `number`.
 | **`stakeholderId` da raiz vem zerado** (`00000000-…`) no GET; o real está em `stakeholder.id` | Ver decisão 4 |
 | O POST de schedules usa **`isFlagged`** (payments usa `isFlag`) | Grafia fixa no payload; ninguém digita |
 
-### 1.3 Pendentes — medir **antes** da fatia de escrita, na cobaia (regra 3 permite)
+### 1.3 Medido na cobaia em 2026-07-26 (fatia 5) — a cobaia terminou com zero registros
 
-| ☐ | `PUT /schedules/debit/{id}` existe? (a referência marca "a validar") |
-| ☐ | `DELETE /schedules/debit/{id}` existe? (idem) |
-| ☐ | Formato da resposta do `POST /schedules/debit` (só o de crédito foi medido) |
-| ☐ | O shape que o `PUT` aceita: o registro lido volta inteiro? `categories` volta como foi? qual o sinal do `value` no PUT de débito? |
-| ☐ | O sinal do `value` no `GET /schedules/debit` da cobaia — decide o texto do campo Value no filtro (decisão 5) |
+| ☑ | Resposta |
+|---|---|
+| `PUT /schedules/debit/{id}` existe? | ✅ **Existe** — HTTP 204, corpo vazio |
+| `DELETE /schedules/debit/{id}` existe? | ✅ **Existe** — HTTP 204, corpo vazio. Igual no crédito |
+| Formato da resposta do `POST /schedules/debit` | **String JSON crua** com o GUID, HTTP 200 — idêntico ao crédito |
+| O `PUT` aceita o registro lido? | ✅ **Inteiro, dos dois lados.** O que o get-by-id universal devolve volta como corpo sem tirar nada: `reference`, datas, `categories` e valor intactos |
+| `categories` volta como foi? | ⚠️ **A linha é recriada a cada `PUT`**: mesmo `categoryId` e mesmo `value`, **`id` de linha novo**. Uma confirmação que comparasse `categories` cru falharia sempre |
+| Sinal do `value` no débito | ⚠️ **É do endpoint, não do registro** — ver abaixo |
+| `accrualDate` omitido | ✅ Copiado do `dueDate`, silenciosamente, como o contrato diz. Preenchido, é respeitado |
+| `isFlagged` no `POST` | ✅ Aceito, e volta `true` na leitura |
 
-Nenhuma dessas medições bloqueia as fatias de leitura; todas bloqueiam as de escrita.
+**O sinal do débito pertence ao endpoint.** O mesmo agendamento, na mesma hora:
+
+| Onde | `value` | `categories[].value` | `openValue` |
+|---|---|---|---|
+| `GET /schedules/credit/{id}` (get-by-id universal) | **−500** | **−500** | +500 |
+| `GET /schedules/debit` (listagem) | **+500** | **+500** | +500 |
+
+E o `$filter` do servidor em `/schedules/debit` compara o **positivo**: `value eq 500` acha, `value eq -500` não acha nada. O `POST` recebe positivo; o `PUT` recebe o negativo que o get-by-id devolveu e grava sem mexer no módulo.
+
+Consequência para a decisão 5: o node não toca em nada — mas **Get e Get Many de um mesmo débito devolvem sinais diferentes**, porque o node lê por ID no endpoint universal. Isso é da API, não do node, e vai escrito no README e na descrição do campo Value.
+
+**O `stakeholderId` zerado é defeito da listagem, não de toda leitura.** O get-by-id devolve o GUID real na raiz; só a listagem devolve `00000000-…`. O normalize conserta onde está quebrado e não encosta onde está certo — que é o que o código já faz, e o teste que separa os dois casos é o que segura isso.
+
+**Dois achados de brinde, que não estavam na tabela:**
+
+- **Agendamento apagado lido por ID responde HTTP 500**, com `error_description: "Agendamento não encontrado"` — um *not found* com cara de erro de servidor. É exatamente a regra "500 de negócio ≠ 500 real" que o `errors.ts` já trata desde a 0.2.0: a mensagem chega legível ao usuário.
+- **A listagem é eventualmente consistente.** Logo depois do `DELETE` (204), a coleção ainda respondeu com o registro por alguns segundos; a leitura por ID já dizia que não existia. Quem apaga e relista no mesmo segundo pode ver o que apagou.
 
 ---
 
