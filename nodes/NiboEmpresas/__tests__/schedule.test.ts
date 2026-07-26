@@ -1,13 +1,16 @@
 import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
 import { sleep } from 'n8n-workflow';
 
+import { NiboEmpresas } from '../NiboEmpresas.node';
 import { executeSchedule } from '../resources/schedule/execute';
 import { normalizeSchedule } from '../resources/schedule/normalize';
 import { niboListRequest } from '../transport/paginate';
 import { niboApiRequest } from '../transport/request';
+import { niboCreate, niboSafeUpdate } from '../transport/save';
 
 jest.mock('../transport/paginate');
 jest.mock('../transport/request');
+jest.mock('../transport/save');
 
 jest.mock('n8n-workflow', () => ({
 	...jest.requireActual('n8n-workflow'),
@@ -16,6 +19,8 @@ jest.mock('n8n-workflow', () => ({
 
 const listRequest = niboListRequest as jest.MockedFunction<typeof niboListRequest>;
 const apiRequest = niboApiRequest as jest.MockedFunction<typeof niboApiRequest>;
+const create = niboCreate as jest.MockedFunction<typeof niboCreate>;
+const safeUpdate = niboSafeUpdate as jest.MockedFunction<typeof niboSafeUpdate>;
 
 const NODE: INode = {
 	id: 'test-node',
@@ -52,8 +57,20 @@ beforeEach(() => {
 	listRequest.mockResolvedValue({ records: [], count: 0 });
 	apiRequest.mockReset();
 	apiRequest.mockResolvedValue({});
+	create.mockReset();
+	create.mockResolvedValue({ scheduleId: 'not-a-real-id' });
+	safeUpdate.mockReset();
+	safeUpdate.mockResolvedValue({ scheduleId: 'not-a-real-id' });
 	(sleep as jest.MockedFunction<typeof sleep>).mockClear();
 });
+
+/** What a filled-in creation form hands the handler */
+const CREATE_FORM: IDataObject = {
+	stakeholderId: 'not-a-real-contact',
+	dueDate: '2026-08-10T00:00:00.000-03:00',
+	scheduleDate: '2026-08-10T00:00:00.000-03:00',
+	categories: { category: [{ categoryId: 'not-a-real-category', value: 1226.12 }] },
+};
 
 /**
  * The paging key is the first thing about this family that is not the
@@ -354,6 +371,381 @@ describe('normalizeSchedule — the contact the API forgets at the root', () => 
 		expect(normalizeSchedule({ scheduleId: 'a', value: -1226.12 })).toMatchObject({
 			value: -1226.12,
 		});
+	});
+});
+
+/**
+ * Everything here is what the cobaia answered on 2026-07-26, and nothing here
+ * is what the documentation says.
+ */
+describe('executeSchedule — Create', () => {
+	/** The payload the handler built out of the form */
+	function payloadSent(): IDataObject {
+		return create.mock.calls[0][2];
+	}
+
+	it.each([
+		['creditSchedule', '/schedules/credit'],
+		['debitSchedule', '/schedules/debit'],
+	])('posts a %s to its own collection', async (resource, endpoint) => {
+		await executeSchedule.call(context(CREATE_FORM), resource, 'create');
+
+		expect(create.mock.calls[0][0]).toBe(0);
+		expect(create.mock.calls[0][1]).toBe(endpoint);
+	});
+
+	/**
+	 * And reads it back somewhere else, because `GET /schedules/debit/{id}` is a
+	 * 404 as a route. The POST answers a bare GUID on both kinds — no
+	 * `/FormatType=json` anywhere — so a read-back is the only way Create hands
+	 * back a record at all.
+	 */
+	it('tells the transport to read the new record at the universal endpoint', async () => {
+		await executeSchedule.call(context(CREATE_FORM), 'debitSchedule', 'create');
+
+		expect(create.mock.calls[0][3]).toEqual({ readEndpoint: '/schedules/credit' });
+	});
+
+	it('sends the flat payload the API takes, with the dates as plain days', async () => {
+		await executeSchedule.call(context(CREATE_FORM), 'creditSchedule', 'create');
+
+		expect(payloadSent()).toEqual({
+			stakeholderId: 'not-a-real-contact',
+			dueDate: '2026-08-10',
+			scheduleDate: '2026-08-10',
+			categories: [{ categoryId: 'not-a-real-category', value: 1226.12 }],
+		});
+	});
+
+	/**
+	 * The day the person picked, not the day it happens to be in UTC. The editor
+	 * hands over an offset — `2026-08-10T00:00:00.000-03:00` is the 9th in
+	 * London — and a schedule that falls due one day early is a schedule that is
+	 * overdue one day early.
+	 */
+	it('keeps the day that was picked, whatever the offset it arrived with', async () => {
+		await executeSchedule.call(
+			context({ ...CREATE_FORM, dueDate: '2026-08-10T23:30:00.000-03:00' }),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent().dueDate).toBe('2026-08-10');
+	});
+
+	// Left empty it must not travel at all: it is the API's silent copy of the
+	// due date that the field on the screen is warning about, and sending an
+	// empty accrual date would be a different thing entirely.
+	it('leaves the accrual date out of the payload when nobody filled it in', async () => {
+		await executeSchedule.call(
+			context({ ...CREATE_FORM, accrualDate: '' }),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent()).not.toHaveProperty('accrualDate');
+	});
+
+	it('sends it when somebody did', async () => {
+		await executeSchedule.call(
+			context({ ...CREATE_FORM, accrualDate: '2026-07-31T00:00:00.000Z' }),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent().accrualDate).toBe('2026-07-31');
+	});
+
+	it('files the additional fields at the root, where this API keeps them', async () => {
+		await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				additionalFields: { description: 'SERVIÇOS DE JULHO', reference: 'NF 1234' },
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent()).toMatchObject({
+			description: 'SERVIÇOS DE JULHO',
+			reference: 'NF 1234',
+		});
+	});
+
+	// One letter apart from what a payment calls the same thing, and the wrong
+	// one is accepted and quietly ignored. Nobody types either.
+	it('spells the flag the way a schedule spells it', async () => {
+		await executeSchedule.call(
+			context({ ...CREATE_FORM, additionalFields: { isFlagged: true } }),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent()).toMatchObject({ isFlagged: true });
+		expect(payloadSent()).not.toHaveProperty('isFlag');
+	});
+
+	it('takes more than one category line', async () => {
+		await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				categories: {
+					category: [
+						{ categoryId: 'one', value: 500 },
+						{ categoryId: 'other', value: 726.12 },
+					],
+				},
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent().categories).toEqual([
+			{ categoryId: 'one', value: 500 },
+			{ categoryId: 'other', value: 726.12 },
+		]);
+	});
+
+	/**
+	 * Positive on both kinds, and it is the API that signs it: a debit created
+	 * with a line of 500 answers -500 when it is read back. Sending the sign
+	 * ourselves would be inventing arithmetic the API already does.
+	 */
+	it('sends a debit line positive, exactly as a credit one', async () => {
+		await executeSchedule.call(context(CREATE_FORM), 'debitSchedule', 'create');
+
+		expect(payloadSent().categories).toEqual([
+			{ categoryId: 'not-a-real-category', value: 1226.12 },
+		]);
+	});
+
+	it('refuses an item with no category line, before anything is sent', async () => {
+		const failure = executeSchedule.call(
+			context({ ...CREATE_FORM, categories: {} }),
+			'creditSchedule',
+			'create',
+		);
+
+		await expect(failure).rejects.toThrow(/categor/i);
+		await expect(failure).rejects.toMatchObject({ context: { itemIndex: 0 } });
+		expect(create).not.toHaveBeenCalled();
+	});
+
+	it('refuses a line that names no category', async () => {
+		const failure = executeSchedule.call(
+			context({ ...CREATE_FORM, categories: { category: [{ categoryId: '  ', value: 10 }] } }),
+			'creditSchedule',
+			'create',
+		);
+
+		await expect(failure).rejects.toThrow(/categor/i);
+		expect(create).not.toHaveBeenCalled();
+	});
+
+	it('hands back the record the API stored, with the contact repaired', async () => {
+		create.mockResolvedValue({
+			scheduleId: 'not-a-real-id',
+			stakeholderId: '00000000-0000-0000-0000-000000000000',
+			stakeholder: { id: 'real-one' },
+		});
+
+		const items = await executeSchedule.call(context(CREATE_FORM), 'creditSchedule', 'create');
+
+		expect(items[0].json.stakeholderId).toBe('real-one');
+	});
+});
+
+describe('executeSchedule — Update', () => {
+	/** (itemIndex, endpoint, id, changes, options) — the transport's own signature */
+	function updateCall() {
+		const [itemIndex, endpoint, id, changes, options] = safeUpdate.mock.calls[0];
+		return { itemIndex, endpoint, id, changes, options };
+	}
+
+	it('writes at the collection of the record and reads at the universal endpoint', async () => {
+		await executeSchedule.call(
+			context({ debitScheduleId: 'not-a-real-id', updateFields: { description: 'CHANGED' } }),
+			'debitSchedule',
+			'update',
+		);
+
+		expect(updateCall()).toMatchObject({
+			endpoint: '/schedules/debit',
+			id: 'not-a-real-id',
+			changes: { description: 'CHANGED' },
+		});
+		expect(updateCall().options?.readEndpoint).toBe('/schedules/credit');
+	});
+
+	it('changes only the fields that were added', async () => {
+		await executeSchedule.call(
+			context({
+				creditScheduleId: 'not-a-real-id',
+				updateFields: { dueDate: '2026-09-20T00:00:00.000-03:00' },
+			}),
+			'creditSchedule',
+			'update',
+		);
+
+		expect(updateCall().changes).toEqual({ dueDate: '2026-09-20' });
+	});
+
+	it('replaces the category lines whole, which is the only thing a partial array could mean', async () => {
+		await executeSchedule.call(
+			context({
+				creditScheduleId: 'not-a-real-id',
+				updateFields: { categories: { category: [{ categoryId: 'one', value: 300 }] } },
+			}),
+			'creditSchedule',
+			'update',
+		);
+
+		expect(updateCall().changes).toEqual({ categories: [{ categoryId: 'one', value: 300 }] });
+	});
+
+	/**
+	 * Without this the confirmation would cry wolf on every update.
+	 *
+	 * Ask for a due date of the 20th and the API answers `2026-09-20T00:00:00Z`.
+	 * Ask a debit for a line of 300 and it answers -300, because the sign belongs
+	 * to the collection. Neither is the API refusing the change, and reporting
+	 * them as one would fail updates that worked.
+	 */
+	it('hands the safe cycle a normalizer that compares like for like', async () => {
+		await executeSchedule.call(
+			context({ creditScheduleId: 'not-a-real-id', updateFields: { description: 'CHANGED' } }),
+			'creditSchedule',
+			'update',
+		);
+
+		const normalize = updateCall().options?.normalize;
+
+		expect(normalize?.({ dueDate: '2026-09-20T00:00:00Z' })).toMatchObject({
+			dueDate: '2026-09-20',
+		});
+		expect(
+			normalize?.({
+				categories: [
+					{ id: 'line-id', categoryId: 'one', categoryName: 'Whatever', value: -300, type: 'out' },
+				],
+			}),
+		).toEqual({ categories: [{ categoryId: 'one', value: 300 }] });
+	});
+
+	// The whole record as the universal endpoint answers it is a valid write
+	// body, measured on both kinds — so nothing has to be taken out of it, which
+	// is the opposite of the stakeholders and their mirrored phone and e-mail.
+	it('needs nothing dropped from the body it writes back', async () => {
+		await executeSchedule.call(
+			context({ creditScheduleId: 'not-a-real-id', updateFields: { description: 'CHANGED' } }),
+			'creditSchedule',
+			'update',
+		);
+
+		expect(updateCall().options?.writeBody).toBeUndefined();
+	});
+
+	/**
+	 * A text field added and left blank is an erasure, and travels. A date or a
+	 * category left blank is an unfinished row: a schedule with no due date or no
+	 * amount is not a schedule this API keeps, so it is ignored rather than sent
+	 * — and an update with nothing else in it fails in the transport, saying so.
+	 */
+	it('erases a text field left blank, and ignores a date left blank', async () => {
+		await executeSchedule.call(
+			context({
+				creditScheduleId: 'not-a-real-id',
+				updateFields: { description: '', dueDate: '' },
+			}),
+			'creditSchedule',
+			'update',
+		);
+
+		expect(updateCall().changes).toEqual({ description: '' });
+	});
+
+	it('hands back the confirmed record, with the contact repaired', async () => {
+		safeUpdate.mockResolvedValue({
+			scheduleId: 'not-a-real-id',
+			stakeholderId: '00000000-0000-0000-0000-000000000000',
+			stakeholder: { id: 'real-one' },
+		});
+
+		const items = await executeSchedule.call(
+			context({ creditScheduleId: 'not-a-real-id', updateFields: { description: 'CHANGED' } }),
+			'creditSchedule',
+			'update',
+		);
+
+		expect(items[0].json.stakeholderId).toBe('real-one');
+	});
+});
+
+describe('executeSchedule — Delete', () => {
+	// Both routes measured on the cobaia on 2026-07-26: 204, empty body. The
+	// reference had them down as "to validate".
+	it.each([
+		['creditSchedule', 'creditScheduleId', '/schedules/credit'],
+		['debitSchedule', 'debitScheduleId', '/schedules/debit'],
+	])('deletes a %s at its own collection', async (resource, parameter, endpoint) => {
+		apiRequest.mockResolvedValue(undefined);
+
+		const items = await executeSchedule.call(
+			context({ [parameter]: 'not-a-real-id' }),
+			resource,
+			'delete',
+		);
+
+		expect(apiCall(0)).toMatchObject({
+			method: 'DELETE',
+			endpoint: `${endpoint}/not-a-real-id`,
+		});
+		expect(items[0].json).toEqual({ id: 'not-a-real-id', deleted: true });
+	});
+
+	it('fails the item when no ID was given', async () => {
+		const failure = executeSchedule.call(
+			context({ creditScheduleId: '' }),
+			'creditSchedule',
+			'delete',
+		);
+
+		await expect(failure).rejects.toThrow(/ID/);
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * The same guard the stakeholders have had since 0.3.1: an operation the editor
+ * offers and the handler does not route answers "not supported" at run time,
+ * and only at run time.
+ */
+describe('the schedule operations the editor offers and the handler routes', () => {
+	const description = new NiboEmpresas().description;
+
+	const offered = (
+		(description.properties.find(
+			(prop) =>
+				prop.name === 'operation' &&
+				((prop.displayOptions?.show?.resource ?? []) as string[]).includes('creditSchedule'),
+		)?.options ?? []) as Array<{ value: string }>
+	).map((option) => option.value);
+
+	it.each(offered)('routes "%s"', async (operation) => {
+		apiRequest.mockResolvedValue({ scheduleId: 'not-a-real-id', type: 'Credit' });
+
+		const items = await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				creditScheduleId: 'not-a-real-id',
+				updateFields: { description: 'CHANGED' },
+				limit: 1,
+			}),
+			'creditSchedule',
+			operation,
+		);
+
+		expect(items).toBeDefined();
 	});
 });
 

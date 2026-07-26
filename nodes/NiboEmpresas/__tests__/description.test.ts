@@ -699,7 +699,7 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 	});
 
 	it('keeps the rest of what can be written under Additional Fields', () => {
-		expect(fieldsOf('additionalFields')).toEqual(['description', 'reference']);
+		expect(fieldsOf('additionalFields')).toEqual(['description', 'isFlagged', 'reference']);
 	});
 
 	// Same rule as the stakeholders: what can be set when creating can be

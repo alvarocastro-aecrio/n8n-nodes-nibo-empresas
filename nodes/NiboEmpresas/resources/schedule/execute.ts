@@ -3,10 +3,11 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
+import { niboCreate, niboSafeUpdate } from '../../transport/save';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { scheduleFilterFieldTypes } from './description';
-import { normalizeSchedule } from './normalize';
+import { normalizeSchedule, onlyTheDay, scheduleComparable } from './normalize';
 
 interface IScheduleCollection {
 	/** Where this kind is listed, created, updated and deleted */
@@ -126,6 +127,56 @@ export async function executeSchedule(
 					json: normalizeSchedule(ofThisKind.call(this, record, collection, id, i)),
 					pairedItem: { item: i },
 				});
+			} else if (operation === 'create') {
+				// The POST answers a bare GUID on both kinds — there is no
+				// `/FormatType=json` here — so the record comes from a read-back, and
+				// that read-back cannot happen in the collection it was written to.
+				const created = await niboCreate.call(
+					this,
+					i,
+					endpoint,
+					writePayload.call(this, i, {
+						stakeholderId: this.getNodeParameter('stakeholderId', i) as string,
+						dueDate: this.getNodeParameter('dueDate', i) as string,
+						scheduleDate: this.getNodeParameter('scheduleDate', i) as string,
+						accrualDate: this.getNodeParameter('accrualDate', i, '') as string,
+						categories: this.getNodeParameter('categories', i, {}) as IDataObject,
+						...(this.getNodeParameter('additionalFields', i, {}) as IDataObject),
+					}),
+					{ readEndpoint: READ_BY_ID },
+				);
+
+				returnData.push({ json: normalizeSchedule(created), pairedItem: { item: i } });
+			} else if (operation === 'update') {
+				// Only what the user added travels: everything else keeps whatever is
+				// stored in Nibo, which is what the safe cycle in the transport is for.
+				const changes = writePayload.call(
+					this,
+					i,
+					this.getNodeParameter('updateFields', i, {}) as IDataObject,
+				);
+
+				const updated = await niboSafeUpdate.call(
+					this,
+					i,
+					endpoint,
+					recordId.call(this, collection.idParameter, i),
+					changes,
+					// No `writeBody`: the record the universal endpoint answers is a
+					// valid write body whole, measured on both kinds. The stakeholders
+					// need one because a read mirrors two of their fields at the root;
+					// nothing here does.
+					{ readEndpoint: READ_BY_ID, normalize: scheduleComparable },
+				);
+
+				returnData.push({ json: normalizeSchedule(updated), pairedItem: { item: i } });
+			} else if (operation === 'delete') {
+				const id = recordId.call(this, collection.idParameter, i);
+				await niboApiRequest.call(this, i, 'DELETE', `${endpoint}/${encodeURIComponent(id)}`);
+
+				// The API answers 204 with no body at all, so the confirmation the
+				// workflow reads has to be built here — there is nothing to pass on.
+				returnData.push({ json: { id, deleted: true }, pairedItem: { item: i } });
 			} else {
 				throw new NodeOperationError(
 					this.getNode(),
@@ -148,6 +199,110 @@ export async function executeSchedule(
 	}
 
 	return returnData;
+}
+
+/** The fields the API keeps as a plain day and answers as a full timestamp */
+const DATE_FIELDS = ['accrualDate', 'dueDate', 'scheduleDate'];
+
+/**
+ * The fields that travel to the API exactly as the editor collected them.
+ *
+ * `isFlagged` is on this list with its full spelling because the same API calls
+ * it `isFlag` on a payment, and the wrong one is accepted and quietly ignored.
+ * Nobody types either.
+ */
+const PLAIN_FIELDS = ['stakeholderId', 'description', 'isFlagged', 'reference'];
+
+/**
+ * Turns what the editor collected into the payload the API keeps.
+ *
+ * Flat, all of it: unlike a stakeholder, a schedule has no branches — the
+ * contact, the dates and the free text all sit at the root, and the only nested
+ * thing is the list of category lines.
+ *
+ * A field that was not filled in is not here and does not reach the payload. On
+ * an Update that is the whole promise of "the node does not touch what you did
+ * not add"; on a Create it is what lets the accrual date be genuinely absent,
+ * which is the case the field on the screen is warning about.
+ */
+function writePayload(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	fields: IDataObject,
+): IDataObject {
+	const payload: IDataObject = {};
+
+	for (const field of PLAIN_FIELDS) {
+		if (fields[field] !== undefined) {
+			payload[field] = fields[field];
+		}
+	}
+
+	for (const field of DATE_FIELDS) {
+		const value = fields[field];
+		// An empty date is not a date. Left blank on a Create, the accrual date
+		// has to be absent from the body — that is what makes the API copy the
+		// due date, which is what the field says it will do.
+		if (typeof value === 'string' && value.trim() !== '') {
+			payload[field] = onlyTheDay(value);
+		} else if (value !== undefined && typeof value !== 'string') {
+			payload[field] = value;
+		}
+	}
+
+	const lines = categoryLines.call(this, itemIndex, fields.categories);
+	if (lines !== undefined) {
+		payload.categories = lines;
+	}
+
+	return payload;
+}
+
+/**
+ * The category lines, as the API states an amount.
+ *
+ * `undefined` when the collection was not touched at all, which on an Update is
+ * "leave the lines alone". An empty list is a different thing and is refused:
+ * the API has no total of its own, so a schedule with no lines is a schedule
+ * with no amount, and finding that out from a 500 is finding it out late.
+ *
+ * The amount is passed on exactly as it was typed, positive on both kinds. It is
+ * the API that signs it — measured on the cobaia on 2026-07-26, where a debit
+ * line of 300 came back as -300 and the amount at the root of the body was
+ * ignored entirely.
+ */
+function categoryLines(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	collected: unknown,
+): IDataObject[] | undefined {
+	if (collected === undefined) {
+		return undefined;
+	}
+
+	const rows = (collected as IDataObject)?.category;
+	if (!Array.isArray(rows) || rows.length === 0) {
+		throw new NodeOperationError(this.getNode(), 'This schedule has no category line', {
+			itemIndex,
+			description:
+				'Add at least one line under Categories, with the ID of a financial category and an amount. The amount of a schedule is the sum of its lines: this API keeps no total of its own, so a schedule with no lines has no amount.',
+		});
+	}
+
+	return rows.map((row) => {
+		const { categoryId, value } = (row ?? {}) as IDataObject;
+		const id = String(categoryId ?? '').trim();
+
+		if (id === '') {
+			throw new NodeOperationError(this.getNode(), 'A category line names no category', {
+				itemIndex,
+				description:
+					'Every line under Categories needs the ID of a financial category, as Nibo returns it in the ID field. It is usually an expression reading it from the incoming item.',
+			});
+		}
+
+		return { categoryId: id, value };
+	});
 }
 
 /**

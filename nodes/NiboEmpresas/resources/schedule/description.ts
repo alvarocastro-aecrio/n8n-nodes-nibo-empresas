@@ -170,6 +170,16 @@ function writableFields(): INodeProperties[] {
 			default: '',
 			description: 'What this schedule is about, as it will read in Nibo',
 		},
+		// `isFlagged` here, `isFlag` on a payment: the two are one letter apart in
+		// the same API, and the wrong one is accepted and ignored. Nobody types
+		// either — the spelling is fixed in the payload.
+		{
+			displayName: 'Is Flagged',
+			name: 'isFlagged',
+			type: 'boolean',
+			default: false,
+			description: 'Whether to raise the flag Nibo shows next to a schedule that needs attention',
+		},
 		{
 			displayName: 'Reference',
 			name: 'reference',
@@ -333,7 +343,7 @@ export const scheduleFields: INodeProperties[] = [
 		placeholder: 'Add Field',
 		default: {},
 		description:
-			'The fields to change. A field left out is not touched: the schedule keeps whatever is stored in Nibo. A field added and left empty is written empty, which is how a value is erased on purpose.',
+			'The fields to change. A field left out is not touched: the schedule keeps whatever is stored in Nibo. A text field added and left empty is written empty, which is how a value is erased on purpose — but a date or a category left empty is ignored, since a schedule with no due date or no amount is not a schedule this API keeps.',
 		options: byDisplayName([
 			...writableFields(),
 			CATEGORIES,

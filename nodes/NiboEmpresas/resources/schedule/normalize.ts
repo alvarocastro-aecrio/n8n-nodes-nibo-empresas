@@ -43,3 +43,64 @@ function isMissing(value: unknown): boolean {
 		(typeof value === 'string' && (value.trim() === '' || value === ZEROED))
 	);
 }
+
+/** The fields the API answers as a full timestamp and takes as a plain day */
+const DATE_FIELDS = ['accrualDate', 'dueDate', 'scheduleDate'];
+
+/**
+ * The same record, written so that what was asked for and what came back can be
+ * compared — and nothing else.
+ *
+ * Used only by the Update confirmation, which reads the record again and checks
+ * that the paths meant to change really did. Two differences would otherwise
+ * make every schedule update report a failure it did not have:
+ *
+ * - **A date goes in as a day and comes back as a moment.** Ask for the 20th and
+ *   the API answers `2026-09-20T00:00:00Z`.
+ * - **The sign of a line belongs to the collection, not to the number.** Ask a
+ *   debit for a line of 300 and it answers -300, having recomputed the total
+ *   from the lines itself. Measured on the cobaia on 2026-07-26: the amount at
+ *   the root of the body is ignored, the lines decide, and the collection signs.
+ *
+ * The line ID is dropped for a third reason: every `PUT` recreates the lines
+ * with new IDs, so it is never the ID that was read a moment earlier.
+ *
+ * What a workflow receives is never this — it is the record as the API answered
+ * it, `normalizeSchedule` and nothing more.
+ */
+export function scheduleComparable(record: IDataObject): IDataObject {
+	const comparable: IDataObject = { ...record };
+
+	for (const field of DATE_FIELDS) {
+		const value = comparable[field];
+		if (typeof value === 'string' && value.trim() !== '') {
+			comparable[field] = onlyTheDay(value);
+		}
+	}
+
+	if (Array.isArray(comparable.categories)) {
+		comparable.categories = comparable.categories.map((line) => {
+			const { categoryId, value } = (line ?? {}) as IDataObject;
+			const amount = Number(value);
+
+			return { categoryId, value: Number.isFinite(amount) ? Math.abs(amount) : value };
+		});
+	}
+
+	return comparable;
+}
+
+/**
+ * The day of a date, as the API takes one on a write.
+ *
+ * Cut rather than converted, on purpose: the editor hands over the moment it was
+ * picked with the offset it was picked in, and `2026-08-10T00:00:00.000-03:00`
+ * is the 9th in UTC. A schedule that falls due one day early is a schedule that
+ * is overdue one day early, so the day that was chosen is the day that travels.
+ * Anything that is not a date is passed through for the API to refuse.
+ */
+export function onlyTheDay(value: string): string {
+	const day = value.trim().slice(0, 10);
+
+	return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : value.trim();
+}
