@@ -175,7 +175,7 @@ Discord, Gong e Google Calendar entre eles.
 | ☑ | **Um node salvo na 0.7.8, com o ID em texto puro, executa sem ser tocado** | Medição 1.4 (criação) e 1.5 (update) |
 | ☑ | O que esse node antigo mostra na tela está documentado (medição 1.4) | Está na 1.4 e no README |
 | ☑ | Regressão: categoria, datas e detalhe da linha como na 0.7.8 | Datas e ordem do formulário vistas na tela (1.4); o resto, pela suíte |
-| ⚠ | A cobaia termina com zero agendamentos | Estava zerada no fim da 1.5; depois disso o Alvaro criou um lançamento na tela e eu criei as sondas de categoria da 0.8.1. **A limpeza está pendente enquanto as sondas são a evidência a olhar** |
+| ⚠ | A cobaia termina com zero agendamentos | **Não.** Estava zerada no fim da 1.5; depois vieram o lançamento que o Alvaro criou na tela e as treze sondas de categoria. Ele decidiu **não limpar** (2026-07-26) — a exceção está anotada abaixo, com o que cada sonda é |
 | ☑ | **Instalação real (regra 7)** | Fechada em 2026-07-26 pela **tela Community Nodes** do n8n de dev, com a **0.8.1** — a 0.8.0 saiu publicada e o conserto das categorias veio atrás no mesmo dia. O Alvaro desinstalou o `.tgz` que eu havia posto à mão, instalou do npm e confirmou funcionando |
 | ☑ | **Na tela**: o campo Stakeholder da criação busca e escolhe um contato | O Alvaro criou um recebimento pela tela escolhendo o contato pela busca — foi esse lançamento que revelou o defeito das categorias |
 | ☐ | **Na tela**: o campo dentro de *Update Fields* | Não citado. Fica anotado como não conferido em vez de ser presumido junto |
@@ -186,8 +186,16 @@ Discord, Gong e Google Calendar entre eles.
 > tinha respondido 200 e guardado as duas linhas certas — o registro está bom e a tela não
 > o lê. A lista de categorias da 0.7.0 oferecia as 28 categorias automáticas do Nibo junto
 > com as 22 da empresa; três famílias delas não podem carregar agendamento e saíram da
-> lista na 0.8.1, cada uma com sua medição. **Multas** e **Pagamento de … Retido** seguem
-> na lista e sem medição na tela: são as sondas F2, H2, J2, K2 e L2 na cobaia.
+> lista na 0.8.1, cada uma com sua medição. **Multas**, **Juros** e **Pagamento de … Retido**
+> seguem na lista **com** medição: o Alvaro olhou as sondas D, F2, H2, J2, K2 e L2 na tela do
+> Nibo e as seis aparecem certas. Mapa das categorias fechado.
+>
+> **A cobaia fica com as sondas**, por decisão do Alvaro em 2026-07-26 — contra a regra de
+> deixá-la zerada, e de propósito. São treze lançamentos de crédito e débito com vencimento
+> entre 27 e 31/07/2026: o que ele criou na tela (`DDescricao TEste`, o quebrado, com "Outras
+> receitas" dentro) e as sondas `SONDA A` … `SONDA L2`, uma por família de categoria. Quem
+> encontrá-los depois: são evidência de medição, não sujeira acidental, e podem ser apagados
+> à vontade.
 
 > ⚠️ **O número da versão na tela Community Nodes não acompanha um `.tgz` instalado à mão.**
 > O n8n carrega os nodes **varrendo a pasta** `~/.n8n/nodes/node_modules` (lido no fonte da

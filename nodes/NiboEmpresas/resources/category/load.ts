@@ -41,13 +41,11 @@ const KIND_NAMED: Record<string, string> = {
  * | 3 | The fourteen "Retido sobre…" | Accepted, then **broken on the Nibo screen**: one category inside the schedule and another, without a value, outside it |
  * | 7 | Outras receitas | The same, and this is the one that caught it — a schedule of Alvaro's, in the browser |
  *
- * Interest (2) is **not** here: it was created the same way and reads correctly
- * on the screen, so it goes on being offered. Fines (4) and the "Pagamento de …
- * Retido" family (5, the ones nobody can edit) are not here either — they are
- * accepted by the API and nobody has yet looked at one on the screen. Leaving
- * them means the list can still offer something that turns out broken; taking
- * them out would mean hiding a category on a guess, and this project measures
- * instead. They come out the day a measurement says to.
+ * The other three automatic families are **not** here, and each earned its place
+ * on the list the same way — created for real and looked at on the Nibo screen:
+ * interest (2), fines (4) and the "Pagamento de … Retido" family (5, the ones
+ * nobody can edit) all read correctly there. So the rule is not "automatic
+ * categories are out": it is these three families, measured one at a time.
  *
  * A category left out of the list is not out of reach: the field takes an ID
  * from an expression, exactly as it did before there was a list at all.
