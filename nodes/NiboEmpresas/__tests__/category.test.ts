@@ -262,13 +262,38 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 		expect(list[1].name).toBe('Sem código');
 	});
 
-	it('answers an empty list rather than failing when the API has nothing', async () => {
+	/**
+	 * An empty box explains nothing, and this list has a specific reason for
+	 * coming back empty that nobody can see: it is filtered to the half that
+	 * fits the schedule, and it belongs to whichever credential is selected
+	 * above. Both facts are invisible on the screen, so the emptiness has to
+	 * carry them.
+	 *
+	 * Changed in 0.7.2, after an afternoon lost to exactly this class of
+	 * confusion — a list that looks the same everywhere because every Nibo
+	 * organization starts from the same chart of accounts.
+	 */
+	it('explains an empty answer instead of showing an empty box', async () => {
 		const { loadScheduleCategories } = await import('../resources/category/load');
-		const list = await loadScheduleCategories.call(
+		const failure = loadScheduleCategories.call(
 			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, []),
 		);
 
-		expect(list).toEqual([]);
+		await expect(failure).rejects.toThrow(/no categor/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/credential/i),
+		});
+	});
+
+	it('names the kind it was looking for, so the filter is not a mystery', async () => {
+		const { loadScheduleCategories } = await import('../resources/category/load');
+		const failure = loadScheduleCategories.call(
+			loadContext({ authMode: 'credential', resource: 'debitSchedule' }, []),
+		);
+
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/expense/i),
+		});
 	});
 
 	/**

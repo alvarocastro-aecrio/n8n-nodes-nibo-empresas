@@ -160,7 +160,7 @@ const CATEGORIES: INodeProperties = {
 					},
 					default: '',
 					description:
-						'The financial category this line falls under. Only the categories that fit this kind of schedule are listed — a revenue category cannot carry a payment, and the API refuses the pair by complaining about the amount. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+						'The financial category this line falls under. The list is read with the credential selected above and shows only the categories that fit this kind of schedule — a revenue category cannot carry a payment, and the API refuses the pair by complaining about the amount instead. Every Nibo organization starts from the same chart of accounts, so two organizations show the same names and differ only in the IDs behind them: switching the credential clears this field, and that is what tells you the list was read again. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 				},
 				{
 					displayName: 'Value',

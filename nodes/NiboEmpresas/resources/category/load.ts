@@ -19,6 +19,12 @@ const CATEGORIES_OF: Record<string, string> = {
 	debitSchedule: 'out',
 };
 
+/** How to name the half being asked for, in a sentence a person reads */
+const KIND_NAMED: Record<string, string> = {
+	in: 'revenue',
+	out: 'expense',
+};
+
 /**
  * The list behind the Category field of a schedule.
  *
@@ -75,6 +81,17 @@ export async function loadScheduleCategories(
 	const records = (
 		Array.isArray(response) ? response : ((response as IDataObject)?.items ?? [])
 	) as IDataObject[];
+
+	if (records.length === 0) {
+		// An empty box explains nothing, and this list has two invisible reasons
+		// for being empty: it is filtered to the half that fits this kind of
+		// schedule, and it belongs to whichever credential is selected above.
+		// Neither is on the screen, so the emptiness has to carry them.
+		const kind = KIND_NAMED[fits ?? ''] ?? '';
+		throw new NodeOperationError(this.getNode(), 'Nibo answered with no categories to choose from', {
+			description: `The list is always read with the credential selected above, and shows only the ${kind === '' ? 'categories' : `${kind} categories`} — the ones that fit this kind of schedule. So either that organization has none of them, or the credential is not the organization you meant. Every Nibo organization starts from the same chart of accounts, so the names alone will not tell two of them apart; read the list with the Category resource if you need to see all of them, including the other half.`,
+		});
+	}
 
 	return records.map(asOption).sort(byReferenceCode);
 }
