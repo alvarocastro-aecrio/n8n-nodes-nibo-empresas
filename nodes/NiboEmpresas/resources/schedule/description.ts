@@ -136,12 +136,20 @@ const CATEGORIES: INodeProperties = {
 			name: 'category',
 			values: [
 				{
-					displayName: 'Category ID',
+					// A list since 0.7.0, and still a plain string underneath. A
+					// resourceLocator would read better and would store `{mode, value}`
+					// where a bare ID is stored today, breaking every node saved under
+					// 0.6.0 — the name, the place, the default and the stored shape are
+					// all contract. What changes is only that the ID can now be found.
+					displayName: 'Category Name or ID',
 					name: 'categoryId',
-					type: 'string',
+					type: 'options',
+					typeOptions: {
+						loadOptionsMethod: 'loadScheduleCategories',
+					},
 					default: '',
 					description:
-						'The ID of the financial category this line falls under, as Nibo returns it in the ID field',
+						'The financial category this line falls under. Only the categories that fit this kind of schedule are listed — a revenue category cannot carry a payment, and the API refuses the pair by complaining about the amount. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 				},
 				{
 					displayName: 'Value',

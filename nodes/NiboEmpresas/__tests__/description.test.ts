@@ -698,6 +698,39 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 		expect(forSchedules('categories')?.description).toMatch(/sum/i);
 	});
 
+	/**
+	 * The 0.6.0 hole, closed in 0.7.0: the field asked for a GUID and the node
+	 * offered no way to learn one.
+	 *
+	 * It gains the list without changing anything a saved node depends on. A
+	 * resourceLocator would read better and would store `{mode, value}` where a
+	 * plain string is stored today — every node saved under 0.6.0 would break on
+	 * the upgrade. The name, the place, the default and the stored shape are all
+	 * the contract, and none of them moves.
+	 */
+	it('fills the category from a list, without changing what is stored', () => {
+		const line = ((forSchedules('categories')?.options ?? []) as Array<{
+			values: INodeProperties[];
+		}>)[0];
+		const categoryId = line.values.find((field) => field.name === 'categoryId');
+
+		expect(categoryId?.type).toBe('options');
+		expect(categoryId?.default).toBe('');
+		expect(categoryId?.typeOptions?.loadOptionsMethod).toBe('loadScheduleCategories');
+	});
+
+	// A field that offers a list and has nothing behind it is the 0.3.1 bug: the
+	// name is a key into the node's own methods, and only this test ties the two.
+	it('names a list the node actually declares', () => {
+		const line = ((forSchedules('categories')?.options ?? []) as Array<{
+			values: INodeProperties[];
+		}>)[0];
+		const method = line.values.find((field) => field.name === 'categoryId')?.typeOptions
+			?.loadOptionsMethod as string;
+
+		expect(Object.keys(new NiboEmpresas().methods?.loadOptions ?? {})).toContain(method);
+	});
+
 	it('keeps the rest of what can be written under Additional Fields', () => {
 		expect(fieldsOf('additionalFields')).toEqual(['description', 'isFlagged', 'reference']);
 	});
