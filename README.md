@@ -56,7 +56,19 @@ Creating one asks for what the API refuses a creation without: the **Stakeholder
 
 On **Update** those two are back inside *Update Fields*, and that is deliberate: there, a field on the screen is a field that gets written, so a visible empty Description would erase the stored one every time anything else changed.
 
-**The category is picked from a list** that reads like the Nibo screen: the name, with its group underneath. The options come clustered by group, in the sequence a chart of accounts is read — revenue, costs, expenses, investing, financing — and within a group in whatever order the organization arranged them in Nibo. Only the half that fits is offered: revenue categories under a Credit Schedule, expense ones under a Debit Schedule — see [Categories](#categories) for why that matters more than tidiness.
+**The category is picked from a list** split into sections, one per group of the chart of accounts:
+
+```
+—— Receitas operacionais ——
+Receita com serviços
+Receita com vendas
+—— Atividades de investimento ——
+Venda de ativo fixo
+```
+
+The sections follow the sequence a chart of accounts is read in — revenue, costs, expenses, investing, financing — and within a section the categories come in whatever order the organization arranged them in Nibo. Only the half that fits is offered: revenue categories under a Credit Schedule, expense ones under a Debit Schedule — see [Categories](#categories) for why that matters more than tidiness.
+
+> n8n's dropdown has no real section headings and no unselectable rows, so each `—— … ——` is an ordinary option that merely reads like a heading. **Picking one is refused** by name, rather than travelling to the API as a category ID that never existed.
 
 > **Two organizations show the same category names.** Every Nibo organization starts from the same chart of accounts, so the list looks identical whichever credential is selected; what differs is the ID behind each name. The list is always read with the credential selected on the node, and **switching the credential clears this field** — that blank is how you can tell the list was read again.
 
@@ -279,6 +291,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.7.1 | Three things found by using the 0.7.0 form. **Description** and **Is Flagged** move onto the creation form, out of *Additional Fields* — on Update they stay in the menu, because there a field on the screen is a field that gets written. And the fix that matters: **the category list did not reload when the resource changed**, so switching between Credit Schedule and Debit Schedule kept whichever half of the chart of accounts had loaded first. The editor refetches a list on three things only — the refresh button, a change of credential, and a change in `loadOptionsDependsOn` — and that last one named nothing |
 | 0.7.2 | The category list says what it is. It is read with the credential selected on the node and filtered to the half that fits the schedule — neither fact is visible, and **every Nibo organization starts from the same chart of accounts**, so the same names appear whichever organization is selected and only the IDs behind them differ. That cost an afternoon of chasing a bug that was not there. An empty answer now explains itself instead of showing an empty box, and the field says that switching the credential clears it — which is how you can tell the list was read again |
 | 0.7.3 | The category list reads like the Nibo screen: **the name, with its group underneath, and no reference code**. That code is real — the API sends it on every category — but it belongs to Nibo's standard chart of accounts and appears nowhere in Nibo's own interface, so unfamiliar numbers in front of familiar names only made a working list look like another company's. The options now come clustered by group, in the sequence a chart of accounts is read, and within each group in whatever order the organization arranged them in Nibo (`order`, sorted by the server) |
+| 0.7.4 | The category list is **split into sections**, one per group of the chart of accounts, instead of repeating the group under every name. n8n's dropdown has neither real section headings nor unselectable rows — read out of its source rather than assumed — so each heading is an ordinary option that reads like one, and **picking a heading is refused by name** instead of reaching the API as a category ID that never existed |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer

@@ -26,6 +26,31 @@ const KIND_NAMED: Record<string, string> = {
 };
 
 /**
+ * The mark that tells a heading from a category.
+ *
+ * n8n's dropdown for an `options` parameter is a flat `v-for` — there is no
+ * option group in it, and `INodePropertyOptions` carries no way to make a row
+ * unselectable (read out of the 2.18.5 source: `name`, `value`, `action`,
+ * `description`, and nothing else that would help). So a section heading has to
+ * be an ordinary row that reads like one, and can be clicked like one.
+ *
+ * Which is why it is marked. The group name travels in the value, so that
+ * whoever does click a heading is told which one they clicked instead of
+ * sending a category ID that never existed to the API.
+ */
+const HEADING = '__nibo_group__';
+
+/** Whether a stored category ID is really one of the headings in the list */
+export function isGroupHeading(categoryId: string): boolean {
+	return categoryId.startsWith(HEADING);
+}
+
+/** The group a heading stands for, for the message that refuses it */
+export function groupOfHeading(categoryId: string): string {
+	return categoryId.slice(HEADING.length).trim();
+}
+
+/**
  * The list behind the Category field of a schedule.
  *
  * It talks to the API on its own rather than through `transport/request.ts`,
@@ -108,13 +133,40 @@ export async function loadScheduleCategories(
 
 	// Whatever order the server answered in is the order shown. Re-sorting here
 	// would throw away `order`, which is the one key that carries a decision the
-	// organization actually took.
-	return records.map(asOption);
+	// organization actually took — and it is what makes the groups arrive in
+	// blocks, which is the only reason a heading can be inserted at all.
+	return withHeadings(records);
 }
 
 /**
- * One line of the chart of accounts as the editor shows it: the name, and the
- * group under it — the two things the Nibo screen itself shows.
+ * The list, with a heading opening each block of a group.
+ *
+ * It relies on the records arriving grouped, which is exactly what the
+ * `$orderby` above asks the server for. A category carrying no group opens no
+ * section — there is nothing to call it — and is simply listed.
+ */
+function withHeadings(records: IDataObject[]): INodePropertyOptions[] {
+	const list: INodePropertyOptions[] = [];
+	let current: string | undefined;
+
+	for (const record of records) {
+		const group = String(((record.group ?? {}) as IDataObject).name ?? '').trim();
+
+		if (group !== '' && group !== current) {
+			list.push({ name: `—— ${group} ——`, value: `${HEADING}${group}` });
+		}
+		current = group;
+
+		list.push(asOption(record));
+	}
+
+	return list;
+}
+
+/**
+ * One line of the chart of accounts as the editor shows it: the name, and
+ * nothing else. The group is on the heading above it, so repeating it here
+ * would be saying the same thing twice on every row.
  *
  * The reference code was in front of the name until 0.7.3 and that was a
  * mistake. It is an internal code of the standard chart of accounts, it appears
@@ -123,13 +175,8 @@ export async function loadScheduleCategories(
  * company's. What is not on their screen does not go on ours.
  */
 function asOption(record: IDataObject): INodePropertyOptions {
-	const group = (record.group ?? {}) as IDataObject;
-	const groupName = String(group.name ?? '').trim();
-
 	return {
 		name: String(record.name ?? '').trim(),
 		value: String(record.id ?? ''),
-		description: groupName === '' ? undefined : groupName,
 	};
 }
-
