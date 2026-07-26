@@ -1,6 +1,7 @@
 import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
-import type { ODataFieldType } from '../../transport/odata';
+import type { IFilterField } from '../shared/filter';
+import { filterFieldTypes, filterProperties } from '../shared/filter';
 
 /**
  * Customer, Supplier, Employee and Partner are one family: the API gives the
@@ -268,21 +269,6 @@ function byDisplayName(fields: INodeProperties[]): INodeProperties[] {
 }
 
 /**
- * A field the assisted filter can be built on: what the editor calls it, where
- * the API keeps it, and what kind of value it holds.
- *
- * The type is not decoration — it is what decides the literal. Text goes
- * between quotes, boolean and date go bare, and the builder in
- * `transport/odata.ts` is what writes each one.
- */
-interface IFilterField {
-	label: string;
-	/** The path as the API names it, e.g. `document/number` */
-	path: string;
-	type: ODataFieldType;
-}
-
-/**
  * The menu is closed, and every path in it answered HTTP 200 on 2026-07-25 —
  * in all four collections. Two absences are the point of it:
  *
@@ -307,133 +293,12 @@ const FILTER_FIELDS: IFilterField[] = [
 	{ label: 'Updated At', path: 'updateDate', type: 'date' },
 ];
 
-function pathsOf(type: ODataFieldType): string[] {
-	return FILTER_FIELDS.filter((field) => field.type === type).map((field) => field.path);
-}
-
 /**
  * What kind of value each path holds, for the handler that turns the rows of
  * the editor into conditions. The menu is UI and lives here; the builder knows
  * nothing about Nibo and is told the type.
  */
-export const stakeholderFilterFieldTypes: Record<string, ODataFieldType> = Object.fromEntries(
-	FILTER_FIELDS.map((field) => [field.path, field.type]),
-);
-
-/**
- * One row of the builder: which field, which operator, which value.
- *
- * Operator and value are declared once per type rather than once each. The
- * editor shows the declaration whose `field` list holds the chosen path, so a
- * date is never offered `contains` — an expression the API answers 500 to — and
- * a yes-or-no is collected as a checkbox rather than as the text `true`.
- *
- * Each `default` is a literal on purpose: the n8n linter reads defaults straight
- * from the source, and a value it cannot see is one it reports as missing.
- */
-const filterConditionFields: INodeProperties[] = [
-	{
-		displayName: 'Field',
-		name: 'field',
-		type: 'options',
-		options: FILTER_FIELDS.map((field) => ({ name: field.label, value: field.path })),
-		default: 'name',
-		description: 'The field the condition is about',
-	},
-	{
-		displayName: 'Operator',
-		name: 'operator',
-		type: 'options',
-		options: [
-			{ name: 'Contains', value: 'contains' },
-			{
-				name: 'Contains (Ignoring Case)',
-				value: 'containsIgnoreCase',
-				description: 'Matches however the record was typed, in capitals or not',
-			},
-			{ name: 'Ends With', value: 'endswith' },
-			{ name: 'Equals', value: 'eq' },
-			{ name: 'Not Equals', value: 'ne' },
-			{ name: 'Starts With', value: 'startswith' },
-		],
-		default: 'contains',
-		displayOptions: {
-			show: {
-				field: pathsOf('text'),
-			},
-		},
-	},
-	{
-		displayName: 'Operator',
-		name: 'operator',
-		type: 'options',
-		options: [
-			{ name: 'Is', value: 'eq' },
-			{ name: 'Is Not', value: 'ne' },
-		],
-		default: 'eq',
-		displayOptions: {
-			show: {
-				field: pathsOf('boolean'),
-			},
-		},
-	},
-	{
-		displayName: 'Operator',
-		name: 'operator',
-		type: 'options',
-		options: [
-			{ name: 'After', value: 'gt' },
-			{ name: 'Before', value: 'lt' },
-			{ name: 'On or After', value: 'ge' },
-			{ name: 'On or Before', value: 'le' },
-		],
-		default: 'gt',
-		displayOptions: {
-			show: {
-				field: pathsOf('date'),
-			},
-		},
-	},
-	{
-		displayName: 'Value',
-		name: 'value',
-		type: 'string',
-		default: '',
-		placeholder: 'ACME',
-		description:
-			'What to look for. It is quoted and escaped for you, so a name carrying an apostrophe works as typed. A condition left empty here is ignored.',
-		displayOptions: {
-			show: {
-				field: pathsOf('text'),
-			},
-		},
-	},
-	{
-		displayName: 'Value',
-		name: 'booleanValue',
-		type: 'boolean',
-		default: true,
-		description: 'Whether the condition looks for the records where this is true or for the others',
-		displayOptions: {
-			show: {
-				field: pathsOf('boolean'),
-			},
-		},
-	},
-	{
-		displayName: 'Value',
-		name: 'dateValue',
-		type: 'dateTime',
-		default: '',
-		description: 'The moment to compare with. A condition left empty here is ignored.',
-		displayOptions: {
-			show: {
-				field: pathsOf('date'),
-			},
-		},
-	},
-];
+export const stakeholderFilterFieldTypes = filterFieldTypes(FILTER_FIELDS);
 
 export const stakeholderFields: INodeProperties[] = [
 	// One ID field per type, each named after itself
@@ -584,63 +449,10 @@ export const stakeholderFields: INodeProperties[] = [
 	// body would be a second way of saying the same thing, and two switches can
 	// disagree — which is exactly how a filter ends up being one thing on the
 	// screen and another on the wire.
-	{
-		displayName: 'Filters',
-		name: 'filters',
-		type: 'fixedCollection',
-		typeOptions: {
-			multipleValues: true,
-		},
-		placeholder: 'Add Condition',
-		default: {},
-		description: 'The conditions a record has to meet to be returned',
-		options: [
-			{
-				displayName: 'Condition',
-				name: 'conditions',
-				values: filterConditionFields,
-			},
-		],
-		displayOptions: {
-			show: {
-				resource: EVERY_TYPE,
-				operation: ['list'],
-			},
-			// Write an expression by hand and the conditions leave the screen —
-			// and leave the request with it, see `listFilter` in execute.ts. The
-			// editor reads `exists` as "filled in": not null, not undefined and
-			// not empty. Added and left blank is not a filter, so it costs the
-			// conditions nothing.
-			hide: {
-				'/options.filter': [{ _cnd: { exists: true } }],
-			},
-		},
-	},
-	{
-		displayName: 'Combine Conditions',
-		name: 'filterCombine',
-		type: 'options',
-		options: [
-			{ name: 'And', value: 'and', description: 'Return only the records that meet every condition' },
-			{
-				name: 'Or',
-				value: 'or',
-				description: 'Return the records that meet at least one of the conditions',
-			},
-		],
-		default: 'and',
-		description:
-			'How the conditions above are joined. One operator for all of them: a mix of the two, such as (A or B) and C, is what Filter (OData) under Options stays for.',
-		displayOptions: {
-			show: {
-				resource: EVERY_TYPE,
-				operation: ['list'],
-			},
-			hide: {
-				'/options.filter': [{ _cnd: { exists: true } }],
-			},
-		},
-	},
+	//
+	// The rows themselves are drawn by the shared module: what a resource owns
+	// is its menu, and nothing else about the filter.
+	...filterProperties({ resources: EVERY_TYPE, fields: FILTER_FIELDS, defaultField: 'name' }),
 	// The raw expression is no longer here: since 0.5.1 it is an Option at the
 	// end of the node, opt-in, like the interval (0.4.2) and the strict scan
 	// (0.4.3) before it. The body of the node asks only what the operation

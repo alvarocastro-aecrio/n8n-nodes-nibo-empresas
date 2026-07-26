@@ -1,11 +1,10 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
-import type { IODataCondition } from '../../transport/odata';
-import { buildODataFilter } from '../../transport/odata';
 import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
 import { niboCreate, niboSafeUpdate } from '../../transport/save';
+import { listFilter } from '../shared/filter';
 import { stakeholderFilterFieldTypes } from './description';
 import { normalizeStakeholder, stakeholderWriteBody } from './normalize';
 
@@ -95,7 +94,7 @@ export async function executeStakeholder(
 					{
 						returnAll,
 						limit: returnAll ? 0 : (this.getNodeParameter('limit', i) as number),
-						filter: listFilter.call(this, i, options),
+						filter: listFilter.call(this, i, options, stakeholderFilterFieldTypes),
 						failOnIncomplete: failOnIncomplete.call(this, i, options),
 						interval,
 					},
@@ -241,102 +240,6 @@ function writePayload(fields: IDataObject): IDataObject {
 	}
 
 	return payload;
-}
-
-/** One row of the condition builder, as the editor stores it */
-interface IFilterRow {
-	field?: string;
-	operator?: string;
-	/** Where a text field is typed */
-	value?: string;
-	/** The checkbox of a yes-or-no field */
-	booleanValue?: boolean;
-	/** The picker of a date field */
-	dateValue?: string;
-}
-
-/**
- * The `$filter` this item is read with, in the order the three answers beat
- * each other.
- *
- * 1. **The expression written by hand under Options wins.** Filling it in is
- *    what takes the conditions off the screen, so it has to be what takes them
- *    out of the request too. A field nobody can see must never be filtering
- *    underneath one they can — the same rule, read from both sides, that this
- *    version has been about all along.
- * 2. **Otherwise the conditions are built.**
- * 3. **Otherwise the expression a node saved before 0.5.2 still carries** in the
- *    field of the body it was typed into, under this very name. That node goes
- *    on filtering exactly as it did — the retaguarda the interval (0.4.2) and
- *    the strict scan (0.4.3) already have. A fallback, never an override: it is
- *    a value nobody can see any more either.
- */
-function listFilter(this: IExecuteFunctions, itemIndex: number, options: IDataObject): string {
-	const written = typeof options.filter === 'string' ? options.filter.trim() : '';
-	if (written !== '') {
-		return written;
-	}
-
-	const rows = ((this.getNodeParameter('filters', itemIndex, {}) as IDataObject).conditions ??
-		[]) as IFilterRow[];
-
-	const built = buildODataFilter(
-		rows.map((row) => filterCondition.call(this, row, itemIndex)),
-		this.getNodeParameter('filterCombine', itemIndex, 'and') as string,
-	);
-
-	return built === '' ? String(this.getNodeParameter('filter', itemIndex, '') ?? '') : built;
-}
-
-/**
- * One row turned into a condition the builder can write.
- *
- * The type comes from the menu in the description, and it is what decides the
- * literal — so a field this version does not have a type for cannot be written
- * at all. That can only be a node saved against a different menu, and dropping
- * the condition would hand back more records than the workflow asked for, which
- * is the direction a workflow deletes by. It fails instead, carrying its index.
- */
-function filterCondition(
-	this: IExecuteFunctions,
-	row: IFilterRow,
-	itemIndex: number,
-): IODataCondition {
-	const field = String(row.field ?? '').trim();
-	const type = stakeholderFilterFieldTypes[field];
-
-	if (field !== '' && type === undefined) {
-		throw new NodeOperationError(
-			this.getNode(),
-			`This node cannot filter on the field "${field}"`,
-			{
-				itemIndex,
-				description:
-					'It is not one of the fields the API answers a filter on. Pick another field, or write the expression yourself in Filter (OData), under Options at the end of the node.',
-			},
-		);
-	}
-
-	return {
-		field,
-		operator: String(row.operator ?? ''),
-		// A row with no field is an unfinished row and the builder skips it — but
-		// it is still handed a type, and text is the type of nothing typed yet.
-		type: type ?? 'text',
-		value: filterValue(row, type),
-	};
-}
-
-/** Each type is collected in its own box, so the value arrives as what it is */
-function filterValue(row: IFilterRow, type: IODataCondition['type'] | undefined): unknown {
-	if (type === 'boolean') {
-		return row.booleanValue;
-	}
-	if (type === 'date') {
-		return row.dateValue;
-	}
-
-	return row.value;
 }
 
 /**
