@@ -6,7 +6,7 @@ This is an [n8n](https://n8n.io/) community node. It lets you use the **Nibo Emp
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-> **Status: early development (v0.6.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
+> **Status: early development (v0.7.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
 
 ## Installation
 
@@ -22,22 +22,25 @@ n8n-nodes-nibo-empresas
 
 ## Operations
 
-Six resources in two families, each with the same five operations. Within a family the API gives every resource an identical contract, so the node treats the family as one:
+Seven resources in three families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
 
 | Family | Resources | What they are |
 |---|---|---|
 | **Contacts** | Customer · Employee · Partner · Supplier | Who you buy from, sell to, employ or share the company with |
 | **Schedules** | Credit Schedule · Debit Schedule | Accounts receivable and accounts payable — an amount due on a date |
+| **Category** | Category | The chart of accounts a schedule is filed under. **Get Many** only |
+
+Contacts and schedules have the same five operations each. **Category has only Get Many**, because that is the only route the API offers for it.
 
 | Operation | Notes |
 |---|---|
 | Create | Adds a record and returns it as Nibo stored it |
 | Delete | Removes it and returns `{ id, deleted: true }` |
 | Get | Returns one record by ID |
-| Get Many | Returns the collection, paging through it when needed. A stable sort is always applied — `$orderby=id` for a contact, `$orderby=scheduleId` for a schedule. |
+| Get Many | Returns the collection, paging through it when needed. A stable sort is always applied — `$orderby=id` for a contact or a category, `$orderby=scheduleId` for a schedule. |
 | Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
 
-Every resource has its own ID field (**Customer ID**, **Supplier ID**, **Credit Schedule ID**, …), so a workflow that already names one keeps working when others are added.
+Every resource that works on a single record has its own ID field (**Customer ID**, **Supplier ID**, **Credit Schedule ID**, …), so a workflow that already names one keeps working when others are added.
 
 ### Contacts
 
@@ -50,6 +53,8 @@ Every resource has its own ID field (**Customer ID**, **Supplier ID**, **Credit 
 **Credit Schedule** is money coming in, **Debit Schedule** is money going out. They are two resources rather than one resource with a type field, because the type is not a setting of the operation — it is which set of books the operation is about.
 
 Creating one asks for what the API refuses a creation without: the **Stakeholder ID** of the contact, the **Due Date**, the **Schedule Date** and at least one line under **Categories**. **Description**, **Reference** and **Is Flagged** live under *Additional Fields*.
+
+**The category is picked from a list**, showing each one by its reference code and name (`1.1.001 · Receita com vendas`) in the order a chart of accounts is read. Only the half that fits is offered — revenue categories under a Credit Schedule, expense ones under a Debit Schedule — see [Categories](#categories) for why that matters more than tidiness.
 
 **There is no total to type.** The amount of a schedule is the sum of its category lines: a schedule of 1,000 is one line of 1,000 or two of 500. Type the line amounts **positive on both kinds** — that is what the API takes, and it signs them itself.
 
@@ -65,6 +70,16 @@ Two more behaviors of this API that a workflow will meet:
 - **The listing is eventually consistent, in both directions**, and this is the one a workflow trips over. Measured: a schedule the get-by-id already answers is **absent from its collection for a second or two** after being created, and a schedule that `DELETE` answered 204 for is still **in** the collection for a few seconds after. A **Create** followed straight by a **Get Many** can miss what it just made, and a **Delete** followed straight by a **Get Many** can still show it. Chain by the ID the create hands back — **Get** is consistent immediately — rather than by re-listing.
 
 The dates you pick travel as the **day** you picked, cut rather than converted: the editor hands over `2026-08-10T00:00:00.000-03:00`, which is the 9th in UTC, and a schedule that falls due one day early is a schedule that is overdue one day early.
+
+### Categories
+
+The chart of accounts. **Get Many** is the only operation, because it is the only route the API has: `GET /categories/{id}` answers 404, and creating one has never been verified, so neither is offered.
+
+Each category carries a `name`, a `referenceCode`, a `group` and a `type` — `in` for revenue, `out` for expense. The assisted filter offers **Name**, **Reference Code**, **Type**, **Group Name** and **Is Editable**; *Type* is a list, since `in` and `out` are not what anyone would guess for revenue and expense.
+
+> **Why a category cannot be picked once and reused across organizations.** A category ID belongs to **one** organization. In the *API Token (Per Item)* mode — one item per company — a category chosen on the screen would be right for one of them and wrong for every other, so the list does not load there at all, and the node says so instead of showing an empty box. That is what this resource is for: look the ID up per organization, and put an expression in the schedule's Category field.
+
+> ⚠️ **A mismatched category is reported as a problem with the amount.** Put an expense category on a receivable and the API answers HTTP 500 *"Valor do agendamento deve ser positivo"* — to a form where you typed a positive number. The category's type is what signs the line, so the total goes negative and the validation complains about the total. Picking from the list makes this unreachable; when an expression sets the ID instead, the node adds the explanation underneath the API's own sentence.
 
 **Get Many** takes:
 
@@ -100,8 +115,11 @@ The fields on offer are the ones the API actually filters on, checked against it
 |---|---|
 | **Contacts** | Name · Document Number · Email · Phone · Trading Name · City · State · Is Company · Is Archived · Updated At |
 | **Schedules** | Description · Reference · Stakeholder Name · Value · Due Date · Schedule Date · Accrual Date · Created At · Updated At · Is Paid · Is Overdue · Is Flagged · Has Invoice |
+| **Category** | Name · Reference Code · Type · Group Name · Is Editable |
 
-What is deliberately missing from each is missing for a measured reason. On a contact, the **document type**: `document/type eq 'Cpf'` is an HTTP 500, because that enum does not compare — filter by **Document Number** instead. On a schedule, the **type** (a constant inside either collection, so it could only ever answer "yes" or "nothing"), **`isDeleted`** (a 500 — the field is not on this view) and **`costCenterValueType`** (a 500, the same enum problem as the document type).
+What is deliberately missing from each is missing for a measured reason. On a contact, the **document type**: `document/type eq 'Cpf'` is an HTTP 500, because that enum does not compare — filter by **Document Number** instead. On a schedule, the **type** (a constant inside either collection, so it could only ever answer "yes" or "nothing"), **`isDeleted`** (a 500 — the field is not on this view) and **`costCenterValueType`** (a 500, the same enum problem as the document type). On a category, **`isDeleted`** again.
+
+Worth noticing across those two lines: a category's **Type** *is* offered, while a contact's document type is not, even though both are enums of text. One compares and the other answers 500. Neither was assumed — each was asked.
 
 > **Value is an amount, and amounts are not quoted.** `value gt '100'` is an HTTP 500 naming the two types it could not compare — *'Edm.Decimal' and 'Edm.String'*. The node writes the literal bare and keeps your cents. An amount arriving through an expression as `100,50` is read as the amount it means; `1.234,56` is refused instead of guessed at, because read one way it is a thousand and read the other it is one and a bit, and nothing in the value says which.
 
@@ -219,11 +237,11 @@ Developed and tested against n8n **2.18.5** (self-hosted), on a clean instance, 
 
 ## Usage
 
-Add the **Nibo Empresas** node to a workflow, select the credential, pick a resource — Customer, Employee, Partner, Supplier, Credit Schedule or Debit Schedule — and run **Get Many**. Each record becomes one n8n item.
+Add the **Nibo Empresas** node to a workflow, select the credential, pick a resource — Customer, Employee, Partner, Supplier, Credit Schedule, Debit Schedule or Category — and run **Get Many**. Each record becomes one n8n item.
 
 Writing works the same way: **Create** takes what that resource cannot be created without, **Update** takes an ID and only the fields you want changed, and **Delete** takes an ID. Each input item is one operation, and each answers with the record as Nibo has it.
 
-A common pair: read the contact with **Customer · Get Many**, filtered by name, then feed its `id` into **Credit Schedule · Create** as the **Stakeholder ID**.
+A common pair: read the contact with **Customer · Get Many**, filtered by name, then feed its `id` into **Credit Schedule · Create** as the **Stakeholder ID**. Pick the category from the list on that same form — or, when the workflow walks several organizations, read it per organization with **Category · Get Many** and set the field by expression.
 
 To read several organizations in a single node, switch **Authentication** to *API Token (Per Item)*, point the **API Token** field at the token carried by each input item, and send one item per organization — see [Authentication](#authentication).
 
@@ -253,6 +271,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.5.1 | **Filter (OData)** moves into **Options**, at the end of the node, where the other operational adjustments already are: the body asks only what the operation needs, and writing OData by hand is the exception rather than the way in |
 | 0.5.2 | The **Filter Type** selector is gone, and writing an expression into **Filter (OData)** is the switch itself: fill it in and the conditions leave the screen — and leave the request with them, so nothing filters from behind a field you cannot see. Empty it and the conditions are back. 0.5.1 had put the box behind that selector, which meant it was not on the *Add option* list until you had already chosen a mode — a switch you had to find before you could find the thing it switched |
 | 0.6.0 | **Credit Schedule and Debit Schedule** — accounts receivable and payable — with the same five operations each. The second family, and the first one the core built up to 0.5.x paid for: paging, the safe update cycle, the assisted filter and the readable errors were already there. What is genuinely new is what this family does differently — the paging key is `scheduleId` (`$orderby=id` is a 500 here), a schedule of either kind is read through **one** get-by-id, so **Get refuses an ID of the other kind instead of quietly handing back the wrong record**, and the filter builder learned what an amount is. **Accrual Date** is on the screen rather than in a menu, because leaving it out makes the API copy the due date silently. ⚠️ **The sign of a debit belongs to the endpoint**: the same record reads `-500` through Get and `+500` through Get Many, and the node passes both through untouched |
+| 0.7.0 | **Category**, and the list behind the schedule's category field. A hole 0.6.0 left: Create asked for a category ID, a GUID, and the node gave no way to learn one — which forced an HTTP Request node to list them, the thing this package removes. The field now offers the categories that **fit the kind of schedule**, by code and name, and that is not tidiness: an expense category on a receivable is refused with *"Valor do agendamento deve ser positivo"*, blaming an amount you typed positive, because the category's type is what signs the line. Where an expression sets the ID instead of the list, the node adds that explanation to the API's own words. **Category · Get Many** is the other half, and the one that matters in a portfolio: a category ID belongs to one organization, so it has to be looked up per organization rather than picked once. The Category ID parameter keeps its name, its place and its stored shape, so nothing saved under 0.6.0 changes |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
