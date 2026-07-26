@@ -93,25 +93,28 @@ export function scheduleComparable(record: IDataObject): IDataObject {
 	}
 
 	if (Array.isArray(comparable.costCenters)) {
-		// Which of the two numbers is the one that was asked for. It sits at the
-		// root of the record, on the answer and on the change alike — the two
-		// always travel together, which is what makes this readable from either
-		// side.
-		const byValue = Number(comparable.costCenterValueType) === 0;
-
-		comparable.costCenters = comparable.costCenters.map((line) => {
-			const { costCenterId, percent, value } = (line ?? {}) as IDataObject;
-			const asked = byValue ? value : percent;
-			const share = Number(asked);
-
-			return {
-				costCenterId,
-				// The magnitude, and to the cent. The sign belongs to the collection
-				// here exactly as it does on a category line, and a percentage that
-				// comes back as 70.000001 is the same 70 that was asked for.
-				share: Number.isFinite(share) ? Math.round(Math.abs(share) * 100) / 100 : asked,
-			};
-		});
+		// The cost centres, and deliberately **not** the shares. Both numbers a
+		// read answers were measured on the test company on 2026-07-26, while
+		// accepting v0.9.0 against it, and neither can be compared with what was
+		// asked for:
+		//
+		// - **`value` comes back as the percentage applied twice.** A 60% line of
+		//   a schedule of 1000 answers `value` 360, and a line asked for as
+		//   `value` 300 answers `percent` 30 with `value` 90 — `percent × percent
+		//   × total`, every time. The percentage is stored correctly in both; the
+		//   amount is not the number anybody sent.
+		// - **`percent` is right, and is still not what was asked** when the
+		//   apportionment is by value: the node sends 300 and the API answers 30.
+		//
+		// So the shares are left out of the comparison rather than compared
+		// wrongly, and the list is compared as a **set** — two lines sent A then B
+		// came back B then A in the same measurement.
+		//
+		// What the confirmation exists to catch survives all of that: an
+		// apportionment that did not take at all, or took with the wrong centres.
+		comparable.costCenters = comparable.costCenters
+			.map((line) => String(((line ?? {}) as IDataObject).costCenterId ?? ''))
+			.sort();
 	}
 
 	return comparable;

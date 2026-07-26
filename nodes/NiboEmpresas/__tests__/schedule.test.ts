@@ -1188,14 +1188,26 @@ describe('executeSchedule — Update', () => {
 
 	/**
 	 * Without this the confirmation would report every apportionment update as
-	 * having failed.
+	 * having failed. The `GET` answers a line as `{costCenterId, percent, value,
+	 * costCenterDescription}` where the update asked for `{costCenterId,
+	 * percent}`, and comparing those two shapes as they stand can only ever say
+	 * "not applied".
 	 *
-	 * The `GET` answers a line as `{costCenterId, percent, value,
-	 * costCenterDescription}` — both numbers and the name — where the update
-	 * asked for `{costCenterId, percent}`. Comparing those two shapes as they
-	 * stand can only ever say "not applied".
+	 * It compares the **cost centres**, and deliberately not the shares. Measured
+	 * against the test company on 2026-07-26, while accepting this very version:
+	 *
+	 * - **The `value` a read answers is the percentage applied twice.** A 60%
+	 *   line of a schedule of 1000 comes back with `value` 360, and a line asked
+	 *   for as `value` 300 comes back as `percent` 30 with `value` 90. The
+	 *   percentage is right in both; the amount is `percent × percent × total`.
+	 *   Comparing by it would fail an update that worked.
+	 * - **The order is not kept either.** Two lines sent A then B came back B
+	 *   then A, so the list is compared as a set.
+	 *
+	 * What the confirmation still catches is what it exists for: an apportionment
+	 * that did not take at all, or took with the wrong cost centres.
 	 */
-	it('compares an apportionment by the share that was actually asked for', async () => {
+	it('compares an apportionment by its cost centres, not by shares the API recomputes', async () => {
 		await executeSchedule.call(
 			context({ creditScheduleId: 'not-a-real-id', updateFields: { description: 'CHANGED' } }),
 			'creditSchedule',
@@ -1208,29 +1220,62 @@ describe('executeSchedule — Update', () => {
 			normalize?.({
 				costCenterValueType: 1,
 				costCenters: [
-					{ costCenterId: 'centre-a', percent: 70, value: 858.28, costCenterDescription: 'Rio' },
+					{ costCenterId: 'centre-a', percent: 60, value: 360, costCenterDescription: 'Rio' },
 				],
 			}),
-		).toEqual({
-			costCenterValueType: 1,
-			costCenters: [{ costCenterId: 'centre-a', share: 70 }],
-		});
+		).toEqual({ costCenterValueType: 1, costCenters: ['centre-a'] });
 	});
 
-	// And by the other number when the apportionment is by value — where the
-	// sign belongs to the collection, exactly as it does on a category line.
-	it('compares an apportionment by value by its amount, whatever sign it came back with', () => {
+	/**
+	 * The case that found it: the node asks for `value` 300 and the API answers
+	 * `value` 90 on the very same line, having stored the percentage correctly.
+	 * Compared by the amount, that is a change reported as refused; compared by
+	 * the cost centre, the two agree — which they should, because they do.
+	 */
+	it('reads an asked-for value and a recomputed one as the same line', () => {
+		const { scheduleComparable } = jest.requireActual('../resources/schedule/normalize');
+
+		const asked = scheduleComparable({
+			costCenterValueType: 0,
+			costCenters: [{ costCenterId: 'centre-a', value: 300 }],
+		});
+		const answered = scheduleComparable({
+			costCenterValueType: 0,
+			costCenters: [{ costCenterId: 'centre-a', percent: 30, value: 90, costCenterDescription: 'Rio' }],
+		});
+
+		expect(asked).toEqual(answered);
+	});
+
+	// Two lines sent A then B came back B then A, measured on 2026-07-26.
+	it('reads the same two cost centres in either order as the same apportionment', () => {
+		const { scheduleComparable } = jest.requireActual('../resources/schedule/normalize');
+
+		const sent = scheduleComparable({
+			costCenterValueType: 1,
+			costCenters: [
+				{ costCenterId: 'centre-a', percent: 60 },
+				{ costCenterId: 'centre-b', percent: 40 },
+			],
+		});
+		const answered = scheduleComparable({
+			costCenterValueType: 1,
+			costCenters: [
+				{ costCenterId: 'centre-b', percent: 40, value: 160 },
+				{ costCenterId: 'centre-a', percent: 60, value: 360 },
+			],
+		});
+
+		expect(sent).toEqual(answered);
+	});
+
+	// And it still catches what it is for: the wrong centres, or none at all.
+	it('still reads a different set of cost centres as a different apportionment', () => {
 		const { scheduleComparable } = jest.requireActual('../resources/schedule/normalize');
 
 		expect(
-			scheduleComparable({
-				costCenterValueType: 0,
-				costCenters: [{ costCenterId: 'centre-a', percent: 100, value: -300 }],
-			}),
-		).toEqual({
-			costCenterValueType: 0,
-			costCenters: [{ costCenterId: 'centre-a', share: 300 }],
-		});
+			scheduleComparable({ costCenters: [{ costCenterId: 'centre-a' }] }),
+		).not.toEqual(scheduleComparable({ costCenters: [{ costCenterId: 'centre-b' }] }));
 	});
 
 	// The whole record as the universal endpoint answers it is a valid write

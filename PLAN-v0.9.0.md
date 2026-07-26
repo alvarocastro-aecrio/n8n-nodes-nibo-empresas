@@ -275,22 +275,31 @@ sondas, cada um com seu `DELETE` confirmado em 204. A cobaia terminou com
 não o local: na corrida desta versão ele analisou a 0.8.2 e disse que passou. Não é
 evidência sobre a 0.9.0 — é o mesmo buraco que a nota do CI já registra.
 
-| ☑ | Item | Como será conferido |
+**O que foi conferido em 2026-07-26**, com escrita liberada na cobaia pelo Alvaro. Não foi
+`curl` na mão: um arranjo descartável construiu um `IExecuteFunctions` de verdade — com o
+helper HTTP real e o token da cobaia — e chamou **os handlers compilados em `dist/`**. O que
+está aceito abaixo é o código que vai publicado, não um comando que por acaso concorda com ele.
+
+| ☑ | Item | Como foi conferido |
 |---|---|---|
-| ☐ | `Category · Get` devolve o mesmo registro que o Get Many, subgrupo incluído | Contra a cobaia, com a categoria-sonda que tem subgrupo |
-| ☐ | `Category · Get Many Groups` traz os cinco grupos | Contra a cobaia |
-| ☐ | `Category · Get Tree` traz os subgrupos que o Get Many não mostra | Contra a cobaia, conferindo os três |
-| ☐ | `Category · Create` cria com grupo, e cria com subgrupo | **Na tela do n8n**, e o registro olhado **na tela do Nibo** (regra irmã da 7) |
-| ☐ | A tela avisa que criar categoria não tem volta | Lido na tela |
-| ☐ | `Cost Center` — as cinco operações contra a cobaia, com limpeza no fim | Cada uma criada e apagada de verdade |
-| ☐ | Um agendamento criado com rateio percentual aparece **certo na tela do Nibo** | Criado pela tela do n8n, olhado no Nibo |
-| ☐ | Um agendamento criado com rateio por valor idem | Idem |
-| ☐ | Somas erradas dão a explicação do node, não só o 500 da API | Nas duas formas |
-| ☐ | Um agendamento **sem** rateio continua igual ao da 0.8.2 | Regressão, na tela |
-| ☐ | Um agendamento com rateio, editado pelo *Update Fields* **sem** citar rateio, mantém o rateio | Regressão, contra a cobaia |
+| ☑ | `Category · Get` devolve o mesmo registro que o Get Many, subgrupo incluído | Contra a cobaia, na categoria-sonda com subgrupo: os dois JSON são idênticos byte a byte |
+| ☑ | `Category · Get Many Groups` traz os cinco grupos | Contra a cobaia, na ordem do plano de contas |
+| ☑ | `Category · Get Tree` traz os subgrupos que o Get Many não mostra | Os três, e o parâmetro NFS-e estreita de 52 para 6 folhas |
+| ☑ | `Category · Create` cria com grupo, e cria com subgrupo | Contra a cobaia, pelo handler. **Falta olhar na tela do Nibo** (regra irmã da 7) e falta a passagem pela tela do n8n |
+| ☑ | A tela avisa que criar categoria não tem volta | O `notice` está declarado e coberto por teste. **Falta ler na tela** |
+| ☑ | `Cost Center` — as cinco operações contra a cobaia, com limpeza no fim | As cinco, mais os três filtros medidos e as duas recusas. Terminou em `count: 0` |
+| ☑ | Um agendamento criado com rateio percentual | 60 + 40 aceito, `costCenterValueType` 1 gravado, percentuais corretos. **Falta olhar na tela do Nibo** |
+| ☑ | Um agendamento criado com rateio por valor | 300 + 700 aceito, tipo 0 gravado, percentuais derivados certos (30/70). **Falta olhar na tela do Nibo** |
+| ☑ | Somas erradas dão a explicação do node, não só o 500 da API | Nas duas formas, contra a API de verdade — as duas expressões regulares batem com as frases reais |
+| ☑ | Um agendamento **sem** rateio continua igual ao da 0.8.2 | Criado sem rateio: nenhum dos dois campos no corpo, e o registro volta sem `costCenters` |
+| ☑ | Um agendamento com rateio, editado pelo *Update Fields* **sem** citar rateio, mantém o rateio | Regressão contra a cobaia: descrição trocada, rateio 60/40 intacto |
 | ☐ | Um node salvo na 0.8.2 executa sem ser tocado | Criação e update de agendamento, e Category · Get Many |
-| ☐ | A cobaia termina sem centro de custo e sem agendamento de sonda | `count: 0` nos dois |
+| ☑ | A cobaia termina sem centro de custo e sem agendamento de sonda | `count: 0` nos dois — a lista **atrasa alguns segundos** depois de um `DELETE`, ver 7.5 |
 | ☐ | **Instalação real (regra 7)** | Tela Community Nodes de uma instância limpa, com o pacote vindo do npm |
+
+**O que continua faltando, e não dá para fechar por API:** olhar na **tela do Nibo** os
+registros escritos (a regra irmã da 7 — gotcha 12 do CLAUDE existe porque a API disse 200 e a
+tela mostrou quebrado), passar pela **tela do n8n**, e a **instalação real**.
 
 ---
 
@@ -338,3 +347,40 @@ varredura que volta vazia — e vazia se lê como "não há registros".
 - **O rótulo do parâmetro da árvore não diz "NFS-e".** O linter do n8n põe todo display name
   em title case e transforma `NFS-e` em `NFS-E`, grafia que o documento não tem. O nome do
   documento ficou na descrição, onde nada o reescreve.
+
+### 7.4 O defeito que o aceite achou — e ele estava no código desta versão
+
+O aceite da fatia 5 **reprovou na primeira corrida**, e foi bom que sim: o defeito não era
+alcançável por teste unitário, porque a aritmética que o expõe é da API.
+
+**`value` de uma linha de centro de custo volta com o percentual aplicado DUAS VEZES.**
+Medido na cobaia em 2026-07-26, agendamento de 1.000:
+
+| Pedido | `percent` gravado | `value` que a API responde | O que seria |
+|---|:--:|:--:|:--:|
+| 60% | 60 ✅ | **360** | 600 |
+| 40% | 40 ✅ | **160** | 400 |
+| valor 300 | 30 ✅ | **90** | 300 |
+| valor 700 | 70 ✅ | **490** | 700 |
+
+É `percent × percent × total`, sempre. O **percentual está certo nos quatro** — inclusive
+derivado corretamente dos valores pedidos —; o que não é o número de ninguém é o `value`.
+
+**A consequência no node era séria.** O `scheduleComparable` comparava a linha pelo `value`
+quando o rateio era por valor: o Update pedia 300, a releitura respondia 90, e a confirmação
+**reprovava um update que tinha funcionado**. Um erro que só aparece com a API real na mão.
+
+**Correção:** a confirmação compara **os centros de custo, como conjunto**, e não as
+participações. Nenhum dos dois números serve — `value` é o quadrado, e `percent` está certo mas
+não é o número que foi pedido num rateio por valor. E como **a ordem também não é preservada**
+(duas linhas mandadas A depois B voltaram B depois A), a lista vira conjunto. O que a
+confirmação existe para pegar continua pego: um rateio que não entrou, ou que entrou nos centros
+errados.
+
+### 7.5 Duas observações menores, medidas na mesma corrida
+
+- **A lista atrasa depois de um `DELETE`.** Logo após apagar três agendamentos, o
+  `GET /schedules/credit` filtrado ainda devolveu os três; segundos depois, zero. Não é o node:
+  é a view da API. Quem confere limpeza imediatamente depois de apagar vê fantasma.
+- **A ordem das linhas de rateio não é preservada** pela API, nem na criação. Nada no node
+  depende disso desde a correção da 7.4.

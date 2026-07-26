@@ -74,6 +74,8 @@ There is one **Share** box per line rather than one per kind, and that is the po
 
 Unlike splitting across **categories**, several cost center lines need nothing turned on in Nibo.
 
+> ⚠️ **Do not read the `value` of a cost center line — it comes back as the percentage applied twice.** Measured against a real organization on 2026-07-26: on a schedule of 1000, a 60% line answers `value` **360** instead of 600, and a line asked for as `value` 300 answers `percent` 30 with `value` **90**. It is `percent × percent × total`, every time. The **`percent` is right in every case**, including when it is worked out from the amounts you typed, so that is the field to read. The node does not repair this — the record a workflow receives is the one the API answered, as everywhere else — and its own update confirmation compares the cost centers rather than the shares because of it.
+
 Both fields are on the creation form and inside *Update Fields*. **With no line at all, neither reaches the API** — so a schedule created or updated without an apportionment is written exactly as it was before this existed, and an existing apportionment survives an update that does not mention it.
 
 > On an update, adding **Cost Centers** without **Apportion By** fails rather than picking one for you. The same number means 70% under one and R$ 70 under the other, and guessing would quietly turn the amounts of a value apportionment into percentages.
