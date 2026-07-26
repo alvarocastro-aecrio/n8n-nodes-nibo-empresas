@@ -121,6 +121,11 @@ export async function executeCategory(
 					json: await oneCategory.call(this, i, recordId.call(this, 'categoryId', i), interval),
 					pairedItem: { item: i },
 				});
+			} else if (operation === 'create') {
+				returnData.push({
+					json: await createCategory.call(this, i, interval),
+					pairedItem: { item: i },
+				});
 			} else if (operation === 'tree') {
 				// The whole hierarchy in one answer, and a **bare array** — no
 				// `{items, count}`, like `/employees` and `/partners`. It takes no
@@ -171,6 +176,97 @@ export async function executeCategory(
 	}
 
 	return returnData;
+}
+
+/**
+ * Creates a category and hands back the record, not the ID.
+ *
+ * `POST /categories` is a 404 and always was. `POST /schedules/categories`
+ * answers **200** and creates it — the route this project never asked, and the
+ * whole reason 0.9.0 is a minor version. Measured on the test company on
+ * 2026-07-26, along with the two absences that make this operation what it is:
+ * there is no `PUT` and no `DELETE` for a category, in any path, so this write
+ * has no way back and the screen says so before the button.
+ *
+ * The API answers a bare GUID with no envelope around it, so the record is read
+ * back — through the same door Get uses, so that Create and Get and Get Many
+ * all answer the same shape. Employee and Partner have done exactly this since
+ * 0.4.4.
+ */
+async function createCategory(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	interval: number,
+): Promise<IDataObject> {
+	const group = String(this.getNodeParameter('categoryGroupId', itemIndex, '') ?? '').trim();
+	if (group === '') {
+		throw new NodeOperationError(this.getNode(), 'This category names no group', {
+			itemIndex,
+			description:
+				'Pick a group in the Category Group field, or put the ID of one there — usually an expression reading it from the incoming item. Read the IDs of an organization with the operation Get Many Groups.',
+		});
+	}
+
+	const name = String(this.getNodeParameter('name', itemIndex, '') ?? '').trim();
+	if (name === '') {
+		throw new NodeOperationError(this.getNode(), 'This category has no name', {
+			itemIndex,
+			description: 'The Name field is what the category will be called in Nibo, and it is required.',
+		});
+	}
+
+	const body: IDataObject = {
+		categoryGroupId: group,
+		name,
+		type: this.getNodeParameter('type', itemIndex) as string,
+	};
+
+	// Sent only when one was chosen. A `subGroupId` the organization does not
+	// have answers 500 — *"Subgroupo não encontrado."* — and an empty one would
+	// be exactly that.
+	const additional = this.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
+	const subGroup = String(additional.subGroupId ?? '').trim();
+	if (subGroup !== '') {
+		body.subGroupId = subGroup;
+	}
+
+	const answer = await niboApiRequest.call(
+		this,
+		itemIndex,
+		'POST',
+		SCHEDULE_CATEGORIES,
+		{},
+		body,
+	);
+
+	const id = createdId(answer);
+	if (id === '') {
+		throw new NodeOperationError(this.getNode(), 'Nibo did not say what it created', {
+			itemIndex,
+			description:
+				'The category may or may not have been created: the API answered the creation with a body this node could not read as an ID. Look at the chart of accounts in Nibo before sending it again — there is no way to delete a category through this API, so a second attempt can only ever add a second one.',
+		});
+	}
+
+	return await oneCategory.call(this, itemIndex, id, interval);
+}
+
+/**
+ * The ID out of a creation answer.
+ *
+ * A bare GUID here, measured on 2026-07-26 — no envelope, not even quotes of
+ * its own once the JSON is parsed. The `{data: …}` shape is the rearguard: it
+ * is how some other collections of this API answer, and no operation should
+ * fail over which of the two arrived.
+ */
+function createdId(answer: unknown): string {
+	if (typeof answer === 'string') {
+		return answer.trim();
+	}
+
+	const data = (answer as IDataObject)?.data;
+
+	return typeof data === 'string' ? data.trim() : '';
 }
 
 /**

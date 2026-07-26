@@ -60,6 +60,13 @@ export const categoryOperations: INodeProperties[] = [
 		// the n8n linter requires of an options list.
 		options: [
 			{
+				name: 'Create',
+				value: 'create',
+				action: 'Create a category',
+				description:
+					'Add a line to the chart of accounts, under a group and optionally a subgroup. This cannot be undone: the API offers no way to edit or delete a category.',
+			},
+			{
 				name: 'Get',
 				value: 'get',
 				action: 'Get a category',
@@ -127,6 +134,116 @@ export const categoryFilterFieldTypes = filterFieldTypes(FILTER_FIELDS);
 const SCANS = ['list', 'groups'];
 
 export const categoryFields: INodeProperties[] = [
+	/**
+	 * The one screen of this node that warns before the button instead of
+	 * explaining after it.
+	 *
+	 * Every other write here can be taken back: a schedule is updated or deleted,
+	 * a contact is edited. A category cannot. `PUT` and
+	 * `DELETE /schedules/categories/{id}` are both 404, and so are their
+	 * `/categories` twins — measured on 2026-07-26. Whoever creates one with the
+	 * wrong name fixes it on Nibo's own screen or lives with it, and that has to
+	 * be known before the click rather than after.
+	 */
+	{
+		displayName:
+			'Creating a category cannot be undone — this API has no way to edit or delete one. A category created by mistake can only be corrected on the Nibo screen.',
+		name: 'createNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: [CATEGORY],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Category Group Name or ID',
+		name: 'categoryGroupId',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'loadCategoryGroups',
+			// The way back from the per-item mode, where the list refuses to load:
+			// without this the refusal would outlive the reason for it.
+			loadOptionsDependsOn: ['authMode'],
+		},
+		required: true,
+		default: '',
+		description:
+			'The group of the chart of accounts this category belongs to — the level Nibo shows above the category name. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: {
+			show: {
+				resource: [CATEGORY],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Name',
+		name: 'name',
+		type: 'string',
+		required: true,
+		default: '',
+		description: 'The name of the category, as it will read in Nibo',
+		displayOptions: {
+			show: {
+				resource: [CATEGORY],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Type',
+		name: 'type',
+		type: 'options',
+		// The API's own two words, offered as a list because `in` and `out` are
+		// not what anyone would guess for "revenue" and "expense". Alphabetical by
+		// name, as the linter asks.
+		options: [
+			{ name: 'Expense', value: 'out', description: 'A category a payment is filed under' },
+			{ name: 'Revenue', value: 'in', description: 'A category a receipt is filed under' },
+		],
+		required: true,
+		default: 'out',
+		description:
+			'Which side of the money this category is for. It is what signs a schedule line, so it is also what decides which kind of schedule can be filed under this category at all.',
+		displayOptions: {
+			show: {
+				resource: [CATEGORY],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Additional Fields',
+		name: 'additionalFields',
+		type: 'collection',
+		placeholder: 'Add Field',
+		default: {},
+		options: [
+			{
+				displayName: 'Subgroup Name or ID',
+				name: 'subGroupId',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'loadCategorySubgroups',
+					// The list is the subgroups of one group, so it has to be read
+					// again whenever that group changes.
+					loadOptionsDependsOn: ['categoryGroupId', 'authMode'],
+				},
+				default: '',
+				description:
+					'A subgroup inside the group above, when the group has any. Subgroups exist nowhere in Get Many — only in Get Tree — so this list is read from the tree. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+			},
+		],
+		displayOptions: {
+			show: {
+				resource: [CATEGORY],
+				operation: ['create'],
+			},
+		},
+	},
 	{
 		displayName: 'Category ID',
 		name: 'categoryId',

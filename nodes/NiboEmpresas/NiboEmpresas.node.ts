@@ -25,7 +25,11 @@ import {
 	categoryResources,
 } from './resources/category/description';
 import { executeCategory } from './resources/category/execute';
-import { loadScheduleCategories } from './resources/category/load';
+import {
+	loadCategoryGroups,
+	loadCategorySubgroups,
+	loadScheduleCategories,
+} from './resources/category/load';
 import {
 	scheduleFields,
 	scheduleOperations,
@@ -242,6 +246,8 @@ export class NiboEmpresas implements INodeType {
 	 */
 	methods = {
 		loadOptions: {
+			loadCategoryGroups,
+			loadCategorySubgroups,
 			loadScheduleCategories,
 		},
 		/**

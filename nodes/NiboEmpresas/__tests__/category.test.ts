@@ -326,6 +326,116 @@ describe('executeCategory — Get Tree', () => {
 	});
 });
 
+/**
+ * The operation this project spent three versions believing did not exist.
+ *
+ * `POST /categories` is a 404, which was measured and true. `POST
+ * /schedules/categories` answers **200** and creates the category, which was
+ * never asked. It takes `categoryGroupId`, `name` and `type`, with `subGroupId`
+ * optional, and answers a bare GUID with no envelope around it.
+ */
+describe('executeCategory — Create', () => {
+	const CREATED = { id: GUID, name: 'Consultoria', type: 'out' };
+
+	function creating(parameters: IDataObject = {}) {
+		apiRequest.mockResolvedValue(GUID);
+		listRequest.mockResolvedValue({ records: [CREATED], count: 1 });
+
+		return context({
+			categoryGroupId: 'group-1',
+			name: 'Consultoria',
+			type: 'out',
+			...parameters,
+		});
+	}
+
+	/** The body of the POST the handler sent */
+	function bodySent(): IDataObject {
+		return apiRequest.mock.calls[0][4] as IDataObject;
+	}
+
+	it('writes where the writing family lives, never under /categories', async () => {
+		await executeCategory.call(creating(), 'category', 'create');
+
+		expect(apiRequest.mock.calls[0][1]).toBe('POST');
+		expect(apiRequest.mock.calls[0][2]).toBe('/schedules/categories');
+	});
+
+	it('sends the three fields the API asks for', async () => {
+		await executeCategory.call(creating(), 'category', 'create');
+
+		expect(bodySent()).toEqual({
+			categoryGroupId: 'group-1',
+			name: 'Consultoria',
+			type: 'out',
+		});
+	});
+
+	/**
+	 * Measured on 2026-07-26, and it cost the test company a category nobody can
+	 * ever remove: a `subGroupId` that does not exist answers 500 *"Subgroupo não
+	 * encontrado."*, and a real one is accepted — the category is born inside the
+	 * subgroup, and comes back from `/categories` with `subgroupId` and
+	 * `subgroupName` on it.
+	 */
+	it('sends subGroupId only when a subgroup was chosen', async () => {
+		await executeCategory.call(
+			creating({ additionalFields: { subGroupId: 'sub-1' } }),
+			'category',
+			'create',
+		);
+
+		expect(bodySent().subGroupId).toBe('sub-1');
+	});
+
+	it('leaves subGroupId out of the body when none was chosen', async () => {
+		await executeCategory.call(creating({ additionalFields: {} }), 'category', 'create');
+
+		expect(bodySent()).not.toHaveProperty('subGroupId');
+	});
+
+	/**
+	 * The API answers the creation with the GUID and nothing else — no record, no
+	 * envelope. A workflow gets the whole record anyway, which is what Employee
+	 * and Partner have done since 0.4.4, and it is read through the same door Get
+	 * uses so that the two answer the same shape.
+	 */
+	it('reads the new record back, because the API answers a bare GUID', async () => {
+		const items = await executeCategory.call(creating(), 'category', 'create');
+
+		expect(optionsSentToTransport().filter).toBe(`id eq ${GUID}`);
+		expect(items[0].json).toEqual(CREATED);
+	});
+
+	it('takes the GUID out of a data envelope too, if one ever arrives', async () => {
+		apiRequest.mockResolvedValue({ data: GUID });
+		listRequest.mockResolvedValue({ records: [CREATED], count: 1 });
+
+		const items = await executeCategory.call(creating(), 'category', 'create');
+
+		expect(items[0].json).toEqual(CREATED);
+	});
+
+	it('says so when the API answers a creation with nothing it can read as an ID', async () => {
+		const ctx = creating();
+		apiRequest.mockResolvedValue({ something: 'else' });
+
+		await expect(executeCategory.call(ctx, 'category', 'create')).rejects.toThrow(
+			/did not say what it created/i,
+		);
+	});
+
+	it.each([
+		['categoryGroupId', /group/i],
+		['name', /name/i],
+	])('refuses a creation with no %s, before it is written', async (parameter, said) => {
+		const failure = executeCategory.call(creating({ [parameter]: '' }), 'category', 'create');
+
+		await expect(failure).rejects.toThrow(said);
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+});
+
 describe('executeCategory — the filter it sends', () => {
 	function filterSent(): unknown {
 		return optionsSentToTransport().filter;
@@ -618,6 +728,163 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 	});
 });
 
+/**
+ * The two lists of the creation form.
+ *
+ * Both read straight from the API for the same reason `loadScheduleCategories`
+ * does: in `ILoadOptionsFunctions` there is no item index, so routing through
+ * the transport would read the index as the fallback.
+ */
+describe('the lists of the Category creation form', () => {
+	const GROUPS = [
+		{ id: 'g1', name: 'Receitas operacionais', referenceCode: '1' },
+		{ id: 'g3', name: 'Despesas operacionais e outras receitas', referenceCode: '3' },
+	];
+
+	/**
+	 * The tree as the API answers it, measured on 2026-07-26: a bare array of
+	 * groups, each with `children`, and a subgroup is a child carrying
+	 * `isSubgroup: true` and children of its own.
+	 */
+	const TREE = [
+		{
+			id: 'g1',
+			name: 'Receitas operacionais',
+			referenceCode: 1,
+			children: [{ id: 'c1', name: 'Receita com vendas', isSubgroup: false }],
+		},
+		{
+			id: 'g3',
+			name: 'Despesas operacionais e outras receitas',
+			referenceCode: 3,
+			children: [
+				{ id: 'c2', name: 'Água', isSubgroup: false },
+				{ id: 's1', name: 'Impostos retidos sobre pagamentos', isSubgroup: true, children: [] },
+				{ id: 's2', name: 'Pagamento de impostos retidos', isSubgroup: true, children: [] },
+			],
+		},
+	];
+
+	let request: jest.Mock;
+
+	function loadContext(parameters: IDataObject, answer: unknown) {
+		request = jest.fn().mockResolvedValue(answer);
+
+		return {
+			getCurrentNodeParameter: (name: string) => parameters[name],
+			getNode: () => NODE,
+			getCredentials: jest.fn().mockResolvedValue({ baseUrl: '' }),
+			helpers: { httpRequestWithAuthentication: request },
+		} as never;
+	}
+
+	describe('loadCategoryGroups', () => {
+		it('reads the groups, in the order a chart of accounts is read in', async () => {
+			const { loadCategoryGroups } = await import('../resources/category/load');
+			const list = await loadCategoryGroups.call(
+				loadContext({ authMode: 'credential' }, { items: GROUPS, count: 2 }),
+			);
+
+			expect(request.mock.calls[0][1].url).toContain('/schedules/categories/groups');
+			expect(request.mock.calls[0][1].qs.$orderby).toBe('referenceCode');
+			expect(list.map((option) => option.value)).toEqual(['g1', 'g3']);
+			expect(list[0].name).toBe('Receitas operacionais');
+		});
+
+		it('names the credential when it calls, so the token comes from it', async () => {
+			const { loadCategoryGroups } = await import('../resources/category/load');
+			await loadCategoryGroups.call(
+				loadContext({ authMode: 'credential' }, { items: GROUPS, count: 2 }),
+			);
+
+			expect(request.mock.calls[0][0]).toBe('niboEmpresasApi');
+		});
+
+		/**
+		 * A group ID belongs to one organization, exactly as a category ID does —
+		 * so a group picked on the screen would be right for one company of a
+		 * portfolio and wrong for every other one. The rule 0.7.0 set, applied to
+		 * the fields 0.9.0 adds.
+		 */
+		it('refuses in the per-item token mode, and points at the operation that reads the ID', async () => {
+			const { loadCategoryGroups } = await import('../resources/category/load');
+			const failure = loadCategoryGroups.call(loadContext({ authMode: 'field' }, {}));
+
+			await expect(failure).rejects.toThrow(/per item/i);
+			await expect(failure).rejects.toMatchObject({
+				description: expect.stringMatching(/Get Many Groups/),
+			});
+			expect(request).not.toHaveBeenCalled();
+		});
+
+		it('explains an empty answer instead of showing an empty box', async () => {
+			const { loadCategoryGroups } = await import('../resources/category/load');
+			const failure = loadCategoryGroups.call(
+				loadContext({ authMode: 'credential' }, { items: [], count: 0 }),
+			);
+
+			await expect(failure).rejects.toThrow(/no group/i);
+		});
+	});
+
+	describe('loadCategorySubgroups', () => {
+		it('offers the subgroups of the chosen group, and none of its categories', async () => {
+			const { loadCategorySubgroups } = await import('../resources/category/load');
+			const list = await loadCategorySubgroups.call(
+				loadContext({ authMode: 'credential', categoryGroupId: 'g3' }, TREE),
+			);
+
+			expect(list.map((option) => option.value)).toEqual(['s1', 's2']);
+			expect(list[0].name).toBe('Impostos retidos sobre pagamentos');
+		});
+
+		/**
+		 * The tree is the only place a subgroup exists: measured on 2026-07-26, the
+		 * three subgroups of the test company appear in no `GET /categories` answer
+		 * — only the `subgroupId` of the categories inside them.
+		 */
+		it('reads the tree, because nothing else lists a subgroup', async () => {
+			const { loadCategorySubgroups } = await import('../resources/category/load');
+			await loadCategorySubgroups.call(
+				loadContext({ authMode: 'credential', categoryGroupId: 'g3' }, TREE),
+			);
+
+			expect(request.mock.calls[0][1].url).toContain('/schedules/categories/tree');
+		});
+
+		// A subgroup belongs to one group, so pairing it with another would be a
+		// creation the screen offered and the API refuses.
+		it('asks for the group first, rather than offering subgroups of every group', async () => {
+			const { loadCategorySubgroups } = await import('../resources/category/load');
+			const failure = loadCategorySubgroups.call(
+				loadContext({ authMode: 'credential', categoryGroupId: '' }, TREE),
+			);
+
+			await expect(failure).rejects.toThrow(/group/i);
+			expect(request).not.toHaveBeenCalled();
+		});
+
+		it('says so when the chosen group has no subgroup at all', async () => {
+			const { loadCategorySubgroups } = await import('../resources/category/load');
+			const failure = loadCategorySubgroups.call(
+				loadContext({ authMode: 'credential', categoryGroupId: 'g1' }, TREE),
+			);
+
+			await expect(failure).rejects.toThrow(/no subgroup/i);
+		});
+
+		it('refuses in the per-item token mode too', async () => {
+			const { loadCategorySubgroups } = await import('../resources/category/load');
+			const failure = loadCategorySubgroups.call(
+				loadContext({ authMode: 'field', categoryGroupId: 'g3' }, TREE),
+			);
+
+			await expect(failure).rejects.toThrow(/per item/i);
+			expect(request).not.toHaveBeenCalled();
+		});
+	});
+});
+
 describe('NiboEmpresas — Category on the screen', () => {
 	const description = new NiboEmpresas().description;
 
@@ -701,11 +968,56 @@ describe('NiboEmpresas — Category on the screen', () => {
 	 * Update and Delete are still absent, and that is not caution: they are 404
 	 * in **both** paths, measured on 2026-07-26.
 	 */
-	it('offers the four operations the API was measured to answer, and no more', () => {
+	it('offers the five operations the API was measured to answer, and no more', () => {
 		const operations = forCategory('operation');
 
-		expect(optionValues(operations)).toEqual(['get', 'list', 'groups', 'tree']);
+		expect(optionValues(operations)).toEqual(['create', 'get', 'list', 'groups', 'tree']);
 		expect(operations?.default).toBe('list');
+	});
+
+	/**
+	 * The one screen of this node that has to warn before the button rather than
+	 * explain after it. `PUT` and `DELETE /schedules/categories/{id}` are both
+	 * 404, in either path — so a category created with the wrong name stays, and
+	 * the only place it can be fixed is Nibo's own screen.
+	 */
+	it('says on the screen that creating a category cannot be undone', () => {
+		const notice = description.properties.find(
+			(prop) =>
+				prop.type === 'notice' &&
+				((prop.displayOptions?.show?.operation ?? []) as string[]).includes('create') &&
+				((prop.displayOptions?.show?.resource ?? []) as string[]).includes('category'),
+		);
+
+		expect(notice?.displayName).toMatch(/cannot be undone|no way back/i);
+		expect(notice?.displayName).toMatch(/Nibo/);
+	});
+
+	it('asks for the group, the name and the type when creating', () => {
+		for (const name of ['categoryGroupId', 'name', 'type']) {
+			expect(forCategory(name)?.displayOptions?.show?.operation).toEqual(['create']);
+			expect(forCategory(name)?.required).toBe(true);
+		}
+	});
+
+	it('collects the type as the two words the API takes', () => {
+		expect(optionValues(forCategory('type')).sort()).toEqual(['in', 'out']);
+	});
+
+	/**
+	 * A subgroup is not needed for the operation to happen, so it lives in the
+	 * menu — the rule §4.1 of the project's CLAUDE.md sets for the body of a node.
+	 * It exists at all because it was measured, and that measurement cost the test
+	 * company a second category that can never be removed.
+	 */
+	it('offers the subgroup in the menu, and depends the list on the chosen group', () => {
+		const menu = forCategory('additionalFields');
+		const subgroup = ((menu?.options ?? []) as INodeProperties[]).find(
+			(option) => option.name === 'subGroupId',
+		);
+
+		expect(subgroup?.typeOptions?.loadOptionsMethod).toBe('loadCategorySubgroups');
+		expect(subgroup?.typeOptions?.loadOptionsDependsOn).toContain('categoryGroupId');
 	});
 
 	it('leaves Update and Delete off the menu, being 404 in either path', () => {

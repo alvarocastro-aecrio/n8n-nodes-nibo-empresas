@@ -147,6 +147,157 @@ export async function loadScheduleCategories(
 }
 
 /**
+ * The list behind the Category Group field of the creation form.
+ *
+ * `GET /schedules/categories/groups` — five groups on the test company, the
+ * level `GET /categories` never shows on its own. Ordered by `referenceCode`,
+ * which is what puts Receitas before Custos before Despesas: the sequence a
+ * chart of accounts is read in, and the same key the category list has sorted
+ * by since 0.7.3.
+ */
+export async function loadCategoryGroups(
+	this: ILoadOptionsFunctions,
+): Promise<INodePropertyOptions[]> {
+	refuseWhenTokenIsPerItem.call(
+		this,
+		'The group list cannot be loaded when the token is read per item',
+		'A group ID belongs to one organization, so a group picked here would be right for one of them and wrong for every other one this node walks. Read the ID for each organization with the Category resource, operation Get Many Groups, and put an expression in this field.',
+	);
+
+	const response = await niboLoadRequest.call(this, '/schedules/categories/groups', {
+		$orderby: 'referenceCode',
+		$top: 500,
+	});
+
+	const records = recordsOf(response);
+	if (records.length === 0) {
+		throw new NodeOperationError(this.getNode(), 'Nibo answered with no groups to choose from', {
+			description:
+				'The list is always read with the credential selected above, so either that organization has no chart of accounts at all — which a Nibo organization is not created without — or the credential is not the organization you meant.',
+		});
+	}
+
+	// The order the server answered in is the order shown. The reference code
+	// itself stays off the screen: it appears nowhere in Nibo's own interface,
+	// and 0.7.3 measured what unfamiliar numbers in front of familiar names do
+	// to somebody reading the list.
+	return records.map((record) => ({
+		name: String(record.name ?? '').trim(),
+		value: String(record.id ?? ''),
+	}));
+}
+
+/**
+ * The list behind the Subgroup field of the creation form.
+ *
+ * Read from the tree, because the tree is the only place a subgroup exists:
+ * measured on 2026-07-26, the three subgroups of the test company appear in no
+ * answer of `GET /categories` — only the `subgroupId` and `subgroupName` of the
+ * categories that sit inside them.
+ *
+ * It offers the subgroups of the chosen group and of no other. A subgroup
+ * belongs to one group, so any other pairing is a creation the screen would be
+ * offering and the API refusing.
+ */
+export async function loadCategorySubgroups(
+	this: ILoadOptionsFunctions,
+): Promise<INodePropertyOptions[]> {
+	refuseWhenTokenIsPerItem.call(
+		this,
+		'The subgroup list cannot be loaded when the token is read per item',
+		'A subgroup ID belongs to one organization, so a subgroup picked here would be right for one of them and wrong for every other one this node walks. Read the ID for each organization with the Category resource, operation Get Tree, and put an expression in this field.',
+	);
+
+	const group = String(this.getCurrentNodeParameter('categoryGroupId') ?? '').trim();
+	if (group === '') {
+		throw new NodeOperationError(this.getNode(), 'Choose the category group first', {
+			description:
+				'A subgroup belongs to one group, so the list can only be read once the group above is chosen. Choosing it fills this list in.',
+		});
+	}
+
+	const tree = await niboLoadRequest.call(this, '/schedules/categories/tree', {});
+
+	// A bare array, one element per group, each with `children` — and a subgroup
+	// is a child carrying `isSubgroup: true` and children of its own.
+	const chosen = (Array.isArray(tree) ? (tree as IDataObject[]) : []).find(
+		(node) => String(node.id ?? '') === group,
+	);
+	const subgroups = ((chosen?.children ?? []) as IDataObject[]).filter(
+		(child) => child?.isSubgroup === true,
+	);
+
+	if (subgroups.length === 0) {
+		throw new NodeOperationError(this.getNode(), 'That group has no subgroup', {
+			description:
+				'Most groups of a Nibo chart of accounts have none — on a new organization only the tax ones do. Leave this field out and the category is created directly under the group.',
+		});
+	}
+
+	return subgroups.map((subgroup) => ({
+		name: String(subgroup.name ?? '').trim(),
+		value: String(subgroup.id ?? ''),
+	}));
+}
+
+/**
+ * The mode where no list of this resource can work, and the sentence that has
+ * to say why.
+ *
+ * The shallow reason is that a list is loaded with the credential and there is
+ * none in this mode. The one that matters is that every ID here — category,
+ * group, subgroup — belongs to **one organization**, so a value picked on the
+ * screen would be right for one company of a portfolio and wrong for all the
+ * others. Each caller names the operation that reads its own ID.
+ */
+function refuseWhenTokenIsPerItem(
+	this: ILoadOptionsFunctions,
+	message: string,
+	description: string,
+): void {
+	// The editor hands over the parameters as they stand right now, not as they
+	// were saved (DynamicNodeParametersService builds the node with
+	// `parameters: currentNodeParameters`).
+	if (this.getCurrentNodeParameter('authMode') === 'field') {
+		throw new NodeOperationError(this.getNode(), message, { description });
+	}
+}
+
+/** One GET made the way a list has to make it — see the note on the loader above */
+async function niboLoadRequest(
+	this: ILoadOptionsFunctions,
+	endpoint: string,
+	qs: IDataObject,
+): Promise<unknown> {
+	const credentials = await this.getCredentials(CREDENTIAL_NAME);
+	const baseUrl = ((credentials.baseUrl as string) || DEFAULT_BASE_URL).replace(/\/+$/, '');
+
+	return await this.helpers.httpRequestWithAuthentication.call(this, CREDENTIAL_NAME, {
+		method: 'GET',
+		url: `${baseUrl}${endpoint}`,
+		qs,
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json; charset=utf-8',
+		},
+		json: true,
+	});
+}
+
+/**
+ * The records of an answer, whatever shape it arrived in.
+ *
+ * Detected by shape and never by the name of the collection — the rule the
+ * transport has followed since `/partners` turned out to answer a bare array
+ * too, and the tree turned out to answer one as well.
+ */
+function recordsOf(response: unknown): IDataObject[] {
+	return (
+		Array.isArray(response) ? response : ((response as IDataObject)?.items ?? [])
+	) as IDataObject[];
+}
+
+/**
  * One line of the chart of accounts as the editor shows it: the name, and the
  * group under it — the two things the Nibo screen itself shows.
  *
