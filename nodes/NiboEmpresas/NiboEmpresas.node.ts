@@ -36,6 +36,7 @@ import {
 	costCenterResources,
 } from './resources/costCenter/description';
 import { executeCostCenter } from './resources/costCenter/execute';
+import { loadCostCenters } from './resources/costCenter/load';
 import {
 	scheduleFields,
 	scheduleOperations,
@@ -260,6 +261,7 @@ export class NiboEmpresas implements INodeType {
 		loadOptions: {
 			loadCategoryGroups,
 			loadCategorySubgroups,
+			loadCostCenters,
 			loadScheduleCategories,
 		},
 		/**

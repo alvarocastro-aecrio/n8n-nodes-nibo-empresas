@@ -208,6 +208,101 @@ const CATEGORIES: INodeProperties = {
 };
 
 /**
+ * How the shares of the apportionment are read — the field behind
+ * `costCenterValueType`, which is `0` and `1` in the payload and therefore not
+ * something anybody should be typing.
+ *
+ * Measured on the test company on 2026-07-26, both ways round, because nothing
+ * about the two numbers says which is which: **1 is percentage, 0 is value**.
+ * Sending the wrong pair — type 0 with `percent` on the lines — answers HTTP 500
+ * complaining that the amounts do not add up to the schedule, and never that the
+ * pair is the wrong way round.
+ *
+ * Above the lines rather than below them, because it is what the number in each
+ * line means. Declared once and used twice, on the create screen and inside
+ * Update Fields, so the two cannot drift.
+ */
+const APPORTION_BY: INodeProperties = {
+	displayName: 'Apportion By',
+	name: 'apportionBy',
+	type: 'options',
+	// Alphabetical by name, as the linter asks.
+	options: [
+		{
+			name: 'Percentage',
+			value: 'percent',
+			description: 'Each line carries a share of the whole, and the shares have to add up to 100',
+		},
+		{
+			name: 'Value',
+			value: 'value',
+			description:
+				'Each line carries an amount, and the amounts have to add up to the amount of the schedule',
+		},
+	],
+	default: 'percent',
+	description:
+		'How the share of each cost center line below is read. It is sent only when there is at least one line, so a schedule with no apportionment is written exactly as it was before this field existed.',
+};
+
+/**
+ * The apportionment lines — which parts of the company this amount belongs to.
+ *
+ * A category says what an amount is; a cost centre says whose it is. This API
+ * takes both on the same schedule, and until 0.9.0 the node offered no way to
+ * say the second.
+ *
+ * Unlike the split across **categories**, several lines here need nothing turned
+ * on in Nibo: measured on 2026-07-26 on the test company, which has the category
+ * split off and took 60% + 40% across two cost centres in the same run.
+ */
+const COST_CENTERS: INodeProperties = {
+	displayName: 'Cost Centers',
+	name: 'costCenters',
+	type: 'fixedCollection',
+	typeOptions: {
+		multipleValues: true,
+	},
+	placeholder: 'Add Cost Center',
+	default: {},
+	description:
+		'The parts of the company this amount is attributed to. Leave it empty and the schedule carries no apportionment, which is what every schedule written before this field existed does.',
+	options: [
+		{
+			displayName: 'Cost Center',
+			name: 'costCenter',
+			values: [
+				{
+					displayName: 'Cost Center Name or ID',
+					name: 'costCenterId',
+					type: 'options',
+					typeOptions: {
+						loadOptionsMethod: 'loadCostCenters',
+						// The way back from the per-item mode, where the list refuses to
+						// load: without it the refusal would outlive the reason for it.
+						loadOptionsDependsOn: ['authMode'],
+					},
+					default: '',
+					description:
+						'The cost center this line is for. The list is read with the credential selected above, and a cost center ID belongs to one organization — so switching the credential clears this field. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+				},
+				{
+					// One box, not two, and that is what makes "never both" true rather
+					// than merely intended: which key this becomes is decided once, in
+					// Apportion By, and a line can only ever carry the one.
+					displayName: 'Share',
+					name: 'share',
+					type: 'number',
+					default: 0,
+					description:
+						'How much of the schedule this line takes: a percentage of it, or an amount of it, according to Apportion By above. Percentages have to add up to 100 and amounts to the amount of the schedule, and the API refuses the write when they do not.',
+				},
+			],
+		},
+	],
+};
+
+/**
  * The contact the schedule belongs to, on both forms that name one.
  *
  * A search since 0.8.0, and still called `stakeholderId`. The name is the
@@ -471,6 +566,20 @@ export const scheduleFields: INodeProperties[] = [
 			},
 		},
 	},
+	// After the categories, because the split of an amount comes after the amount
+	// — and Apportion By above the lines it governs, because it is what the
+	// number in each of them means.
+	...[APPORTION_BY, COST_CENTERS].map(
+		(field): INodeProperties => ({
+			...field,
+			displayOptions: {
+				show: {
+					resource: EVERY_TYPE,
+					operation: ['create'],
+				},
+			},
+		}),
+	),
 	{
 		displayName: 'Additional Fields',
 		name: 'additionalFields',

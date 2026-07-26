@@ -819,6 +819,200 @@ describe('executeSchedule — Create', () => {
 	});
 });
 
+/**
+ * The apportionment by cost centre — what a schedule can carry and this node
+ * offered no way to say.
+ *
+ * Measured on the test company on 2026-07-26. `costCenterValueType` is the
+ * switch and it is not guessable: **1 is percentage, 0 is value**. Sending the
+ * wrong pair — type 0 with `percent` — answers 500 complaining about the sum,
+ * never about the pair, which is why the node explains that refusal.
+ *
+ * And unlike the split across **categories**, this one needs nothing turned on
+ * in Nibo: the test company has the category split off and took two cost-centre
+ * lines in the same run.
+ */
+describe('executeSchedule — the apportionment on a creation', () => {
+	function payloadSent(): IDataObject {
+		return create.mock.calls[0][2];
+	}
+
+	function creating(apportionment: IDataObject = {}) {
+		return context({ ...CREATE_FORM, ...apportionment });
+	}
+
+	/**
+	 * The promise every schedule saved before 0.9.0 depends on: a form with no
+	 * apportionment sends the same body it sent in 0.8.2, down to the absence of
+	 * both keys.
+	 */
+	it('sends neither key when there is no line at all', async () => {
+		await executeSchedule.call(creating(), 'creditSchedule', 'create');
+
+		expect(payloadSent()).not.toHaveProperty('costCenters');
+		expect(payloadSent()).not.toHaveProperty('costCenterValueType');
+	});
+
+	it('sends neither key when the collection was opened and left empty', async () => {
+		await executeSchedule.call(
+			creating({ costCenters: { costCenter: [] }, apportionBy: 'percent' }),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent()).not.toHaveProperty('costCenters');
+		expect(payloadSent()).not.toHaveProperty('costCenterValueType');
+	});
+
+	// 1 is percentage — measured, because nothing about 0 and 1 says which.
+	it('writes a percentage share under percent, with the type that means percentage', async () => {
+		await executeSchedule.call(
+			creating({
+				apportionBy: 'percent',
+				costCenters: { costCenter: [{ costCenterId: 'centre-a', share: 60 }] },
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent().costCenterValueType).toBe(1);
+		expect(payloadSent().costCenters).toEqual([{ costCenterId: 'centre-a', percent: 60 }]);
+	});
+
+	// And 0 is value.
+	it('writes an amount share under value, with the type that means value', async () => {
+		await executeSchedule.call(
+			creating({
+				apportionBy: 'value',
+				costCenters: { costCenter: [{ costCenterId: 'centre-a', share: 300 }] },
+			}),
+			'debitSchedule',
+			'create',
+		);
+
+		expect(payloadSent().costCenterValueType).toBe(0);
+		expect(payloadSent().costCenters).toEqual([{ costCenterId: 'centre-a', value: 300 }]);
+	});
+
+	/**
+	 * Never both, and it is the form that makes that true: one box for the share,
+	 * and which key it becomes is decided once, above it. The wrong pair is a 500
+	 * that talks about the sum.
+	 */
+	it.each([
+		['percent', 'value'],
+		['value', 'percent'],
+	])('sends %s and never %s in the same line', async (chosen, absent) => {
+		await executeSchedule.call(
+			creating({
+				apportionBy: chosen,
+				costCenters: { costCenter: [{ costCenterId: 'centre-a', share: 40 }] },
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect((payloadSent().costCenters as IDataObject[])[0]).not.toHaveProperty(absent);
+	});
+
+	// Two lines of 60 and 40 were measured and accepted; 60 and 30 were refused.
+	it('sends every line it was given, in the order they were added', async () => {
+		await executeSchedule.call(
+			creating({
+				apportionBy: 'percent',
+				costCenters: {
+					costCenter: [
+						{ costCenterId: 'centre-a', share: 60 },
+						{ costCenterId: 'centre-b', share: 40 },
+					],
+				},
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent().costCenters).toEqual([
+			{ costCenterId: 'centre-a', percent: 60 },
+			{ costCenterId: 'centre-b', percent: 40 },
+		]);
+	});
+
+	it('refuses a line that names no cost center, while it is still cheap to refuse', async () => {
+		const failure = executeSchedule.call(
+			creating({
+				apportionBy: 'percent',
+				costCenters: { costCenter: [{ costCenterId: '', share: 60 }] },
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		await expect(failure).rejects.toThrow(/no cost center/i);
+		expect(create).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * The two refusals the API answers when the shares do not add up.
+ *
+ * Both say what happened and neither says that the pair type↔field may be the
+ * wrong way round — which is the mistake that produces the first of them. The
+ * node keeps the API's own words and adds that underneath, exactly as it has
+ * done for the category of the wrong kind since 0.7.0.
+ */
+describe('executeSchedule — the errors that are about the apportionment', () => {
+	function apiError(description: string) {
+		return new NodeApiError(
+			NODE,
+			{ error: { error: 'validation_error', error_description: description } },
+			{ message: `Nibo rejected the request: ${description}`, httpCode: '500' },
+		);
+	}
+
+	const FORM = {
+		...CREATE_FORM,
+		apportionBy: 'percent',
+		costCenters: { costCenter: [{ costCenterId: 'centre-a', share: 60 }] },
+	};
+
+	it.each([
+		['A soma do percentual total dos Centros de Custo deve ser de 100%'],
+		['A soma dos valores totais dos Centros de Custo deve ser igual ao valor do agendamento.'],
+	])('explains "%s"', async (said) => {
+		create.mockRejectedValue(apiError(said));
+
+		const failure = executeSchedule.call(context(FORM), 'creditSchedule', 'create');
+
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/Apportion By/),
+		});
+	});
+
+	it('keeps what the API said, and adds to it', async () => {
+		const said = 'A soma do percentual total dos Centros de Custo deve ser de 100%';
+		create.mockRejectedValue(apiError(said));
+
+		const failure = executeSchedule.call(context(FORM), 'creditSchedule', 'create');
+
+		await expect(failure).rejects.toMatchObject({
+			message: expect.stringContaining('100%'),
+		});
+	});
+
+	// The same rule the category explanation follows: a node that answered "it is
+	// probably the apportionment" to every failure would be worse than one that
+	// said nothing.
+	it('says nothing extra about a refusal that is not about the sums', async () => {
+		create.mockRejectedValue(apiError('Stakeholder is not compatible'));
+
+		const failure = executeSchedule.call(context(FORM), 'creditSchedule', 'create');
+
+		await expect(failure).rejects.not.toMatchObject({
+			description: expect.stringMatching(/Apportion By/),
+		});
+	});
+});
+
 describe('executeSchedule — Update', () => {
 	/** (itemIndex, endpoint, id, changes, options) — the transport's own signature */
 	function updateCall() {

@@ -358,6 +358,78 @@ describe('executeCostCenter — Delete', () => {
 	});
 });
 
+/**
+ * The list behind the Cost Center field of a schedule's apportionment.
+ *
+ * Like every other list of this node it reads the API on its own: in
+ * `ILoadOptionsFunctions` there is no item index, so routing through the
+ * transport would read the index as the fallback.
+ */
+describe('loadCostCenters — the list on the apportionment field', () => {
+	const CENTRES = [
+		{ costCenterId: 'a', description: 'Filial Niterói', externalCode: 'NIT' },
+		{ costCenterId: 'b', description: 'Filial Rio' },
+	];
+
+	let request: jest.Mock;
+
+	function loadContext(parameters: IDataObject, items: IDataObject[] = CENTRES) {
+		request = jest.fn().mockResolvedValue({ items, count: items.length });
+
+		return {
+			getCurrentNodeParameter: (name: string) => parameters[name],
+			getNode: () => NODE,
+			getCredentials: jest.fn().mockResolvedValue({ baseUrl: '' }),
+			helpers: { httpRequestWithAuthentication: request },
+		} as never;
+	}
+
+	it('reads the collection, by the only thing a person reads here', async () => {
+		const { loadCostCenters } = await import('../resources/costCenter/load');
+		await loadCostCenters.call(loadContext({ authMode: 'credential' }));
+
+		expect(request.mock.calls[0][0]).toBe('niboEmpresasApi');
+		expect(request.mock.calls[0][1].url).toContain('/costcenters');
+		expect(request.mock.calls[0][1].qs.$orderby).toBe('description');
+	});
+
+	// The external code is the organization's own, and it is the one thing that
+	// tells two cost centres of the same name apart.
+	it('shows the description, with the external code under it when there is one', async () => {
+		const { loadCostCenters } = await import('../resources/costCenter/load');
+		const list = await loadCostCenters.call(loadContext({ authMode: 'credential' }));
+
+		expect(list[0]).toEqual({ name: 'Filial Niterói', value: 'a', description: 'NIT' });
+		expect(list[1]).toEqual({ name: 'Filial Rio', value: 'b', description: undefined });
+	});
+
+	/**
+	 * The reason an empty answer is ordinary here and alarming on the categories:
+	 * an organization starts with no cost centre at all. It is a thing somebody
+	 * creates, not a thing Nibo fills in.
+	 */
+	it('explains an empty answer instead of showing an empty box', async () => {
+		const { loadCostCenters } = await import('../resources/costCenter/load');
+		const failure = loadCostCenters.call(loadContext({ authMode: 'credential' }, []));
+
+		await expect(failure).rejects.toThrow(/no cost center/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/starts with none/i),
+		});
+	});
+
+	it('refuses in the per-item token mode, and points at the resource instead', async () => {
+		const { loadCostCenters } = await import('../resources/costCenter/load');
+		const failure = loadCostCenters.call(loadContext({ authMode: 'field' }));
+
+		await expect(failure).rejects.toThrow(/per item/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/Cost Center resource/),
+		});
+		expect(request).not.toHaveBeenCalled();
+	});
+});
+
 describe('NiboEmpresas — Cost Center on the screen', () => {
 	const description = new NiboEmpresas().description;
 

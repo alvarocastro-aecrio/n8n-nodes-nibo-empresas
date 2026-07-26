@@ -150,6 +150,13 @@ export async function executeSchedule(
 						// the spread underneath is what lets that one win.
 						description: this.getNodeParameter('description', i, '') as string,
 						isFlagged: this.getNodeParameter('isFlagged', i, false) as boolean,
+						// The apportionment, read from the body for the same reason: it
+						// is a field of the creation form rather than an entry of the
+						// menu below. Both are read even when untouched — with no line
+						// at all neither reaches the payload, which is what keeps a
+						// schedule written by 0.8.2 byte for byte the same.
+						apportionBy: this.getNodeParameter('apportionBy', i, 'percent') as string,
+						costCenters: this.getNodeParameter('costCenters', i, {}) as IDataObject,
 						...(this.getNodeParameter('additionalFields', i, {}) as IDataObject),
 					}),
 					{ readEndpoint: READ_BY_ID },
@@ -272,7 +279,95 @@ function writePayload(
 		payload.categories = lines;
 	}
 
+	const shares = costCenterLines.call(this, itemIndex, fields.costCenters, fields.apportionBy);
+	if (shares !== undefined) {
+		payload.costCenters = shares.lines;
+		payload.costCenterValueType = shares.valueType;
+	}
+
 	return payload;
+}
+
+/**
+ * What `costCenterValueType` means, which is not readable from the two numbers.
+ *
+ * Measured on the test company on 2026-07-26, one probe each way: **1 with
+ * `percent` on the lines** and **0 with `value`** both answer 200, and the
+ * crossed pair answers 500. The screen says "Percentage" and "Value"; these two
+ * numbers never reach it.
+ */
+const VALUE_TYPE_OF: Record<string, number> = {
+	percent: 1,
+	value: 0,
+};
+
+/** One apportionment line, and which key its share was written under */
+interface IApportionment {
+	lines: IDataObject[];
+	valueType: number;
+}
+
+/**
+ * The apportionment across cost centres, or `undefined` when there is none to
+ * send.
+ *
+ * Three cases collapse into that `undefined`, and they are the same case: the
+ * collection was never opened, it was opened and left empty, or this is an
+ * update that did not mention it. In all three the schedule keeps whatever it
+ * has — which for every schedule written before 0.9.0 is nothing at all, and is
+ * why this version changes no existing workflow.
+ *
+ * The two keys travel together or not at all. A line carries **either**
+ * `percent` **or** `value`, never both: the form collects one number and
+ * Apportion By decides once, above the lines, which key it becomes. That is
+ * what makes the crossed pair — the one refusal of this family that talks about
+ * the wrong thing — unreachable from the screen.
+ */
+function costCenterLines(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	collected: unknown,
+	apportionBy: unknown,
+): IApportionment | undefined {
+	const rows = (collected as IDataObject)?.costCenter;
+	if (!Array.isArray(rows) || rows.length === 0) {
+		return undefined;
+	}
+
+	// On a creation this is always on the screen, so it is always here. On an
+	// update it is an entry of a menu, and lines added without it would be
+	// written under whichever key this node happened to default to — which on a
+	// schedule apportioned by value would quietly turn amounts into percentages.
+	// So it is asked for rather than assumed.
+	const chosen = String(apportionBy ?? '').trim();
+	const valueType = VALUE_TYPE_OF[chosen];
+	if (valueType === undefined) {
+		throw new NodeOperationError(this.getNode(), 'This apportionment does not say how to read it', {
+			itemIndex,
+			description:
+				'Add Apportion By alongside Cost Centers and say whether the shares are percentages or amounts. The two travel together: the same number means 60% under one and 60 reais under the other, and the API reports the mismatch as a problem with the sum rather than with the pair.',
+		});
+	}
+
+	const key = chosen === 'percent' ? 'percent' : 'value';
+
+	return {
+		valueType,
+		lines: rows.map((row) => {
+			const { costCenterId, share } = (row ?? {}) as IDataObject;
+			const id = String(costCenterId ?? '').trim();
+
+			if (id === '') {
+				throw new NodeOperationError(this.getNode(), 'A line names no cost center', {
+					itemIndex,
+					description:
+						'Every line under Cost Centers needs the ID of a cost center, as Nibo returns it in the costCenterId field. Pick one from the list, or read the right ID for this organization with the Cost Center resource.',
+				});
+			}
+
+			return { costCenterId: id, [key]: share };
+		}),
+	};
 }
 
 /**
@@ -407,6 +502,22 @@ const ONE_CATEGORY_ONLY = /apenas uma categoria/i;
  */
 const NIBO_OWN_CATEGORY = /categoria de juros, multa ou desconto/i;
 
+/**
+ * The two refusals of the apportionment, and what neither of them says.
+ *
+ * Measured on the test company on 2026-07-26. Percentages that do not add up to
+ * 100 answer *"A soma do percentual total dos Centros de Custo deve ser de
+ * 100%"*, and amounts that do not add up to the schedule answer *"A soma dos
+ * valores totais dos Centros de Custo deve ser igual ao valor do agendamento."*
+ *
+ * Both are accurate, and both leave out the mistake that most often produces
+ * them: the pair is the wrong way round. Sending `costCenterValueType` 0 — value
+ * — with `percent` on the lines answers the **second** of these, complaining
+ * about a sum of amounts to somebody who typed percentages. The node keeps the
+ * API's own words and adds that underneath.
+ */
+const APPORTIONMENT_SUM = /soma d[oe]s? (percentual|valores).*centros de custo/i;
+
 function aboutTheCategory(error: NodeApiError, operation: string): NodeApiError {
 	if (operation !== 'create' && operation !== 'update') {
 		return error;
@@ -426,6 +537,11 @@ function aboutTheCategory(error: NodeApiError, operation: string): NodeApiError 
 
 	if (ONE_CATEGORY_ONLY.test(said)) {
 		error.description = `${error.description ?? ''}\n\nSplitting an amount across categories has to be enabled for the organization in Nibo, and it is not by default. Nothing in the API says whether it is, so the field offers as many lines as you like and this is where the answer arrives. Turn the split on in Nibo, leave a single line under Categories, or make one schedule per category.`.trim();
+		return error;
+	}
+
+	if (APPORTIONMENT_SUM.test(said)) {
+		error.description = `${error.description ?? ''}\n\nThe shares of the cost center lines have to add up: to 100 when Apportion By is Percentage, and to the amount of the schedule when it is Value. Check the shares — and check Apportion By itself, because the API answers this same sentence when the two disagree, complaining about a sum of amounts to somebody who typed percentages.`.trim();
 		return error;
 	}
 

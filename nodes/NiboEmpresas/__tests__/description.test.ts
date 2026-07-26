@@ -1029,6 +1029,57 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 		);
 		expect(forSchedules('updateFields')?.required).toBeUndefined();
 	});
+
+	/**
+	 * The apportionment by cost centre — a schedule of this API can carry one and
+	 * the node offered no way to say so until 0.9.0.
+	 *
+	 * On the creation body rather than in a menu, because it is data of the
+	 * record and not an operational adjustment (§4.1 of the project's CLAUDE.md,
+	 * item 2). Neither key reaches the payload when there is no line, so a
+	 * creation without an apportionment is the one 0.8.2 sent.
+	 */
+	it('offers the apportionment on the creation screen, both parts of it', () => {
+		for (const name of ['apportionBy', 'costCenters']) {
+			expect(forSchedules(name)?.displayOptions?.show?.operation).toEqual(['create']);
+			expect(forSchedules(name)?.displayOptions?.show?.resource).toEqual(SCHEDULES);
+		}
+	});
+
+	// Above the lines it governs, because it is what the number in each of them
+	// means. The editor draws these in the order they are declared.
+	it('draws Apportion By before the lines it governs', () => {
+		const order = description.properties.map((prop) => prop.name);
+
+		expect(order.indexOf('apportionBy')).toBeLessThan(order.indexOf('costCenters'));
+	});
+
+	// 0 and 1 in the payload, and neither of them ever on the screen.
+	it('names the two ways of reading a share, instead of numbering them', () => {
+		const values = ((forSchedules('apportionBy')?.options ?? []) as INodePropertyOptions[]).map(
+			(option) => option.value,
+		);
+
+		expect(values).toEqual(['percent', 'value']);
+		expect(forSchedules('apportionBy')?.default).toBe('percent');
+	});
+
+	/**
+	 * One box for the share, not one per kind. It is what makes "never both keys
+	 * in a line" true rather than merely intended — and the crossed pair is the
+	 * refusal of this family that talks about the wrong thing.
+	 */
+	it('collects one share per line, and the cost center from a list', () => {
+		const rows = (forSchedules('costCenters')?.options ?? []) as Array<{
+			name: string;
+			values: INodeProperties[];
+		}>;
+		const line = rows.find((row) => row.name === 'costCenter')?.values ?? [];
+
+		expect(line.map((field) => field.name)).toEqual(['costCenterId', 'share']);
+		expect(line[0].typeOptions?.loadOptionsMethod).toBe('loadCostCenters');
+		expect(line[1].type).toBe('number');
+	});
 });
 
 /**
