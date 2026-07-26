@@ -90,6 +90,40 @@ describe('niboCreate', () => {
 		expect(created).toEqual({ id: 'not-a-real-id', name: 'ADA LOVELACE' });
 	});
 
+	/**
+	 * The schedules read where they are not written. `GET /schedules/debit/{id}`
+	 * is a 404 as a route — the get-by-id of this API is `/schedules/credit/{id}`
+	 * for both kinds — so the collection a record is created in is not the
+	 * collection it can be read back from.
+	 */
+	it('reads the record back where it can be read, not where it was written', async () => {
+		apiRequest
+			.mockResolvedValueOnce('not-a-real-id')
+			.mockResolvedValueOnce({ scheduleId: 'not-a-real-id', type: 'Debit' });
+
+		const created = await niboCreate.call(
+			context(),
+			0,
+			'/schedules/debit',
+			{ dueDate: '2026-08-10' },
+			{ readEndpoint: '/schedules/credit' },
+		);
+
+		expect(call(0)).toMatchObject({ method: 'POST', endpoint: '/schedules/debit' });
+		expect(call(1)).toMatchObject({ method: 'GET', endpoint: '/schedules/credit/not-a-real-id' });
+		expect(created).toEqual({ scheduleId: 'not-a-real-id', type: 'Debit' });
+	});
+
+	// And where nobody says otherwise nothing changes at all, which is what the
+	// four stakeholder collections depend on.
+	it('reads it back from the collection it was written to when nobody says otherwise', async () => {
+		apiRequest.mockResolvedValueOnce('not-a-real-id').mockResolvedValueOnce({ id: 'not-a-real-id' });
+
+		await niboCreate.call(context(), 0, '/employees', { name: 'ADA LOVELACE' });
+
+		expect(call(1)).toMatchObject({ method: 'GET', endpoint: '/employees/not-a-real-id' });
+	});
+
 	it('still answers with the id when the read-back gives nothing to show', async () => {
 		apiRequest.mockResolvedValueOnce('not-a-real-id').mockResolvedValueOnce('');
 
@@ -160,6 +194,33 @@ describe('niboSafeUpdate', () => {
 		expect(call(2).method).toBe('GET');
 		expect(call(0).endpoint).toBe('/customers/not-a-real-id');
 		expect(call(1).endpoint).toBe('/customers/not-a-real-id');
+	});
+
+	/**
+	 * The same asymmetry the create has, and here it costs two of the three
+	 * calls: `GET /schedules/debit/{id}` is a 404 as a route, so the cycle reads
+	 * a debit through the universal endpoint and writes it back to its own.
+	 */
+	it('reads at the universal endpoint and writes at the collection of the record', async () => {
+		apiAnswering({ scheduleId: 'not-a-real-id', description: 'CHANGED' });
+		apiRequest.mockReset();
+		apiRequest
+			.mockResolvedValueOnce({ scheduleId: 'not-a-real-id', description: 'BEFORE' })
+			.mockResolvedValueOnce('')
+			.mockResolvedValueOnce({ scheduleId: 'not-a-real-id', description: 'CHANGED' });
+
+		await niboSafeUpdate.call(
+			context(),
+			0,
+			'/schedules/debit',
+			'not-a-real-id',
+			{ description: 'CHANGED' },
+			{ readEndpoint: '/schedules/credit' },
+		);
+
+		expect(call(0)).toMatchObject({ method: 'GET', endpoint: '/schedules/credit/not-a-real-id' });
+		expect(call(1)).toMatchObject({ method: 'PUT', endpoint: '/schedules/debit/not-a-real-id' });
+		expect(call(2)).toMatchObject({ method: 'GET', endpoint: '/schedules/credit/not-a-real-id' });
 	});
 
 	// The whole reason this cycle exists: the PUT body is the record as stored,

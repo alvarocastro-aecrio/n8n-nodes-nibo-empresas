@@ -27,6 +27,9 @@ export interface INiboUpdateOptions {
 	 * are is knowledge of the resource, not of the transport.
 	 */
 	writeBody?: (record: IDataObject) => IDataObject;
+
+	/** Where the two reads of the cycle go — see the note on the create option */
+	readEndpoint?: string;
 }
 
 export interface INiboCreateOptions {
@@ -43,6 +46,19 @@ export interface INiboCreateOptions {
 	 * there costs a failed write, while the plain path costs one extra read.
 	 */
 	answersWithTheRecord?: boolean;
+
+	/**
+	 * Where a record of this collection can be read by ID, when that is not the
+	 * collection it was written to.
+	 *
+	 * The stakeholders write and read in the same place, which is why this is
+	 * optional and defaults to the write endpoint — nothing about them changes.
+	 * The schedules do not: `GET /schedules/debit/{id}` is a 404 as a **route**,
+	 * and the get-by-id of this API is `/schedules/credit/{id}` for both kinds.
+	 * A debit is therefore created in one collection and read back from another,
+	 * and the transport is the only place that has to know it.
+	 */
+	readEndpoint?: string;
 }
 
 /**
@@ -90,7 +106,12 @@ export async function niboCreate(
 	// The id alone would make Create answer one shape here and another there,
 	// depending on which collection the workflow happened to write to.
 	const created = asRecord(
-		await niboApiRequest.call(this, itemIndex, 'GET', `${endpoint}/${encodeURIComponent(id)}`),
+		await niboApiRequest.call(
+			this,
+			itemIndex,
+			'GET',
+			`${options.readEndpoint ?? endpoint}/${encodeURIComponent(id)}`,
+		),
 	);
 
 	return created ?? { id };
@@ -132,9 +153,12 @@ export async function niboSafeUpdate(
 		});
 	}
 
+	// Written here, read there — the same place unless the resource says
+	// otherwise, which only the schedules do.
 	const resource = `${endpoint}/${encodeURIComponent(id)}`;
+	const readable = `${options.readEndpoint ?? endpoint}/${encodeURIComponent(id)}`;
 
-	const current = asRecord(await niboApiRequest.call(this, itemIndex, 'GET', resource));
+	const current = asRecord(await niboApiRequest.call(this, itemIndex, 'GET', readable));
 	if (current === undefined) {
 		throw new NodeOperationError(this.getNode(), `Nibo returned no record for the ID "${id}"`, {
 			itemIndex,
@@ -162,7 +186,7 @@ export async function niboSafeUpdate(
 		});
 	}
 
-	const confirmed = asRecord(await niboApiRequest.call(this, itemIndex, 'GET', resource));
+	const confirmed = asRecord(await niboApiRequest.call(this, itemIndex, 'GET', readable));
 	if (confirmed === undefined) {
 		throw new NodeOperationError(this.getNode(), 'The update could not be confirmed', {
 			itemIndex,
