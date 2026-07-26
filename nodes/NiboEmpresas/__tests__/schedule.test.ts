@@ -643,6 +643,53 @@ describe('executeSchedule — Create', () => {
 	});
 
 	/**
+	 * The contact arrives in two shapes and neither is negotiable.
+	 *
+	 * Since 0.8.0 the field is the editor's search component, which stores
+	 * `{__rl, mode, value}`. A node saved before it stores the plain ID, and
+	 * `getNodeParameters` was measured to keep that string rather than discard
+	 * it — so the handler reads both, and a workflow built last week goes on
+	 * running without being opened.
+	 */
+	it('reads the contact out of what the search component stores', async () => {
+		await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				stakeholderId: { __rl: true, mode: 'list', value: 'picked-from-the-list' },
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent().stakeholderId).toBe('picked-from-the-list');
+	});
+
+	it('still reads the plain ID a node saved before 0.8.0 carries', async () => {
+		await executeSchedule.call(
+			context({ ...CREATE_FORM, stakeholderId: 'saved-as-a-string' }),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent().stakeholderId).toBe('saved-as-a-string');
+	});
+
+	it.each([
+		[{ __rl: true, mode: 'list', value: '' }],
+		[{ __rl: true, mode: 'id', value: '   ' }],
+		[''],
+	])('refuses %s before any call is made', async (stakeholderId) => {
+		const failure = executeSchedule.call(
+			context({ ...CREATE_FORM, stakeholderId }),
+			'creditSchedule',
+			'create',
+		);
+
+		await expect(failure).rejects.toThrow(/contact/i);
+		expect(create).not.toHaveBeenCalled();
+	});
+
+	/**
 	 * The detail of one line, which the API takes inside the line itself —
 	 * measured on the cobaia before it was offered, since the project's own
 	 * reference had flagged the field as suspicious.

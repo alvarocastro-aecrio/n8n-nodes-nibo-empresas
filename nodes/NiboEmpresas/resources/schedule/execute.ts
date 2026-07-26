@@ -136,7 +136,7 @@ export async function executeSchedule(
 					i,
 					endpoint,
 					writePayload.call(this, i, {
-						stakeholderId: this.getNodeParameter('stakeholderId', i) as string,
+						stakeholderId: contactId.call(this, i),
 						dueDate: this.getNodeParameter('dueDate', i) as string,
 						scheduleDate: this.getNodeParameter('scheduleDate', i) as string,
 						accrualDate: this.getNodeParameter('accrualDate', i, '') as string,
@@ -314,6 +314,36 @@ function categoryLines(
 
 		return detail === '' ? { categoryId: id, value } : { categoryId: id, value, description: detail };
 	});
+}
+
+/**
+ * The contact this schedule is for, out of either shape the field can hold.
+ *
+ * Since 0.8.0 it is the editor's search component, which stores
+ * `{__rl, mode, value}`. A node saved before that stores the plain ID, and
+ * `getNodeParameters` was measured to keep such a string rather than discard it
+ * — so both are read here, and a workflow built last week goes on running
+ * without ever being opened.
+ *
+ * Refused while it is still cheap to refuse: an empty contact would otherwise
+ * reach the API as a missing stakeholder, answered for in its own way and at
+ * its own moment.
+ */
+function contactId(this: IExecuteFunctions, itemIndex: number): string {
+	const chosen = this.getNodeParameter('stakeholderId', itemIndex, '') as unknown;
+	const raw =
+		typeof chosen === 'object' && chosen !== null ? (chosen as IDataObject).value : chosen;
+	const id = String(raw ?? '').trim();
+
+	if (id === '') {
+		throw new NodeOperationError(this.getNode(), 'This schedule names no contact', {
+			itemIndex,
+			description:
+				'Pick a contact in the Stakeholder field, or switch it to "By ID" and put the ID there — usually an expression reading it from the incoming item.',
+		});
+	}
+
+	return id;
 }
 
 /**

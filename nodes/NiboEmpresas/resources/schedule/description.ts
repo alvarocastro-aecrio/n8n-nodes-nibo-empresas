@@ -306,13 +306,39 @@ export const scheduleFields: INodeProperties[] = [
 		}),
 	),
 	{
-		displayName: 'Stakeholder ID',
+		// A search since 0.8.0, and still called `stakeholderId`. The name is the
+		// contract; the handler reads both what this component stores and the
+		// plain string a node saved before it still carries.
+		displayName: 'Stakeholder',
 		name: 'stakeholderId',
-		type: 'string',
+		type: 'resourceLocator',
 		required: true,
-		default: '',
+		default: { mode: 'list', value: '' },
 		description:
-			'The ID of the contact this schedule belongs to — a customer on a credit schedule, a supplier on a debit one. Normally an expression reading the ID from the incoming item.',
+			'The contact this schedule belongs to. The list is searched on the server and offers only the kinds the API accepts here — a customer or a partner on a credit schedule, a supplier, an employee or a partner on a debit one; anything else is refused with "Stakeholder is not compatible".',
+		modes: [
+			{
+				displayName: 'From List',
+				name: 'list',
+				type: 'list',
+				placeholder: 'Search for a contact…',
+				typeOptions: {
+					searchListMethod: 'searchScheduleStakeholders',
+					// Searched on the server: an organization can have thousands of
+					// customers, and filtering a page of them in the browser would
+					// only ever find what happened to be on that page.
+					searchable: true,
+					searchFilterRequired: false,
+				},
+			},
+			{
+				displayName: 'By ID',
+				name: 'id',
+				type: 'string',
+				placeholder: '2efffcd0-8730-4348-86da-6d9a95be6149',
+				hint: 'The ID as Nibo returns it, or an expression reading it from the incoming item',
+			},
+		],
 		displayOptions: {
 			show: {
 				resource: EVERY_TYPE,

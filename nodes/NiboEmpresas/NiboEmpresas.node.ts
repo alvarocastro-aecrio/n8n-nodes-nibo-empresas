@@ -38,6 +38,7 @@ import {
 	stakeholderResources,
 } from './resources/stakeholder/description';
 import { executeStakeholder } from './resources/stakeholder/execute';
+import { searchScheduleStakeholders } from './resources/stakeholder/search';
 
 /**
  * Every resource the node offers, in one alphabetical list.
@@ -235,6 +236,14 @@ export class NiboEmpresas implements INodeType {
 	methods = {
 		loadOptions: {
 			loadScheduleCategories,
+		},
+		/**
+		 * The searches, which are the lists too big to hand over whole. A
+		 * `searchListMethod` on a field is a key into this object, exactly as a
+		 * `loadOptionsMethod` is a key into the one above.
+		 */
+		listSearch: {
+			searchScheduleStakeholders,
 		},
 	};
 

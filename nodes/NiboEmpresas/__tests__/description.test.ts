@@ -644,6 +644,53 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 		);
 	}
 
+	/**
+	 * The contact is chosen by searching, not by pasting a GUID — and it had to
+	 * be a search rather than a list, because an organization can have thousands
+	 * of customers.
+	 *
+	 * The parameter keeps its name. A parameter name is a contract, and the
+	 * handler reads both the shape this component stores and the plain string a
+	 * node saved before 0.8.0 still carries.
+	 */
+	it('lets the contact be searched for, keeping the name it always had', () => {
+		const field = forSchedules('stakeholderId');
+
+		expect(field?.type).toBe('resourceLocator');
+		expect(field?.required).toBe(true);
+		expect((field?.modes ?? []).map((mode) => mode.name)).toEqual(['list', 'id']);
+	});
+
+	// The list mode is a search: it takes what is typed and asks the server.
+	it('searches the server rather than filtering a list in the browser', () => {
+		const [list] = forSchedules('stakeholderId')?.modes ?? [];
+
+		expect(list.type).toBe('list');
+		expect(list.typeOptions?.searchable).toBe(true);
+		expect(list.typeOptions?.searchListMethod).toBe('searchScheduleStakeholders');
+	});
+
+	// And a field that names a method with nothing behind it is the 0.3.1 bug:
+	// the name is a key into the node's own methods, and only this ties the two.
+	it('names a search the node actually declares', () => {
+		const [list] = forSchedules('stakeholderId')?.modes ?? [];
+		const method = list.typeOptions?.searchListMethod as string;
+
+		expect(Object.keys(new NiboEmpresas().methods?.listSearch ?? {})).toContain(method);
+	});
+
+	/**
+	 * The way in that the list never takes away: an ID pasted by hand, or an
+	 * expression reading it from the incoming item — which is how a workflow
+	 * chaining one node into the next has always done it.
+	 */
+	it('keeps the by-ID mode, which is how an expression gets in', () => {
+		const modes = forSchedules('stakeholderId')?.modes ?? [];
+		const byId = modes.find((mode) => mode.name === 'id');
+
+		expect(byId?.type).toBe('string');
+	});
+
 	it('asks up front for exactly what the API refuses a creation without', () => {
 		for (const name of ['stakeholderId', 'dueDate', 'scheduleDate', 'categories']) {
 			const field = forSchedules(name);
