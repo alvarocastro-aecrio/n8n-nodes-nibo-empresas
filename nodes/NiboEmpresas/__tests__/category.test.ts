@@ -277,15 +277,15 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 	 * nowhere in Nibo, and unfamiliar numbers in front of familiar names are
 	 * what made a working list look like another company's.
 	 */
-	it('shows the name alone, under the heading of its group', async () => {
+	it('shows the name, with the group naming the block it opens', async () => {
 		const { loadScheduleCategories } = await import('../resources/category/load');
-		const list = await loadScheduleCategories.call(
+		const [option] = await loadScheduleCategories.call(
 			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [REVENUE]),
 		);
 
-		expect(list[0].name).toBe('—— Receitas operacionais ——');
-		expect(list[1].name).toBe('Receita com vendas');
-		expect(list[1].value).toBe('rev');
+		expect(option.name).toBe('Receita com vendas');
+		expect(option.description).toBe('Receitas operacionais');
+		expect(option.value).toBe('rev');
 	});
 
 	it('never puts the reference code on the screen, wherever it appears in the data', async () => {
@@ -298,15 +298,16 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 	});
 
 	/**
-	 * The closest thing to a section this editor has.
+	 * The closest thing to a section this editor has, and the shape Alvaro chose
+	 * after seeing the alternatives on screen.
 	 *
 	 * n8n's dropdown is a flat `v-for` — there is no option group, and
-	 * `INodePropertyOptions` has no way to mark a row unselectable. So a heading
-	 * is an ordinary row that reads like one, and the write side refuses it by
-	 * name if anybody picks it. Read out of the 2.18.5 source before it was
-	 * built, rather than hoped for.
+	 * `INodePropertyOptions` has no way to mark a row unselectable. Inserting rows
+	 * that read like headings was tried in 0.7.4 and looked wrong. So the group is
+	 * written once, on the first row of its block, and left off the rest: the list
+	 * divides visually without a single row that is not a category.
 	 */
-	it('opens each group with a heading row', async () => {
+	it('names the group once, on the first item of each block', async () => {
 		const { loadScheduleCategories } = await import('../resources/category/load');
 		const list = await loadScheduleCategories.call(
 			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [
@@ -316,34 +317,34 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 			]),
 		);
 
-		expect(list.map((option) => option.name)).toEqual([
-			'—— Receitas operacionais ——',
-			'Receita com vendas',
-			'Receita com serviços',
-			'—— Atividades de investimento ——',
-			'Venda de ativo fixo',
+		expect(list.map((option) => [option.name, option.description])).toEqual([
+			['Receita com vendas', 'Receitas operacionais'],
+			['Receita com serviços', undefined],
+			['Venda de ativo fixo', 'Atividades de investimento'],
 		]);
 	});
 
-	// The group is on the heading now, so repeating it under every name would be
-	// saying the same thing twice.
-	it('drops the group from under each name, since the heading carries it', async () => {
-		const { loadScheduleCategories } = await import('../resources/category/load');
-		const list = await loadScheduleCategories.call(
-			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [REVENUE]),
-		);
-
-		expect(list[1].description).toBeUndefined();
-	});
-
-	it('marks a heading so the write side can tell it from a category', async () => {
+	// Every row is a category now: nothing in the list is unpickable-but-clickable.
+	it('puts no row in the list that is not a category', async () => {
 		const { loadScheduleCategories, isGroupHeading } = await import('../resources/category/load');
 		const list = await loadScheduleCategories.call(
 			loadContext({ authMode: 'credential', resource: 'creditSchedule' }, [REVENUE]),
 		);
 
-		expect(isGroupHeading(String(list[0].value))).toBe(true);
-		expect(isGroupHeading(String(list[1].value))).toBe(false);
+		expect(list.every((option) => !isGroupHeading(String(option.value)))).toBe(true);
+	});
+
+	/**
+	 * The guard stays, and only for this: a node saved under 0.7.4 can be carrying
+	 * a heading that version offered. It is worth one function to tell its author
+	 * what happened rather than let the API answer "Categoria não encontrada".
+	 */
+	it('still recognises a heading stored by the version that offered them', async () => {
+		const { isGroupHeading, groupOfHeading } = await import('../resources/category/load');
+
+		expect(isGroupHeading('__nibo_group__Receitas operacionais')).toBe(true);
+		expect(groupOfHeading('__nibo_group__Receitas operacionais')).toBe('Receitas operacionais');
+		expect(isGroupHeading('b7e23e05-25f8-4fe1-879f-f0ef62936663')).toBe(false);
 		expect(isGroupHeading('')).toBe(false);
 	});
 
@@ -357,6 +358,7 @@ describe('loadScheduleCategories — the list on the Category field', () => {
 		);
 
 		expect(list.map((option) => option.name)).toEqual(['Sem grupo']);
+		expect(list[0].description).toBeUndefined();
 		expect(list[0].value).toBe('none');
 	});
 

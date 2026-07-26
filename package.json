@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-nibo-empresas",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "n8n community node for the Nibo Empresas API (Brazilian financial management platform)",
   "keywords": [
     "n8n-community-node-package",
