@@ -571,17 +571,17 @@ describe('NiboEmpresas — the two schedule resources', () => {
 
 	// Interleaved, not appended: whoever is looking for "Debit Schedule" is
 	// looking for the letter D, not for a family they would have to know exists.
-	it('puts the six resources in one alphabetical menu', () => {
-		const options = property('resource')?.options as INodePropertyOptions[];
+	// (Which names are on the menu is checked in category.test.ts, where the
+	// newest one is added — here it is only that the two land in their places.)
+	it('puts the two in their alphabetical places, between the contacts', () => {
+		const names = (property('resource')?.options as INodePropertyOptions[]).map(
+			(option) => option.name,
+		);
 
-		expect(options.map((option) => option.name)).toEqual([
-			'Credit Schedule',
-			'Customer',
-			'Debit Schedule',
-			'Employee',
-			'Partner',
-			'Supplier',
-		]);
+		expect(names).toEqual([...names].sort());
+		expect(names.indexOf('Credit Schedule')).toBeLessThan(names.indexOf('Customer'));
+		expect(names.indexOf('Customer')).toBeLessThan(names.indexOf('Debit Schedule'));
+		expect(names.indexOf('Debit Schedule')).toBeLessThan(names.indexOf('Employee'));
 	});
 
 	// The cost of the credential trick (see the block at the top): a resource

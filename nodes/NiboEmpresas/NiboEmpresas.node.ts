@@ -20,6 +20,12 @@ const MAIN_CONNECTION: MainConnection = NodeConnectionTypes
 import type { INodePropertyOptions } from 'n8n-workflow';
 
 import {
+	categoryFields,
+	categoryOperations,
+	categoryResources,
+} from './resources/category/description';
+import { executeCategory } from './resources/category/execute';
+import {
 	scheduleFields,
 	scheduleOperations,
 	scheduleResources,
@@ -40,9 +46,11 @@ import { executeStakeholder } from './resources/stakeholder/execute';
  * looking for "Debit Schedule" is looking for the letter D, not for a family
  * they would have to know the node has.
  */
-const RESOURCES: INodePropertyOptions[] = [...stakeholderResources, ...scheduleResources].sort(
-	(one, other) => one.name.localeCompare(other.name),
-);
+const RESOURCES: INodePropertyOptions[] = [
+	...stakeholderResources,
+	...scheduleResources,
+	...categoryResources,
+].sort((one, other) => one.name.localeCompare(other.name));
 
 /** Which handler each resource belongs to — the whole of what the node knows about them */
 type Handler = (
@@ -57,6 +65,9 @@ const HANDLERS: Record<string, Handler> = {
 	),
 	...Object.fromEntries(
 		scheduleResources.map((resource) => [resource.value as string, executeSchedule]),
+	),
+	...Object.fromEntries(
+		categoryResources.map((resource) => [resource.value as string, executeCategory]),
 	),
 };
 
@@ -156,8 +167,10 @@ export class NiboEmpresas implements INodeType {
 			},
 			...stakeholderOperations,
 			...scheduleOperations,
+			...categoryOperations,
 			...stakeholderFields,
 			...scheduleFields,
+			...categoryFields,
 			{
 				displayName: 'Options',
 				name: 'options',
