@@ -719,6 +719,39 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 		expect(categoryId?.typeOptions?.loadOptionsMethod).toBe('loadScheduleCategories');
 	});
 
+	/**
+	 * The list is fetched once and then only refetched on three things, read out
+	 * of the n8n 2.18.5 editor on 2026-07-26: the refresh button, a watch on the
+	 * node's credentials, and a watch on the value of `loadOptionsDependsOn`.
+	 *
+	 * Declaring nothing there is what made the field keep whichever half of the
+	 * chart of accounts it loaded first — switch from Credit Schedule to Debit
+	 * Schedule and the revenue categories stayed on the screen. The resource is
+	 * what the list is filtered by, so the resource is what it has to follow.
+	 */
+	it('reloads the list when the resource it is filtered by changes', () => {
+		const line = ((forSchedules('categories')?.options ?? []) as Array<{
+			values: INodeProperties[];
+		}>)[0];
+		const dependsOn = line.values.find((field) => field.name === 'categoryId')?.typeOptions
+			?.loadOptionsDependsOn as string[];
+
+		expect(dependsOn).toContain('resource');
+	});
+
+	// And on the way back from the per-item mode, where the list refuses to load
+	// at all — otherwise the refusal would stay on the screen after the reason
+	// for it was gone.
+	it('reloads it when the authentication mode changes too', () => {
+		const line = ((forSchedules('categories')?.options ?? []) as Array<{
+			values: INodeProperties[];
+		}>)[0];
+		const dependsOn = line.values.find((field) => field.name === 'categoryId')?.typeOptions
+			?.loadOptionsDependsOn as string[];
+
+		expect(dependsOn).toContain('authMode');
+	});
+
 	// A field that offers a list and has nothing behind it is the 0.3.1 bug: the
 	// name is a key into the node's own methods, and only this test ties the two.
 	it('names a list the node actually declares', () => {
@@ -732,8 +765,43 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 	});
 
 	it('keeps the rest of what can be written under Additional Fields', () => {
-		expect(fieldsOf('additionalFields')).toEqual(['description', 'isFlagged', 'reference']);
+		expect(fieldsOf('additionalFields')).toEqual(['reference']);
 	});
+
+	/**
+	 * Moved out of the menu in 0.7.1, after Alvaro used the form: a schedule with
+	 * no description is a line nobody can read later in Nibo, and the flag is set
+	 * at the moment the entry is made, not hunted for in a menu.
+	 */
+	it.each(['description', 'isFlagged'])('asks for %s on the screen when creating', (name) => {
+		const field = forSchedules(name);
+
+		expect(field?.displayOptions?.show?.operation).toEqual(['create']);
+		expect(field?.displayOptions?.show?.resource).toEqual(SCHEDULES);
+		expect(field?.required).toBeUndefined();
+	});
+
+	/**
+	 * And on Update they are back inside the menu, which is not an oversight.
+	 * There a field on the screen is a field that gets written, so a visible
+	 * empty Description would erase the stored one every time anything else was
+	 * changed — the menu is what makes "a field you did not add is not touched"
+	 * true.
+	 */
+	it.each(['description', 'isFlagged'])(
+		'changes %s from inside Update Fields, never from the body',
+		(name) => {
+			expect(fieldsOf('updateFields')).toContain(name);
+
+			const onScreen = description.properties.filter(
+				(prop) =>
+					prop.name === name &&
+					((prop.displayOptions?.show?.operation ?? []) as string[]).includes('update'),
+			);
+
+			expect(onScreen).toEqual([]);
+		},
+	);
 
 	// Same rule as the stakeholders: what can be set when creating can be
 	// changed later, and nothing in Update is mandatory.

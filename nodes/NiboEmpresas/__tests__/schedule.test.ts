@@ -484,6 +484,15 @@ describe('executeSchedule — Create', () => {
 		expect(create.mock.calls[0][3]).toEqual({ readEndpoint: '/schedules/credit' });
 	});
 
+	/**
+	 * Flat all the way down: unlike a stakeholder, a schedule has no branches.
+	 *
+	 * Description and the flag are in here since 0.7.1 even untouched, because
+	 * they are fields of the form now rather than entries of a menu — and on a
+	 * creation an empty description is the same as no description, and a flag
+	 * left down is the API's own default. Nothing else that was not filled in
+	 * reaches the payload.
+	 */
 	it('sends the flat payload the API takes, with the dates as plain days', async () => {
 		await executeSchedule.call(context(CREATE_FORM), 'creditSchedule', 'create');
 
@@ -492,6 +501,8 @@ describe('executeSchedule — Create', () => {
 			dueDate: '2026-08-10',
 			scheduleDate: '2026-08-10',
 			categories: [{ categoryId: 'not-a-real-category', value: 1226.12 }],
+			description: '',
+			isFlagged: false,
 		});
 	});
 
@@ -561,6 +572,43 @@ describe('executeSchedule — Create', () => {
 
 		expect(payloadSent()).toMatchObject({ isFlagged: true });
 		expect(payloadSent()).not.toHaveProperty('isFlag');
+	});
+
+	/**
+	 * Both moved onto the screen in 0.7.1, and moving a field is not only a
+	 * matter of where it is drawn: the handler read them out of the menu, so the
+	 * first version of that change built a payload with neither in it. The form
+	 * looked right and the schedule was created without a description.
+	 */
+	it.each([
+		['description', 'SERVIÇOS DE JULHO'],
+		['isFlagged', true],
+	])('reads %s from the body of the form, where it now lives', async (name, value) => {
+		await executeSchedule.call(
+			context({ ...CREATE_FORM, [name]: value }),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent()).toMatchObject({ [name]: value });
+	});
+
+	// And a node saved under 0.7.0 still carries them in the menu, where its
+	// author put them. That value is the one that wins.
+	it('still honours the two from the menu of a node saved before they moved', async () => {
+		await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				additionalFields: { description: 'DA VERSÃO ANTERIOR', isFlagged: true },
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(payloadSent()).toMatchObject({
+			description: 'DA VERSÃO ANTERIOR',
+			isFlagged: true,
+		});
 	});
 
 	it('takes more than one category line', async () => {

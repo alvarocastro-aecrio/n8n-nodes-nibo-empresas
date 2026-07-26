@@ -146,6 +146,17 @@ const CATEGORIES: INodeProperties = {
 					type: 'options',
 					typeOptions: {
 						loadOptionsMethod: 'loadScheduleCategories',
+						// The editor fetches a list once and refetches it on exactly
+						// three things (read out of the n8n 2.18.5 editor on
+						// 2026-07-26): the refresh button, a watch on the node's
+						// credentials, and a watch on the value of this very key.
+						// Declaring nothing here left the field showing whichever half
+						// of the chart of accounts it happened to load first — switch
+						// to the other kind of schedule and the wrong half stayed.
+						// `authMode` is here for the way back from the per-item mode,
+						// where the list refuses to load: without it the refusal would
+						// outlive the reason for it.
+						loadOptionsDependsOn: ['resource', 'authMode'],
 					},
 					default: '',
 					description:
@@ -165,11 +176,19 @@ const CATEGORIES: INodeProperties = {
 };
 
 /**
- * The menu shared by Create and Update, minus what each of them asks up front.
- * Declared once so the two forms cannot drift apart, and alphabetical by
- * display name, as the linter asks.
+ * The two that are always on the screen when a schedule is created.
+ *
+ * They were under Additional Fields until 0.7.1, and Alvaro moved them out
+ * after using the form: a schedule without a description is a line nobody can
+ * read later in Nibo, and the flag is the thing you set at the moment you
+ * create the entry, not something you go looking for in a menu.
+ *
+ * On **Update** they stay inside the menu, and that is not an oversight. There,
+ * a field on the screen is a field that gets written: leaving Description
+ * visible and empty would erase the stored one on every update of anything
+ * else. The menu is what makes "a field you did not add is not touched" true.
  */
-function writableFields(): INodeProperties[] {
+function firstClassFields(): INodeProperties[] {
 	return [
 		{
 			displayName: 'Description',
@@ -188,6 +207,16 @@ function writableFields(): INodeProperties[] {
 			default: false,
 			description: 'Whether to raise the flag Nibo shows next to a schedule that needs attention',
 		},
+	];
+}
+
+/**
+ * What is left for the menus: offered under Additional Fields when creating and
+ * under Update Fields when changing, and declared once so the two cannot drift.
+ * Alphabetical by display name, as the linter asks.
+ */
+function writableFields(): INodeProperties[] {
+	return [
 		{
 			displayName: 'Reference',
 			name: 'reference',
@@ -330,6 +359,20 @@ export const scheduleFields: INodeProperties[] = [
 			},
 		},
 	},
+	// On the screen rather than in a menu since 0.7.1 — a schedule with no
+	// description is a line nobody can read later, and the flag belongs to the
+	// moment the entry is made.
+	...firstClassFields().map(
+		(field): INodeProperties => ({
+			...field,
+			displayOptions: {
+				show: {
+					resource: EVERY_TYPE,
+					operation: ['create'],
+				},
+			},
+		}),
+	),
 	{
 		displayName: 'Additional Fields',
 		name: 'additionalFields',
@@ -353,6 +396,11 @@ export const scheduleFields: INodeProperties[] = [
 		description:
 			'The fields to change. A field left out is not touched: the schedule keeps whatever is stored in Nibo. A text field added and left empty is written empty, which is how a value is erased on purpose — but a date or a category left empty is ignored, since a schedule with no due date or no amount is not a schedule this API keeps.',
 		options: byDisplayName([
+			// Description and Is Flagged are on the screen when creating, and back
+			// in the menu here on purpose: on an update a field on the screen is a
+			// field that gets written, so a visible empty Description would erase
+			// the stored one every time anything else was changed.
+			...firstClassFields(),
 			...writableFields(),
 			CATEGORIES,
 			{

@@ -141,6 +141,12 @@ export async function executeSchedule(
 						scheduleDate: this.getNodeParameter('scheduleDate', i) as string,
 						accrualDate: this.getNodeParameter('accrualDate', i, '') as string,
 						categories: this.getNodeParameter('categories', i, {}) as IDataObject,
+						// On the screen since 0.7.1 rather than inside the menu below,
+						// so they are read from the body — a fallback each, because a
+						// node saved under 0.7.0 still carries them in the menu, and
+						// the spread underneath is what lets that one win.
+						description: this.getNodeParameter('description', i, '') as string,
+						isFlagged: this.getNodeParameter('isFlagged', i, false) as boolean,
 						...(this.getNodeParameter('additionalFields', i, {}) as IDataObject),
 					}),
 					{ readEndpoint: READ_BY_ID },
