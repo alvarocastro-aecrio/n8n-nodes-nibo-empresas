@@ -175,9 +175,19 @@ Discord, Gong e Google Calendar entre eles.
 | ☑ | **Um node salvo na 0.7.8, com o ID em texto puro, executa sem ser tocado** | Medição 1.4 (criação) e 1.5 (update) |
 | ☑ | O que esse node antigo mostra na tela está documentado (medição 1.4) | Está na 1.4 e no README |
 | ☑ | Regressão: categoria, datas e detalhe da linha como na 0.7.8 | Datas e ordem do formulário vistas na tela (1.4); o resto, pela suíte |
-| ☑ | A cobaia termina com zero agendamentos | Conferido no fim da 1.5: crédito 0, débito 0 |
-| ☐ | **Instalação real (regra 7)** | **Aberta.** O `.tgz` da 0.8.0 foi instalado à mão no n8n de dev e o node carrega do pacote — o que prova o empacotamento, e só ele. A regra 7 pede a instalação **pela tela Community Nodes**, que só instala do npm: trava na publicação |
-| ☐ | **Na tela**: o campo dentro de *Update Fields* abre a busca e escolhe um contato | Falta olhar no navegador — é a única parte que um comando não prova |
+| ⚠ | A cobaia termina com zero agendamentos | Estava zerada no fim da 1.5; depois disso o Alvaro criou um lançamento na tela e eu criei as sondas de categoria da 0.8.1. **A limpeza está pendente enquanto as sondas são a evidência a olhar** |
+| ☑ | **Instalação real (regra 7)** | Fechada em 2026-07-26 pela **tela Community Nodes** do n8n de dev, com a **0.8.1** — a 0.8.0 saiu publicada e o conserto das categorias veio atrás no mesmo dia. O Alvaro desinstalou o `.tgz` que eu havia posto à mão, instalou do npm e confirmou funcionando |
+| ☑ | **Na tela**: o campo Stakeholder da criação busca e escolhe um contato | O Alvaro criou um recebimento pela tela escolhendo o contato pela busca — foi esse lançamento que revelou o defeito das categorias |
+| ☐ | **Na tela**: o campo dentro de *Update Fields* | Não citado. Fica anotado como não conferido em vez de ser presumido junto |
+
+> 🐞 **O aceite na tela achou um defeito que não é da 0.8.0 — e virou a 0.8.1.** Escolhendo o
+> contato pela busca, o Alvaro escolheu também a categoria *"Outras receitas"*, e o Nibo
+> desenhou o lançamento quebrado: uma categoria dentro dele e outra, sem valor, fora. A API
+> tinha respondido 200 e guardado as duas linhas certas — o registro está bom e a tela não
+> o lê. A lista de categorias da 0.7.0 oferecia as 28 categorias automáticas do Nibo junto
+> com as 22 da empresa; três famílias delas não podem carregar agendamento e saíram da
+> lista na 0.8.1, cada uma com sua medição. **Multas** e **Pagamento de … Retido** seguem
+> na lista e sem medição na tela: são as sondas F2, H2, J2, K2 e L2 na cobaia.
 
 > ⚠️ **O número da versão na tela Community Nodes não acompanha um `.tgz` instalado à mão.**
 > O n8n carrega os nodes **varrendo a pasta** `~/.n8n/nodes/node_modules` (lido no fonte da
