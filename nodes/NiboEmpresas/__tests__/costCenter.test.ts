@@ -470,6 +470,8 @@ describe('NiboEmpresas — Cost Center on the screen', () => {
 			'Cost Center',
 			'Schedule - Credit',
 			'Schedule - Debit',
+			'Transaction - Payment',
+			'Transaction - Receipt',
 		]);
 	});
 

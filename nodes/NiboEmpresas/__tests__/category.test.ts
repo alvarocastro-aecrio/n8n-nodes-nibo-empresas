@@ -929,6 +929,8 @@ describe('NiboEmpresas — Category on the screen', () => {
 			'Cost Center',
 			'Schedule - Credit',
 			'Schedule - Debit',
+			'Transaction - Payment',
+			'Transaction - Receipt',
 		]);
 		expect(names).toEqual([...names].sort());
 	});
@@ -949,6 +951,8 @@ describe('NiboEmpresas — Category on the screen', () => {
 			'costCenter',
 			'creditSchedule',
 			'debitSchedule',
+			'payment',
+			'receipt',
 		]);
 	});
 
