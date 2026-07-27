@@ -10,15 +10,20 @@ import { sleep } from 'n8n-workflow';
 import { NiboEmpresas } from '../NiboEmpresas.node';
 import { executeTransaction } from '../resources/transaction/execute';
 import { niboListRequest } from '../transport/paginate';
+import { niboApiRequest } from '../transport/request';
+import { niboReadBack } from '../transport/save';
 
 jest.mock('../transport/paginate');
 jest.mock('../transport/request');
+jest.mock('../transport/save');
 jest.mock('n8n-workflow', () => ({
 	...jest.requireActual('n8n-workflow'),
 	sleep: jest.fn().mockResolvedValue(undefined),
 }));
 
 const listRequest = niboListRequest as jest.MockedFunction<typeof niboListRequest>;
+const apiRequest = niboApiRequest as jest.MockedFunction<typeof niboApiRequest>;
+const readBack = niboReadBack as jest.MockedFunction<typeof niboReadBack>;
 
 const NODE: INode = {
 	id: 'test-node',
@@ -49,6 +54,10 @@ function optionsSentToTransport(): IDataObject {
 beforeEach(() => {
 	listRequest.mockReset();
 	listRequest.mockResolvedValue({ records: [], count: 0 });
+	apiRequest.mockReset();
+	apiRequest.mockResolvedValue({});
+	readBack.mockReset();
+	readBack.mockResolvedValue(undefined);
 	(sleep as jest.MockedFunction<typeof sleep>).mockClear();
 });
 
@@ -321,8 +330,8 @@ describe('NiboEmpresas — the two transaction resources on the screen', () => {
 		);
 	});
 
-	it('offers the two read operations this slice built', () => {
-		expect(optionValues(forTransactions('operation'))).toEqual(['get', 'list']);
+	it('offers the operations these slices built', () => {
+		expect(optionValues(forTransactions('operation'))).toEqual(['get', 'list', 'settle']);
 		expect(forTransactions('operation')?.default).toBe('list');
 	});
 
@@ -366,5 +375,148 @@ describe('NiboEmpresas — the two transaction resources on the screen', () => {
 
 			expect(box?.type).toBe('string');
 		}
+	});
+});
+
+/**
+ * The operation this whole version exists for: marking a schedule that already
+ * exists as actually paid or received.
+ *
+ * Until 0.10.0 the node could create a schedule and had no way to settle it, so
+ * every settlement in a workflow stayed an HTTP Request node.
+ */
+describe('executeTransaction — Settle', () => {
+	const SCHEDULE = 'f0d1ba25-a132-4dd3-a832-9efadcae3ad1';
+	const ACCOUNT = '95f309e3-4b64-45df-8c57-ae4a1dbeedd0';
+
+	/** What the API answers: the schedule for the kind check, then the entry ID */
+	function apiAnswers(type = 'debit') {
+		apiRequest.mockReset();
+		apiRequest.mockResolvedValueOnce({ scheduleId: SCHEDULE, type }).mockResolvedValue(GUID);
+		readBack.mockResolvedValue({ entryId: GUID, scheduleId: SCHEDULE, value: 250 });
+	}
+
+	function settling(parameters: IDataObject = {}) {
+		return context({
+			scheduleId: SCHEDULE,
+			accountId: ACCOUNT,
+			date: '2026-07-27T00:00:00.000-03:00',
+			value: 250,
+			...parameters,
+		});
+	}
+
+	beforeEach(() => apiAnswers());
+
+	/** (itemIndex, method, endpoint, qs, body) */
+	function settlementCall() {
+		const [, method, endpoint, , body] = apiRequest.mock.calls[1];
+		return { method, endpoint, body };
+	}
+
+	it.each([
+		['payment', '/schedules/debit/', '/payments'],
+		['receipt', '/schedules/credit/', '/receipts'],
+	])('posts a %s settlement to the route its kind carries', async (resource, prefix, suffix) => {
+		apiAnswers(resource === 'payment' ? 'debit' : 'credit');
+
+		await executeTransaction.call(settling({}), resource, 'settle');
+
+		expect(settlementCall().method).toBe('POST');
+		expect(settlementCall().endpoint).toBe(`${prefix}${SCHEDULE}${suffix}`);
+	});
+
+	// `{accountId, date, value}` and nothing else — measured on 2026-07-27.
+	it('sends the three fields the route takes, with the date as a plain day', async () => {
+		await executeTransaction.call(settling(), 'payment', 'settle');
+
+		expect(settlementCall().body).toEqual({
+			accountId: ACCOUNT,
+			date: '2026-07-27',
+			value: 250,
+		});
+	});
+
+	/**
+	 * The refusal that costs a round trip and saves a confusing one: without an
+	 * account the API answers 500 *"Conta bancária não encontrada."*, which
+	 * names a thing the form never asked about if the field was left blank.
+	 */
+	it('refuses without a bank account, before anything is sent', async () => {
+		const failure = executeTransaction.call(settling({ accountId: '' }), 'payment', 'settle');
+
+		await expect(failure).rejects.toThrow(/bank account/i);
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+
+	it('refuses without a schedule to settle', async () => {
+		const failure = executeTransaction.call(settling({ scheduleId: '' }), 'payment', 'settle');
+
+		await expect(failure).rejects.toThrow(/ID/);
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * And the guard that matters most, because the API does not have it:
+	 * `POST /schedules/credit/{id}/receipts` on a **debit** schedule answers 200
+	 * — measured on 2026-07-27 — and files the money on the wrong side of the
+	 * cash book without a word. The node reads the schedule first and refuses.
+	 */
+	it('refuses to settle a schedule of the other kind, which the API would accept', async () => {
+		const ctx = settling();
+		apiRequest.mockReset();
+		apiRequest.mockResolvedValueOnce({ scheduleId: SCHEDULE, type: 'credit' });
+
+		const failure = executeTransaction.call(ctx, 'payment', 'settle');
+
+		await expect(failure).rejects.toThrow(/credit/i);
+		// read once to check, and never written
+		expect(apiRequest).toHaveBeenCalledTimes(1);
+	});
+
+	it('checks the kind through the get-by-id every schedule shares', async () => {
+		await executeTransaction.call(settling(), 'payment', 'settle');
+
+		const [, method, endpoint] = apiRequest.mock.calls[0];
+		expect(method).toBe('GET');
+		expect(endpoint).toBe(`/schedules/credit/${SCHEDULE}`);
+	});
+
+	/**
+	 * The route answers the **entryId** — not the scheduleId, which is what the
+	 * one-shot creation answers. Two keys on the two ends of the same family, so
+	 * each operation reads back by its own.
+	 */
+	it('reads the new entry back by the entryId the route answered', async () => {
+		const items = await executeTransaction.call(settling(), 'payment', 'settle');
+
+		expect(readBack.mock.calls[0][1]).toBe('/payments');
+		expect(readBack.mock.calls[0][3]).toBe(`entryId eq ${GUID}`);
+		expect(items[0].json).toEqual({ entryId: GUID, scheduleId: SCHEDULE, value: 250 });
+	});
+
+	// A partial settlement is a real thing: 100 against a schedule of 400 answers
+	// 200 and leaves the schedule open. Nothing here may treat it as an error.
+	it('sends a part of the amount without complaining', async () => {
+		await executeTransaction.call(settling({ value: 100 }), 'payment', 'settle');
+
+		expect((settlementCall().body as IDataObject).value).toBe(100);
+	});
+
+	/**
+	 * And the one sentence that has to be exactly right: if the entry cannot be
+	 * read back, the settlement still happened. Saying it failed would make a
+	 * workflow settle the same schedule twice.
+	 */
+	it('says the entry was written when it cannot be read back, never that it failed', async () => {
+		const ctx = settling();
+		readBack.mockResolvedValue(undefined);
+
+		const failure = executeTransaction.call(ctx, 'payment', 'settle');
+
+		await expect(failure).rejects.toThrow(/was settled|did go through/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/again|twice/i),
+		});
 	});
 });

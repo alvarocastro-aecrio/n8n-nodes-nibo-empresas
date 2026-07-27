@@ -2,6 +2,9 @@ import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-wor
 import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboListRequest } from '../../transport/paginate';
+import { niboApiRequest } from '../../transport/request';
+import { niboReadBack } from '../../transport/save';
+import { onlyTheDay } from '../schedule/normalize';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { transactionFilterFieldTypes } from './description';
@@ -11,6 +14,12 @@ interface ITransactionCollection {
 	endpoint: string;
 	/** How an error message names one of them */
 	noun: string;
+	/** The segment the settlement route carries */
+	kind: string;
+	/** What the API answers in `type` for the schedule this settles */
+	scheduleType: string;
+	/** How an error message names the schedule this settles */
+	schedule: string;
 }
 
 /**
@@ -19,9 +28,30 @@ interface ITransactionCollection {
  * They cost this table and no logic at all.
  */
 const TRANSACTIONS: Record<string, ITransactionCollection> = {
-	payment: { endpoint: '/payments', noun: 'payment' },
-	receipt: { endpoint: '/receipts', noun: 'receipt' },
+	payment: {
+		endpoint: '/payments',
+		noun: 'payment',
+		kind: 'debit',
+		scheduleType: 'debit',
+		schedule: 'debit schedule',
+	},
+	receipt: {
+		endpoint: '/receipts',
+		noun: 'receipt',
+		kind: 'credit',
+		scheduleType: 'credit',
+		schedule: 'credit schedule',
+	},
 };
+
+/**
+ * Where a schedule is read by ID — both kinds, always this one.
+ *
+ * `GET /schedules/credit/{id}` takes an ID of either kind and answers what that
+ * ID actually is, `type` included; `/schedules/debit/{id}` is a 404 as a route.
+ * The settlement uses it to find out what it is about to settle.
+ */
+const READ_SCHEDULE_BY_ID = '/schedules/credit';
 
 /**
  * The paging key, and the fourth one this node has had to learn.
@@ -110,6 +140,11 @@ export async function executeTransaction(
 					),
 					pairedItem: { item: i },
 				});
+			} else if (operation === 'settle') {
+				returnData.push({
+					json: await settle.call(this, i, collection),
+					pairedItem: { item: i },
+				});
 			} else {
 				// Update is the one worth explaining: `PUT /payments/{entryId}` is a
 				// 404, measured on 2026-07-27 with the exact body of the production
@@ -192,4 +227,138 @@ async function oneEntry(
 	}
 
 	return records[0];
+}
+
+/**
+ * Settles a schedule that already exists — the operation this version was built
+ * for, and the hole 0.9.x left: the node could create a schedule and had no way
+ * to mark it paid.
+ *
+ * Three calls, and each one earns its place.
+ *
+ * **First a read.** `POST /schedules/credit/{id}/receipts` on a **debit**
+ * schedule answers 200 — measured on 2026-07-27 — and files the money on the
+ * wrong side of the cash book without a word. The API has no guard, so the node
+ * reads the schedule through the get-by-id both kinds share and refuses the
+ * mismatch. It is the same trap 0.6.0 found on the Get of a schedule, except
+ * there the cost was reading the wrong record and here it is **writing** one.
+ *
+ * **Then the settlement**, whose body is three fields and whose answer is a bare
+ * `entryId` — not the `scheduleId` the one-shot creation answers. Two keys on
+ * the two ends of one family.
+ *
+ * **Then a read-back that tolerates the lag**, because this collection takes a
+ * few seconds to show what was just written. If it never appears, the sentence
+ * has to be exactly right: the settlement **happened**. Telling a workflow it
+ * failed is what makes it settle the same schedule twice.
+ */
+async function settle(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	collection: ITransactionCollection,
+): Promise<IDataObject> {
+	const scheduleId = recordId.call(this, 'scheduleId', itemIndex);
+
+	// Refused before anything is sent. Without it the API answers HTTP 500
+	// "Conta bancária não encontrada." — a sentence about a thing the form never
+	// mentioned, if the field was simply left blank.
+	const accountId = String(this.getNodeParameter('accountId', itemIndex, '') ?? '').trim();
+	if (accountId === '') {
+		throw new NodeOperationError(this.getNode(), 'This settlement names no bank account', {
+			itemIndex,
+			description:
+				'Every settlement has to say which account the money moved through: the API refuses one without it. Pick an account in the Bank Account field, or put an ID there — usually an expression reading it from the incoming item. Read the IDs of an organization with the Bank Account resource. An organization with no account at all cannot settle anything until one exists in Nibo.',
+		});
+	}
+
+	const schedule = await niboApiRequest.call(
+		this,
+		itemIndex,
+		'GET',
+		`${READ_SCHEDULE_BY_ID}/${encodeURIComponent(scheduleId)}`,
+	);
+	ofThisKind.call(this, schedule, collection, scheduleId, itemIndex);
+
+	const answer = await niboApiRequest.call(
+		this,
+		itemIndex,
+		'POST',
+		`/schedules/${collection.kind}/${encodeURIComponent(scheduleId)}/${collection.endpoint.slice(1)}`,
+		{},
+		{
+			accountId,
+			// The day that was chosen is the day that travels — cut rather than
+			// converted, because the editor hands over the moment with its offset.
+			date: onlyTheDay(String(this.getNodeParameter('date', itemIndex) ?? '')),
+			value: this.getNodeParameter('value', itemIndex) as number,
+		},
+	);
+
+	const entryId = typeof answer === 'string' ? answer.trim() : String((answer as IDataObject)?.data ?? '').trim();
+	if (entryId === '') {
+		throw new NodeOperationError(this.getNode(), 'Nibo did not say what it settled', {
+			itemIndex,
+			description: `The ${collection.schedule} may or may not have been settled: the API answered with a body this node could not read as an ID. Check the schedule in Nibo before sending it again — settling it twice would record the money twice.`,
+		});
+	}
+
+	const record = await niboReadBack.call(
+		this,
+		itemIndex,
+		collection.endpoint,
+		TRANSACTION_ORDER_BY,
+		`entryId eq ${entryId}`,
+	);
+
+	if (record === undefined) {
+		// The wording is the whole point of this branch. The write went through —
+		// the API answered with the ID of what it created. What failed is only the
+		// reading back, on a collection measured to take a few seconds to catch up.
+		throw new NodeOperationError(
+			this.getNode(),
+			`The ${collection.schedule} was settled, but the entry could not be read back`,
+			{
+				itemIndex,
+				description: `Nibo answered the settlement with the ID "${entryId}", so it did go through — this collection is eventually consistent and had not caught up after several tries. **Do not send it again**: settling twice records the money twice. Read the entry with the ${collection.noun} resource, filtering by that ID.`,
+			},
+		);
+	}
+
+	return record;
+}
+
+/**
+ * Refuses a schedule of the other kind, which this API happily accepts.
+ *
+ * A record that does not say what it is cannot be refused for being the wrong
+ * thing: guessing would break settlements that work.
+ */
+function ofThisKind(
+	this: IExecuteFunctions,
+	value: unknown,
+	collection: ITransactionCollection,
+	id: string,
+	itemIndex: number,
+): void {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+		throw new NodeOperationError(this.getNode(), `Nibo returned no schedule for the ID "${id}"`, {
+			itemIndex,
+			description: 'Nothing was settled: without the schedule there is nothing to settle.',
+		});
+	}
+
+	const type = String((value as IDataObject).type ?? '')
+		.trim()
+		.toLowerCase();
+
+	if (type !== '' && type !== collection.scheduleType) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`The ID "${id}" is a ${type} schedule, and this resource settles a ${collection.schedule}`,
+			{
+				itemIndex,
+				description: `Nothing was written. This API accepts a settlement through either route and does not check: sending it would have recorded the money on the wrong side of the cash book, with a 200 and no warning. Switch the resource, or check where the ID came from.`,
+			},
+		);
+	}
 }

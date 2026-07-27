@@ -28,6 +28,10 @@ interface ITransactionType {
 	plural: string;
 	/** Which kind of schedule this one settles */
 	settles: string;
+	/** The segment the settlement route carries — `debit` or `credit` */
+	kind: string;
+	/** What the API answers in `type` for the schedule this settles */
+	scheduleType: string;
 	/** What a workflow already calls this */
 	alsoKnownAs: string;
 }
@@ -51,6 +55,8 @@ const TYPES: ITransactionType[] = [
 		noun: 'payment',
 		plural: 'payments',
 		settles: 'debit schedule',
+		kind: 'debit',
+		scheduleType: 'debit',
 		alsoKnownAs: 'a settled account payable',
 	},
 	{
@@ -59,6 +65,8 @@ const TYPES: ITransactionType[] = [
 		noun: 'receipt',
 		plural: 'receipts',
 		settles: 'credit schedule',
+		kind: 'credit',
+		scheduleType: 'credit',
 		alsoKnownAs: 'a settled account receivable',
 	},
 ];
@@ -106,6 +114,12 @@ export const transactionOperations: INodeProperties[] = TYPES.map((type) => ({
 			action: `Get many ${type.plural}`,
 			description: `Retrieve the ${type.plural} of the organization`,
 		},
+		{
+			name: 'Settle',
+			value: 'settle',
+			action: `Settle a ${type.settles}`,
+			description: `Record that a ${type.settles} that already exists has been ${type.value === 'payment' ? 'paid' : 'received'}`,
+		},
 	],
 	default: 'list',
 }));
@@ -143,6 +157,79 @@ const FILTER_FIELDS: IFilterField[] = [
 export const transactionFilterFieldTypes = filterFieldTypes(FILTER_FIELDS);
 
 export const transactionFields: INodeProperties[] = [
+	...TYPES.map(
+		(type): INodeProperties => ({
+			displayName: 'Schedule ID',
+			name: 'scheduleId',
+			type: 'string',
+			required: true,
+			default: '',
+			placeholder: '2efffcd0-8730-4348-86da-6d9a95be6149',
+			description: `The ID of the ${type.settles} to settle, as Nibo returns it in the scheduleId field. The node reads that schedule before writing anything: this API accepts a ${type.settles === 'debit schedule' ? 'credit' : 'debit'} one through this same route and files the money on the wrong side of the cash book without a word.`,
+			displayOptions: {
+				show: {
+					resource: [type.value],
+					operation: ['settle'],
+				},
+			},
+		}),
+	),
+	{
+		displayName: 'Bank Account Name or ID',
+		name: 'accountId',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'loadBankAccounts',
+			// The way back from the per-item mode, where the list refuses to load.
+			loadOptionsDependsOn: ['authMode'],
+		},
+		required: true,
+		default: '',
+		description:
+			'The account the money moved through. The API refuses a settlement without one — it answers HTTP 500 "Conta bancária não encontrada." — so the node asks for it here rather than letting that sentence arrive later. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['settle'],
+			},
+		},
+	},
+	{
+		displayName: 'Date',
+		name: 'date',
+		type: 'dateTime',
+		typeOptions: {
+			// A settlement happens on a day. The API takes YYYY-MM-DD and there is
+			// no hour in it, so a clock offers a decision that does not exist — and
+			// one with a wrong answer, since the editor hands over the moment with
+			// its offset and midnight in Brasília is the day before in UTC.
+			dateOnly: true,
+		},
+		required: true,
+		default: '',
+		description: 'The day the money actually moved',
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['settle'],
+			},
+		},
+	},
+	{
+		displayName: 'Value',
+		name: 'value',
+		type: 'number',
+		required: true,
+		default: 0,
+		description:
+			'How much moved, typed as a positive number on both kinds. Less than the schedule is allowed and is not an error: a part payment is recorded and the schedule stays open — measured on 2026-07-27, where 100 against a schedule of 400 answered 200 and left it unpaid.',
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['settle'],
+			},
+		},
+	},
 	{
 		displayName: 'Entry ID',
 		name: 'entryId',
