@@ -218,9 +218,21 @@ const CATEGORIES: INodeProperties = {
  * complaining that the amounts do not add up to the schedule, and never that the
  * pair is the wrong way round.
  *
- * Above the lines rather than below them, because it is what the number in each
- * line means. Declared once and used twice, on the create screen and inside
- * Update Fields, so the two cannot drift.
+ * **It belongs to the Cost Centers block and is not on the screen until there is
+ * a line for it to describe** — Alvaro, 2026-07-27, having used the form. Before
+ * that it sat on every creation screen, asking how to read shares that did not
+ * exist.
+ *
+ * A field of the **block**, not of each row, and that is the one part of his
+ * wording this does not follow to the letter: the API keeps a single
+ * `costCenterValueType` for the whole schedule, so a row that asked again would
+ * be a question the payload has no second place to put.
+ *
+ * The condition is on the **nested array**, and that is not a stylistic choice.
+ * An empty fixedCollection stores `{}`, which `exists` reads as present; the
+ * array inside it is `undefined` until a line is added, which is what makes the
+ * condition false. Read out of n8n's own `getPropertyValues` and held in place
+ * by tests that ask `displayParameter` itself rather than trusting the reading.
  */
 const APPORTION_BY: INodeProperties = {
 	displayName: 'Apportion By',
@@ -242,8 +254,27 @@ const APPORTION_BY: INodeProperties = {
 	],
 	default: 'percent',
 	description:
-		'How the share of each cost center line below is read. It is sent only when there is at least one line, so a schedule with no apportionment is written exactly as it was before this field existed.',
+		'How the share of each cost center line above is read. It is sent only when there is at least one line, so a schedule with no apportionment is written exactly as it was before this field existed.',
 };
+
+/**
+ * The same field, told where to look for the lines it describes.
+ *
+ * The path differs by where it is drawn: on the creation screen the lines are a
+ * parameter of the node, and inside Update Fields they are a key of that
+ * collection — where the option is resolved against the collection's own values,
+ * so the path is anchored at the root with a leading slash.
+ */
+function apportionBy(linesAt: string): INodeProperties {
+	return {
+		...APPORTION_BY,
+		displayOptions: {
+			show: {
+				[linesAt]: [{ _cnd: { exists: true } }],
+			},
+		},
+	};
+}
 
 /**
  * The apportionment lines — which parts of the company this amount belongs to.
@@ -567,15 +598,16 @@ export const scheduleFields: INodeProperties[] = [
 		},
 	},
 	// After the categories, because the split of an amount comes after the amount
-	// — and Apportion By above the lines it governs, because it is what the
-	// number in each of them means.
-	...[APPORTION_BY, COST_CENTERS].map(
+	// — and Apportion By *under* the lines, as a field of that block rather than
+	// a question asked before there is anything to ask it about.
+	...[COST_CENTERS, apportionBy('/costCenters.costCenter')].map(
 		(field): INodeProperties => ({
 			...field,
 			displayOptions: {
 				show: {
 					resource: EVERY_TYPE,
 					operation: ['create'],
+					...field.displayOptions?.show,
 				},
 			},
 		}),
@@ -615,8 +647,13 @@ export const scheduleFields: INodeProperties[] = [
 			// costCenters makes the apportionment disappear — which is exactly what
 			// "a field you did not add is not touched" has to prevent, and does,
 			// because the safe cycle sends the stored record back whole.
-			APPORTION_BY,
+			//
+			// Apportion By is not on the Add Field list until Cost Centers carries a
+			// line, for the same reason it waits on the creation screen: on its own
+			// it changes nothing, and the handler refuses lines that arrive without
+			// it rather than guessing.
 			COST_CENTERS,
+			apportionBy('/updateFields.costCenters.costCenter'),
 			{
 				displayName: 'Accrual Date',
 				name: 'accrualDate',

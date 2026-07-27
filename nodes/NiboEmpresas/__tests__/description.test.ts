@@ -1046,12 +1046,18 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 		}
 	});
 
-	// Above the lines it governs, because it is what the number in each of them
-	// means. The editor draws these in the order they are declared.
-	it('draws Apportion By before the lines it governs', () => {
+	/**
+	 * **Under** the lines it governs, as a field of that block — Alvaro,
+	 * 2026-07-27, having used the form. It was above them until then, on the
+	 * argument that you should read what the number means before typing it; but
+	 * since it now waits for a line to exist, by the time it appears the block is
+	 * already there, and what is left is a field that belongs under the thing it
+	 * describes. The editor draws these in the order they are declared.
+	 */
+	it('draws Apportion By under the lines it belongs to', () => {
 		const order = description.properties.map((prop) => prop.name);
 
-		expect(order.indexOf('apportionBy')).toBeLessThan(order.indexOf('costCenters'));
+		expect(order.indexOf('costCenters')).toBeLessThan(order.indexOf('apportionBy'));
 	});
 
 	// 0 and 1 in the payload, and neither of them ever on the screen.
@@ -1079,6 +1085,95 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 		expect(fieldsOf('updateFields')).toEqual(
 			expect.arrayContaining(['apportionBy', 'costCenters']),
 		);
+	});
+
+	/**
+	 * Apportion By belongs to the Cost Centers block and is not on the screen
+	 * until there is a line for it to describe — Alvaro, 2026-07-27, having used
+	 * the form. Before that it sat on every creation screen, asking how to read
+	 * shares that did not exist.
+	 *
+	 * It is a field of the **block** and not of each row, and that is the one
+	 * part of his wording this does not follow literally: the API keeps a single
+	 * `costCenterValueType` for the whole schedule, so a row that asked again
+	 * would be a question the payload cannot answer twice.
+	 *
+	 * Checked with n8n's own `displayParameter` rather than by reading the
+	 * condition and believing it — `_cnd` resolution has exactly the sharp edge
+	 * this depends on: an empty fixedCollection stores `{}`, so the condition has
+	 * to be on the nested array, and lodash `get` returning `undefined` is what
+	 * makes it false.
+	 */
+	describe('Apportion By waits for a cost center', () => {
+		const NODE_VERSION = { typeVersion: 1 };
+
+		function shownOnCreate(costCenters: INodeParameters): boolean {
+			const field = description.properties.find(
+				(prop) =>
+					prop.name === 'apportionBy' &&
+					((prop.displayOptions?.show?.resource ?? []) as string[]).includes('creditSchedule'),
+			) as INodeProperties;
+			const values = { resource: 'creditSchedule', operation: 'create', costCenters };
+
+			return NodeHelpers.displayParameter(values, field, NODE_VERSION, null, values);
+		}
+
+		it('is hidden while the collection has never been opened', () => {
+			expect(shownOnCreate({})).toBe(false);
+		});
+
+		it('is hidden while the collection is open and empty', () => {
+			expect(shownOnCreate({ costCenter: [] })).toBe(false);
+		});
+
+		it('appears as soon as one cost center line is added', () => {
+			expect(shownOnCreate({ costCenter: [{ costCenterId: 'centre-a', share: 60 }] })).toBe(true);
+		});
+
+		it('stays on the screen with several lines', () => {
+			expect(
+				shownOnCreate({
+					costCenter: [
+						{ costCenterId: 'centre-a', share: 60 },
+						{ costCenterId: 'centre-b', share: 40 },
+					],
+				}),
+			).toBe(true);
+		});
+
+		// A row added and not filled in yet is still a row: the question is real
+		// the moment the block has one.
+		it('appears for a line that is still empty', () => {
+			expect(shownOnCreate({ costCenter: [{}] })).toBe(true);
+		});
+
+		/**
+		 * And the same inside Update Fields, where the path has to be anchored at
+		 * the root: there the option is resolved against the collection's own
+		 * values, so a relative path would look for `costCenters` in the wrong
+		 * place.
+		 */
+		function shownOnUpdate(updateFields: INodeParameters): boolean {
+			const menu = (description.properties.find(
+				(prop) =>
+					prop.name === 'updateFields' &&
+					((prop.displayOptions?.show?.resource ?? []) as string[]).includes('creditSchedule'),
+			)?.options ?? []) as INodeProperties[];
+			const field = menu.find((option) => option.name === 'apportionBy') as INodeProperties;
+			const root = { resource: 'creditSchedule', operation: 'update', updateFields };
+
+			return NodeHelpers.displayParameter(updateFields, field, NODE_VERSION, null, root);
+		}
+
+		it('is not offered on an update until Cost Centers is added', () => {
+			expect(shownOnUpdate({ description: 'CHANGED' })).toBe(false);
+		});
+
+		it('is offered on an update once Cost Centers carries a line', () => {
+			expect(
+				shownOnUpdate({ costCenters: { costCenter: [{ costCenterId: 'centre-a', share: 70 }] } }),
+			).toBe(true);
+		});
 	});
 
 	it('collects one share per line, and the cost center from a list', () => {
