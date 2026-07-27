@@ -922,6 +922,7 @@ describe('NiboEmpresas — Category on the screen', () => {
 
 		expect(names).toEqual([
 			'Bank Account',
+			'Bank Transfer',
 			'Category',
 			'Contact - Customer',
 			'Contact - Employee',
@@ -945,6 +946,7 @@ describe('NiboEmpresas — Category on the screen', () => {
 
 		expect(values).toEqual([
 			'bankAccount',
+			'bankTransfer',
 			'category',
 			'customer',
 			'employee',

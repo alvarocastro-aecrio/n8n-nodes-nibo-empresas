@@ -27,6 +27,12 @@ import {
 import { executeBankAccount } from './resources/bankAccount/execute';
 import { loadBankAccounts } from './resources/bankAccount/load';
 import {
+	bankTransferFields,
+	bankTransferOperations,
+	bankTransferResources,
+} from './resources/bankTransfer/description';
+import { executeBankTransfer } from './resources/bankTransfer/execute';
+import {
 	categoryFields,
 	categoryOperations,
 	categoryResources,
@@ -86,6 +92,7 @@ const RESOURCES: INodePropertyOptions[] = [
 	...costCenterResources,
 	...transactionResources,
 	...bankAccountResources,
+	...bankTransferResources,
 ].sort((one, other) => one.name.localeCompare(other.name));
 
 /** Which handler each resource belongs to — the whole of what the node knows about them */
@@ -113,6 +120,9 @@ const HANDLERS: Record<string, Handler> = {
 	),
 	...Object.fromEntries(
 		bankAccountResources.map((resource) => [resource.value as string, executeBankAccount]),
+	),
+	...Object.fromEntries(
+		bankTransferResources.map((resource) => [resource.value as string, executeBankTransfer]),
 	),
 };
 
@@ -216,12 +226,14 @@ export class NiboEmpresas implements INodeType {
 			...costCenterOperations,
 			...transactionOperations,
 			...bankAccountOperations,
+			...bankTransferOperations,
 			...stakeholderFields,
 			...scheduleFields,
 			...categoryFields,
 			...costCenterFields,
 			...transactionFields,
 			...bankAccountFields,
+			...bankTransferFields,
 			{
 				displayName: 'Options',
 				name: 'options',
