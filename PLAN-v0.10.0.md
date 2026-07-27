@@ -310,24 +310,55 @@ Todo o resto foi apagado: os agendamentos e as baixas das sondas, cada um confer
 
 ## 6. Teste e aceite
 
-**Gate local (a cumprir):** `npm run lint`, `npm run lint:community`, `npm test`,
-`npm run build`, `npm pack` — todos verdes antes da publicação.
+**Gate local:** ☑ cumprido em 2026-07-27 — `npm run lint`, `npm run lint:community`,
+`npm test` (657 testes), `npm run build` e `npm pack` todos verdes.
 
-| ☑ | Item | Como será conferido |
+**Como o aceite foi feito:** pelo arranjo da 0.9.0 — um `IExecuteFunctions` de verdade, com
+o helper HTTP real e o token da cobaia, chamando **os handlers compilados em `dist/`**. Cada
+fatia foi aceita no seu commit, com limpeza no fim, e a cobaia terminou em `count: 0` nas
+duas coleções todas as vezes.
+
+| ☑ | Item | Como foi conferido |
 |---|---|---|
-| ☐ | `Settle` baixa um agendamento de débito e ele fica pago | Contra a cobaia, conferindo `isPaid` |
-| ☐ | E um de crédito, pela rota simétrica | Idem |
-| ☐ | A baixa **parcial** deixa o agendamento em aberto | Contra a cobaia |
-| ☐ | `Settle` **sem conta** é recusado pelo node, não pela API | Antes de qualquer chamada |
-| ☐ | `Settle` recusa o agendamento do tipo trocado | Nos dois sentidos |
-| ☐ | `Create` sem conta é recusado — e nunca cria agendamento em aberto no lugar | O caso da 1.2, virado teste e conferido contra a cobaia |
-| ☐ | `Create` relê pelo `scheduleId` e `Settle` pelo `entryId` | As duas releituras, contra a cobaia |
-| ☐ | A releitura sobrevive ao atraso da lista | Cronometrado contra a cobaia |
-| ☐ | `Delete` estorna e o agendamento volta a em aberto | Contra a cobaia |
+| ☑ | `Settle` baixa um agendamento de débito e ele fica pago | Contra a cobaia, `isPaid` conferido |
+| ☑ | E um de crédito, pela rota simétrica | Idem |
+| ☑ | A baixa **parcial** deixa o agendamento em aberto | 100 contra 400: 200, e `isPaid` continua false |
+| ☑ | `Settle` **sem conta** é recusado pelo node, não pela API | Recusado antes de qualquer chamada |
+| ☑ | `Settle` recusa o agendamento do tipo trocado | Recusou **e não escreveu nada** |
+| ☑ | `Create` sem conta é recusado — e nunca cria agendamento em aberto no lugar | Nenhuma chamada sai; a explicação diz o que aconteceria |
+| ☑ | `Create` relê pelo `scheduleId` e `Settle` pelo `entryId` | As duas releituras, contra a cobaia |
+| ☑ | A releitura sobrevive ao atraso da lista | Quatro tentativas somando 6 s; todo Create e Settle do aceite passou por ela |
+| ☑ | `Delete` estorna e o agendamento volta a em aberto | `isPaid` de volta a false, entrada fora da coleção |
 | ☐ | Um lançamento aparece **certo na tela do Nibo** | Criado pela tela do n8n, olhado no Nibo (regra irmã da 7) |
 | ☐ | Um node salvo na 0.9.1 executa sem ser tocado | Agendamento e Category · Get Many |
-| ☐ | A cobaia termina sem lançamento de sonda | `count: 0` em `/payments` e `/receipts`, **medido depois da janela de atraso** |
+| ☑ | A cobaia termina sem lançamento de sonda | `count: 0` em `/payments` e `/receipts`, medido **depois** da janela de atraso |
 | ☐ | **Instalação real (regra 7)** | Tela Community Nodes de uma instância limpa, com o pacote vindo do npm |
+
+### 6.1 O que a construção mediu além do plano
+
+1. 🔴 **A data da baixa não pode ser anterior ao saldo inicial da conta** — 500 *"A data da
+   baixa é inferior a data do saldo inicial da conta."* A data comparada é o
+   `dateOfOpenBalance` da **conta**, e a frase da API omite justamente isso. Pior: **esse
+   erro mascara outros**, porque vence antes deles — foi ele que fez uma sonda de
+   `accrualDate` parecer falha do `accrualDate`. Virou explicação do node.
+2. **`accrualDate` omitido faz a API copiar a `date`** — a mesma armadilha do `dueDate` no
+   agendamento, e por isso o campo ficou no corpo e não num menu.
+3. **A matriz de contato de `/payments` e `/receipts` é idêntica à dos agendamentos** —
+   medida, não deduzida: cliente num pagamento e fornecedor ou funcionário num recebimento
+   respondem *"Stakeholder is not compatible"*.
+
+### 6.2 Onde o plano foi contrariado, e por quê
+
+1. **A ordem das fatias estava errada.** A releitura tolerante era a fatia 6, e as fatias 3
+   e 4 dependem dela — cumprir a ordem original significaria embutir num commit um defeito
+   já conhecido. Veio antes da 3, em commit próprio.
+2. **`Delete` devolve `deleted: true`, não `reversed: true`** como a decisão 5 pedia. O
+   argumento dela era que a operação não apaga o agendamento — verdade, mas ela apaga a
+   **entrada**, que é o recurso desta tela, e `deleted` é o que todo outro recurso deste node
+   devolve. O que faltava era o efeito colateral, e ele virou campo próprio:
+   **`scheduleReopened: true`**.
+
+---
 
 ---
 

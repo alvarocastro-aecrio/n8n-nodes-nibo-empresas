@@ -6,7 +6,7 @@ This is an [n8n](https://n8n.io/) community node. It lets you use the **Nibo Emp
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-> **Status: early development (v0.9.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
+> **Status: early development (v0.10.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
 
 ## Installation
 
@@ -22,18 +22,20 @@ n8n-nodes-nibo-empresas
 
 ## Operations
 
-Eight resources in four families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
+Eleven resources in six families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
 
 | Family | Resources, as the menu names them | What they are |
 |---|---|---|
 | **Contacts** | Contact - Customer · Contact - Employee · Contact - Partner · Contact - Supplier | Who you buy from, sell to, employ or share the company with |
-| **Schedules** | Schedule - Credit · Schedule - Debit | Accounts receivable and accounts payable — an amount due on a date |
+| **Schedules** | Schedule - Credit · Schedule - Debit | Accounts receivable and accounts payable — an amount **due** on a date |
+| **Transactions** | Transaction - Payment · Transaction - Receipt | The same entries once the money has **actually moved** — see [Settling a schedule](#settling-a-schedule) |
 | **Category** | Category | The chart of accounts a schedule is filed under. Everything but **Update** and **Delete**, which this API does not have |
 | **Cost Center** | Cost Center | The part of the company an amount belongs to. All five operations |
+| **Bank Account** | Bank Account | The accounts of the organization. **Get Many** only — it is here because a settlement has to name one |
 
 The family word is part of each name on purpose: the editor builds its **Actions** tab from the Resource menu in the order it is declared, so the names are what put a family together there instead of scattering it alphabetically between the others. It is a label and nothing else — the value the workflow stores (`customer`, `creditSchedule`, …) has never changed.
 
-Contacts, schedules and cost centers have the same five operations each. **Category has no Update and no Delete**, because the API has no route for either — see [Categories](#categories).
+Contacts, schedules and cost centers have the same five operations each. **Category has no Update and no Delete** and **Transactions have no Update**, because the API has no route for any of them — see [Categories](#categories) and [Transactions](#transactions).
 
 | Operation | Notes |
 |---|---|
@@ -43,7 +45,7 @@ Contacts, schedules and cost centers have the same five operations each. **Categ
 | Get Many | Returns the collection, paging through it when needed. A stable sort is always applied, and the key differs per collection — `$orderby=id` for a contact or a category, `$orderby=scheduleId` for a schedule, `$orderby=costCenterId` for a cost center. |
 | Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
 
-Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show.
+Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show. Transactions add **Settle**, which is what marks a schedule that already exists as paid or received.
 
 Every resource that works on a single record has its own ID field (**Customer ID**, **Supplier ID**, **Credit Schedule ID**, …), so a workflow that already names one keeps working when others are added.
 
@@ -166,6 +168,44 @@ The assisted filter offers **Description**, **External Code** and **ID**, and no
 
 > **An organization starts with no cost center at all.** Unlike the chart of accounts, which arrives filled in, these are something somebody creates. An empty list on a schedule's apportionment field says so rather than showing an empty box.
 
+### Transactions
+
+A **payment** is an expense that was paid and a **receipt** a revenue that was received — the same entries as a schedule, once the money has actually moved. They are what closes the loop the node left open until 0.9.x: it could create a schedule and had no way to mark it settled.
+
+| Operation | What it does |
+|---|---|
+| **Settle** | Marks a **schedule that already exists** as paid or received |
+| **Create** | Records an amount already moved, creating the schedule and settling it in one call |
+| **Get Many** · **Get** | Reads the settled entries. `Get` goes through the list filtered by ID, because this API has no route that reads one |
+| **Delete** | Removes the entry, which puts the schedule it settled **back to unpaid** |
+
+> ⚠️ **A settlement without a bank account is not refused — it silently becomes something else.** `POST /payments` with no `accountId` answers **HTTP 200** and creates an **unsettled schedule** instead of a payment. The node refuses to send that: an operation called *Create Payment* that sometimes creates no payment is worse than none. If an open schedule is what you want, that is what the Schedule resource is for.
+
+> ⚠️ **The wrong resource would file the money on the wrong side of the cash book.** This API accepts a **debit** schedule through the receipts route and answers 200. Settle reads the schedule first and refuses the mismatch, because the API will not.
+
+Three more things worth knowing before you fill the form in:
+
+- **`Accrual Date` left empty makes the API copy the date the money moved** — which files the expense in the wrong month. Same trap as the schedule's, so the field is on the screen and not in a menu.
+- **The date cannot fall before the account's opening balance.** The API answers *"A data da baixa é inferior a data do saldo inicial da conta"*; the date it is comparing with belongs to the **account** and is on it as `dateOfOpenBalance`. The node adds that.
+- **A part settlement is normal**, not an error: less than the schedule is recorded and the schedule stays open.
+
+#### Settling a schedule
+
+The two ends of this family answer **different IDs**, which is the one thing most likely to trip a workflow up:
+
+| | Answers | Read back by |
+|---|---|---|
+| **Settle** | the **entry** ID | `entryId` |
+| **Create** | the **schedule** ID | `scheduleId` |
+
+The node reads each one back by its own key, and both tolerate a delay: these collections are **eventually consistent** — a settled entry took about three seconds to appear, and `count` and `items` were measured disagreeing during that window. If the entry still cannot be read, the node says the write **went through** and tells you not to send it again. Settling twice records the money twice.
+
+### Bank accounts
+
+**Get Many** only. It is here because a settlement has to name an account, and until 0.10.0 the node had nowhere to get one — the same cut Category got in 0.7.0. Balances, transfers and bank-statement imports are a later slice.
+
+> **An organization can have no account at all**, and then nothing can be settled. The list on the settlement form says so rather than showing an empty box, and it leaves **archived** accounts out — archiving is somebody saying no to that account.
+
 ### Filtering
 
 The filter is narrowed **on the server**, so what does not match is never paged through in the first place. There are two ways to write it, and you never choose between them in a menu: the second one takes over the moment you use it.
@@ -192,8 +232,10 @@ The fields on offer are the ones the API actually filters on, checked against it
 | **Schedules** | Description · Reference · Stakeholder Name · Value · Due Date · Schedule Date · Accrual Date · Created At · Updated At · Is Paid · Is Overdue · Is Flagged · Has Invoice |
 | **Category** | Name · Reference Code · Type · Group Name · Is Editable |
 | **Cost Center** | Description · External Code · ID |
+| **Transactions** | Date · Accrual Date · Description · Stakeholder Name · Value · Is Flagged · ID · Schedule ID |
+| **Bank Account** | Name · ID · Is Archived · Is Virtual |
 
-What is deliberately missing from each is missing for a measured reason. On a contact, the **document type**: `document/type eq 'Cpf'` is an HTTP 500, because that enum does not compare — filter by **Document Number** instead. On a schedule, the **type** (a constant inside either collection, so it could only ever answer "yes" or "nothing"), **`isDeleted`** (a 500 — the field is not on this view) and **`costCenterValueType`** (a 500, the same enum problem as the document type). On a category and on a cost center, **`isDeleted`** again.
+What is deliberately missing from each is missing for a measured reason. On a contact, the **document type**: `document/type eq 'Cpf'` is an HTTP 500, because that enum does not compare — filter by **Document Number** instead. On a schedule, the **type** (a constant inside either collection, so it could only ever answer "yes" or "nothing"), **`isDeleted`** (a 500 — the field is not on this view) and **`costCenterValueType`** (a 500, the same enum problem as the document type). On a category and on a cost center, **`isDeleted`** again. On a settled entry, **`isDeleted`**, **`dueDate`** and **`isPaid`** — none is on that view — and **`isFlag`**, which is a trap of its own: that is the name the **write** side uses for the flag, while the read side calls it **`isFlagged`**. Both names are true, one on each side.
 
 > **An ID is the one value this API takes unquoted.** `costCenterId eq '2efffcd0-…'` is an HTTP 500 naming the two types it could not compare — *'Edm.Guid' and 'Edm.String'* — and the same expression without the quotes answers 200. It is the exact opposite of what every text field here requires, so **ID** is a kind of its own: the node writes the literal bare, and refuses a value that is not an ID before sending it, because a condition the server rejects is a scan that returns nothing and reads as "no records".
 
@@ -365,6 +407,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.8.2 | **The Actions tab reads by family.** The editor builds that tab from the Resource menu in the order it is declared, one heading per resource and no sorting of its own — so seven bare names in alphabetical order put *Credit Schedule* between *Category* and *Customer*, and the tab looked like a pile of unrelated things. Each resource now carries its family word (*Contact - Customer*, *Schedule - Credit*), which groups the menu **and** stays alphabetical, so nothing had to be forced. Labels only: the values a workflow stores are untouched, and the ID fields are still *Customer ID* and *Credit Schedule ID*. Also fixed, from the same look at the screen: the node had been offering *"Create a employee"* since 0.4.0 |
 | 0.9.0 | **The family of classifiers, closed.** Category gains **Get**, **Get Many Groups**, **Get Tree** and **Create** — four operations this project had written off, because `POST`, `PUT`, `DELETE` and `GET /categories/{id}` all answer 404 and that was read as "a category is read-only". The 404s were real; the conclusion was not. **The writing family lives under `/schedules/categories`**, and everything but update and delete answers 200 there. Those two are genuinely absent in both paths, which makes **creating a category an act with no way back** — the node says so above the button rather than in a footnote. The new **Cost Center** resource is the other classifier of this API and has all five operations, being reversible; its key is `costCenterId`, not `id`. And the finding that pays for the version on its own: **a schedule accepts an apportionment across cost centers** and the node offered no way to say it. **Apportion By** and **Cost Centers** are on the creation form and inside *Update Fields*; with no line, neither reaches the API, so every schedule written by 0.8.2 is written identically and an existing apportionment survives an update that does not mention it |
 | 0.9.1 | **Apportion By waits for a cost center.** It belonged to nobody: a selector on every schedule creation screen, asking how to read shares that did not exist yet. It is now a field of the **Cost Centers** block, drawn under the lines and only once there is one — on the creation form and inside *Update Fields* alike. It stays a field of the block rather than of each row because the API keeps a single value type per schedule, so a row that asked again would be a question the payload has no second place to put. Behaviour is unchanged: nothing is sent without a line, and a saved node keeps whatever it had |
+| 0.10.0 | **The settlement**, and with it a capability that was half-built: the node could create a schedule and had no way to mark it paid, which left every settlement in an HTTP Request node. **Transaction - Payment** and **Transaction - Receipt** arrive with **Settle**, **Create**, **Get**, **Get Many** and **Delete**, plus **Bank Account · Get Many**, because a settlement has to name an account and there was nowhere to get one. Three measurements shape it. `POST /payments` **without an account answers 200 and creates an unsettled schedule** instead of a payment — the node refuses to send that. **Settle and Create answer different IDs** (the entry and the schedule), so each reads back by its own. And these collections are **eventually consistent**: the read-back keeps asking for a few seconds, and when the entry still will not appear it says the write **went through** rather than that it failed — because the other sentence makes a workflow pay twice. **Update is not offered**: `PUT /payments/{id}` answers 404, including with the exact body of the production workflow that was supposed to prove otherwise |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
