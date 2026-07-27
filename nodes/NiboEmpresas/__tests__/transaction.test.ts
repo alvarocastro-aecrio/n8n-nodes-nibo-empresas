@@ -331,7 +331,7 @@ describe('NiboEmpresas — the two transaction resources on the screen', () => {
 	});
 
 	it('offers the operations these slices built', () => {
-		expect(optionValues(forTransactions('operation'))).toEqual(['get', 'list', 'settle']);
+		expect(optionValues(forTransactions('operation'))).toEqual(['create', 'get', 'list', 'settle']);
 		expect(forTransactions('operation')?.default).toBe('list');
 	});
 
@@ -517,6 +517,141 @@ describe('executeTransaction — Settle', () => {
 		await expect(failure).rejects.toThrow(/was settled|did go through/i);
 		await expect(failure).rejects.toMatchObject({
 			description: expect.stringMatching(/again|twice/i),
+		});
+	});
+});
+
+/**
+ * The one-shot: record an amount already moved, creating the schedule and
+ * settling it in the same call.
+ *
+ * Its defense is the sharpest measurement of this version — without a bank
+ * account the route answers **200** and creates an **unsettled schedule**
+ * instead of a settled entry.
+ */
+describe('executeTransaction — Create', () => {
+	const ACCOUNT = '95f309e3-4b64-45df-8c57-ae4a1dbeedd0';
+	const SCHEDULE = 'f0d1ba25-a132-4dd3-a832-9efadcae3ad1';
+	const CATEGORY = '188d0f6b-16df-410a-b8f5-9ee29b391e11';
+
+	function creating(parameters: IDataObject = {}) {
+		return context({
+			accountId: ACCOUNT,
+			stakeholderId: { __rl: true, mode: 'list', value: 'a-contact' },
+			date: '2026-07-27T00:00:00.000-03:00',
+			description: 'Água',
+			isFlagged: false,
+			categories: { category: [{ categoryId: CATEGORY, value: 15 }] },
+			additionalFields: {},
+			...parameters,
+		});
+	}
+
+	function bodySent(): IDataObject {
+		return apiRequest.mock.calls[0][4] as IDataObject;
+	}
+
+	beforeEach(() => {
+		apiRequest.mockReset();
+		apiRequest.mockResolvedValue(SCHEDULE);
+		readBack.mockResolvedValue({ entryId: GUID, scheduleId: SCHEDULE, value: 15 });
+	});
+
+	it.each([
+		['payment', '/payments'],
+		['receipt', '/receipts'],
+	])('posts a %s to its own collection', async (resource, endpoint) => {
+		await executeTransaction.call(creating(), resource, 'create');
+
+		expect(apiRequest.mock.calls[0][1]).toBe('POST');
+		expect(apiRequest.mock.calls[0][2]).toBe(endpoint);
+	});
+
+	/**
+	 * The refusal this operation exists to make. Without the account the API
+	 * answers 200 and creates an open schedule — a success that is not one.
+	 */
+	it('refuses without a bank account, and never sends anything', async () => {
+		const failure = executeTransaction.call(creating({ accountId: '' }), 'payment', 'create');
+
+		await expect(failure).rejects.toThrow(/bank account/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/unsettled schedule/i),
+		});
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+
+	// `isFlag` on the wire, `isFlagged` on the screen — the short spelling exists
+	// only in this write body, and nobody should have to know that.
+	it('writes the flag under the name only the write side uses', async () => {
+		await executeTransaction.call(creating({ isFlagged: true }), 'payment', 'create');
+
+		expect(bodySent().isFlag).toBe(true);
+		expect(bodySent()).not.toHaveProperty('isFlagged');
+	});
+
+	it('sends the day, the contact out of the search component, and the lines', async () => {
+		await executeTransaction.call(creating(), 'payment', 'create');
+
+		expect(bodySent()).toMatchObject({
+			accountId: ACCOUNT,
+			stakeholderId: 'a-contact',
+			date: '2026-07-27',
+			categories: [{ categoryId: CATEGORY, value: 15 }],
+		});
+	});
+
+	/**
+	 * Left empty it has to be genuinely absent, because that absence is what
+	 * makes the API copy the date — which is exactly what the field warns about.
+	 */
+	it('leaves the accrual date out of the body when it was left empty', async () => {
+		await executeTransaction.call(creating({ accrualDate: '' }), 'payment', 'create');
+
+		expect(bodySent()).not.toHaveProperty('accrualDate');
+	});
+
+	it('sends the accrual date as a plain day when one was chosen', async () => {
+		await executeTransaction.call(
+			creating({ accrualDate: '2026-06-01T00:00:00.000-03:00' }),
+			'payment',
+			'create',
+		);
+
+		expect(bodySent().accrualDate).toBe('2026-06-01');
+	});
+
+	/**
+	 * By the **schedule** ID, because that is what this route answers — where the
+	 * settlement route answers the entry ID. Reading back by the wrong one finds
+	 * nothing at all.
+	 */
+	it('reads back by the schedule ID this route answers, not by the entry ID', async () => {
+		const items = await executeTransaction.call(creating(), 'payment', 'create');
+
+		expect(readBack.mock.calls[0][3]).toBe(`scheduleId eq ${SCHEDULE}`);
+		expect(items[0].json).toEqual({ entryId: GUID, scheduleId: SCHEDULE, value: 15 });
+	});
+
+	it('refuses an entry with no category line', async () => {
+		const failure = executeTransaction.call(
+			creating({ categories: { category: [] } }),
+			'payment',
+			'create',
+		);
+
+		await expect(failure).rejects.toThrow(/no category line/i);
+	});
+
+	it('says it was created when it cannot be read back, never that it failed', async () => {
+		const ctx = creating();
+		readBack.mockResolvedValue(undefined);
+
+		const failure = executeTransaction.call(ctx, 'payment', 'create');
+
+		await expect(failure).rejects.toThrow(/was created/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/twice|again/i),
 		});
 	});
 });

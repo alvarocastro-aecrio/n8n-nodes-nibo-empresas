@@ -17,6 +17,10 @@ const DEFAULT_BASE_URL = 'https://api.nibo.com.br/empresas/v1';
 const CATEGORIES_OF: Record<string, string> = {
 	creditSchedule: 'in',
 	debitSchedule: 'out',
+	// A settled entry is filed under the same half as the schedule it settles:
+	// a payment is an expense, a receipt a revenue.
+	payment: 'out',
+	receipt: 'in',
 };
 
 /** How to name the half being asked for, in a sentence a person reads */

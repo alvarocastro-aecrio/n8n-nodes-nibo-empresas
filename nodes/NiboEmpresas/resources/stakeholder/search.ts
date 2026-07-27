@@ -32,16 +32,27 @@ const PAGE_SIZE = 100;
  * makes it right for the list to follow it — the same reason the category list
  * shows only the half that fits.
  */
+const CREDIT_SIDE = [
+	{ endpoint: '/customers', kind: 'Customer' },
+	{ endpoint: '/partners', kind: 'Partner' },
+];
+const DEBIT_SIDE = [
+	{ endpoint: '/suppliers', kind: 'Supplier' },
+	{ endpoint: '/employees', kind: 'Employee' },
+	{ endpoint: '/partners', kind: 'Partner' },
+];
+
 const STAKEHOLDERS_OF: Record<string, Array<{ endpoint: string; kind: string }>> = {
-	creditSchedule: [
-		{ endpoint: '/customers', kind: 'Customer' },
-		{ endpoint: '/partners', kind: 'Partner' },
-	],
-	debitSchedule: [
-		{ endpoint: '/suppliers', kind: 'Supplier' },
-		{ endpoint: '/employees', kind: 'Employee' },
-		{ endpoint: '/partners', kind: 'Partner' },
-	],
+	creditSchedule: CREDIT_SIDE,
+	debitSchedule: DEBIT_SIDE,
+	// The settled entries take the same matrix, and that was measured rather
+	// than assumed (2026-07-27): a customer on `POST /payments` and a supplier
+	// or an employee on `POST /receipts` all answer the same
+	// `Stakeholder is not compatible`, while the pairings above get past that
+	// check. Which stands to reason — a payment creates a debit schedule
+	// underneath — but "stands to reason" is not how this project decides.
+	payment: DEBIT_SIDE,
+	receipt: CREDIT_SIDE,
 };
 
 /**

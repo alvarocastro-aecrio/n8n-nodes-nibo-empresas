@@ -140,6 +140,11 @@ export async function executeTransaction(
 					),
 					pairedItem: { item: i },
 				});
+			} else if (operation === 'create') {
+				returnData.push({
+					json: await createEntry.call(this, i, collection),
+					pairedItem: { item: i },
+				});
 			} else if (operation === 'settle') {
 				returnData.push({
 					json: await settle.call(this, i, collection),
@@ -166,7 +171,7 @@ export async function executeTransaction(
 				continue;
 			}
 			throw error instanceof NodeApiError
-				? error
+				? aboutTheAccount(error)
 				: new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
 		}
 	}
@@ -361,4 +366,177 @@ function ofThisKind(
 			},
 		);
 	}
+}
+
+/**
+ * Records an amount already moved, creating the schedule and settling it in one
+ * call — `POST /payments` and `POST /receipts`.
+ *
+ * **The refusal at the top of this function is the reason the version has a
+ * defense at all.** Measured on 2026-07-27: without `accountId` this route
+ * answers **200** and a GUID, and what it created is an **unsettled debit
+ * schedule** — `/payments` stays empty. An operation called *Create Payment*
+ * that sometimes creates no payment is worse than no operation, so the node
+ * refuses before sending rather than reporting a success the API only appeared
+ * to give.
+ *
+ * And the read-back goes by **`scheduleId`**, not `entryId`: this route answers
+ * the ID of the schedule it created, while the settlement route answers the ID
+ * of the entry. Two keys on the two ends of one family, and reading back by the
+ * wrong one finds nothing.
+ */
+async function createEntry(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	collection: ITransactionCollection,
+): Promise<IDataObject> {
+	const accountId = String(this.getNodeParameter('accountId', itemIndex, '') ?? '').trim();
+	if (accountId === '') {
+		throw new NodeOperationError(this.getNode(), 'This entry names no bank account', {
+			itemIndex,
+			description: `Nothing was sent, and that is the point: without an account this API answers success and creates an **unsettled schedule** instead of a ${collection.noun} — leaving a workflow to believe the money was recorded as moved. Pick an account in the Bank Account field, or read the IDs of an organization with the Bank Account resource. To create a schedule that is not settled, use the Schedule resource, which is what that is for.`,
+		});
+	}
+
+	const additional = this.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
+	const accrualDate = onlyTheDay(String(this.getNodeParameter('accrualDate', itemIndex, '') ?? ''));
+
+	const body: IDataObject = {
+		accountId,
+		stakeholderId: contactId.call(this, this.getNodeParameter('stakeholderId', itemIndex, ''), itemIndex),
+		date: onlyTheDay(String(this.getNodeParameter('date', itemIndex) ?? '')),
+		description: this.getNodeParameter('description', itemIndex, '') as string,
+		// `isFlag` on the wire, `isFlagged` everywhere a person reads. The short
+		// spelling exists only in this write body, and the read side of this very
+		// collection answers the long one.
+		isFlag: this.getNodeParameter('isFlagged', itemIndex, false) as boolean,
+		categories: categoryLines.call(this, itemIndex),
+	};
+
+	// Sent only when it was filled in. Left out, the API copies `date` — which is
+	// exactly what the field on the screen warns about, so an empty one has to be
+	// genuinely absent for that to be true.
+	if (accrualDate !== '') {
+		body.accrualDate = accrualDate;
+	}
+	if (typeof additional.reference === 'string') {
+		body.reference = additional.reference;
+	}
+
+	const answer = await niboApiRequest.call(
+		this,
+		itemIndex,
+		'POST',
+		collection.endpoint,
+		{},
+		body,
+	);
+
+	const scheduleId =
+		typeof answer === 'string' ? answer.trim() : String((answer as IDataObject)?.data ?? '').trim();
+	if (scheduleId === '') {
+		throw new NodeOperationError(this.getNode(), 'Nibo did not say what it created', {
+			itemIndex,
+			description: `The ${collection.noun} may or may not have been created: the API answered with a body this node could not read as an ID. Check the collection in Nibo before sending it again.`,
+		});
+	}
+
+	const record = await niboReadBack.call(
+		this,
+		itemIndex,
+		collection.endpoint,
+		TRANSACTION_ORDER_BY,
+		// By the schedule, because that is the ID this route answers.
+		`scheduleId eq ${scheduleId}`,
+	);
+
+	if (record === undefined) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`The ${collection.noun} was created, but it could not be read back`,
+			{
+				itemIndex,
+				description: `Nibo answered with the schedule ID "${scheduleId}", so it did go through — this collection is eventually consistent and had not caught up after several tries. **Do not send it again**: it would record the money twice. Read it with this resource, filtering by that Schedule ID.`,
+			},
+		);
+	}
+
+	return record;
+}
+
+/**
+ * The category lines, as this API states an amount here too.
+ *
+ * The same shape a schedule takes, and refused for the same reason when empty:
+ * the entry has no total of its own, so no lines means no amount, and finding
+ * that out from a 500 is finding it out late.
+ */
+function categoryLines(this: IExecuteFunctions, itemIndex: number): IDataObject[] {
+	const rows = (this.getNodeParameter('categories', itemIndex, {}) as IDataObject)?.category;
+
+	if (!Array.isArray(rows) || rows.length === 0) {
+		throw new NodeOperationError(this.getNode(), 'This entry has no category line', {
+			itemIndex,
+			description:
+				'Add at least one line under Categories, with a financial category and an amount. The amount of the entry is the sum of its lines: this API keeps no total of its own.',
+		});
+	}
+
+	return rows.map((row) => {
+		const { categoryId, value } = (row ?? {}) as IDataObject;
+		const id = String(categoryId ?? '').trim();
+
+		if (id === '') {
+			throw new NodeOperationError(this.getNode(), 'A category line names no category', {
+				itemIndex,
+				description:
+					'Every line under Categories needs the ID of a financial category. Pick one from the list, or read the right ID for this organization with the Category resource.',
+			});
+		}
+
+		const detail = String((row as IDataObject).description ?? '').trim();
+
+		return detail === '' ? { categoryId: id, value } : { categoryId: id, value, description: detail };
+	});
+}
+
+/**
+ * The contact, out of either shape the field can hold — the search component
+ * stores `{__rl, mode, value}` and an expression stores a plain string.
+ */
+function contactId(this: IExecuteFunctions, chosen: unknown, itemIndex: number): string {
+	const raw = typeof chosen === 'object' && chosen !== null ? (chosen as IDataObject).value : chosen;
+	const id = String(raw ?? '').trim();
+
+	if (id === '') {
+		throw new NodeOperationError(this.getNode(), 'This entry names no contact', {
+			itemIndex,
+			description:
+				'Pick a contact in the Stakeholder field, or switch it to "By ID" and put the ID there — usually an expression reading it from the incoming item.',
+		});
+	}
+
+	return id;
+}
+
+/**
+ * The refusal that names a date rule nobody would think to look for.
+ *
+ * Measured on 2026-07-27: an entry dated before the chosen account's
+ * opening-balance date answers *"A data da baixa é inferior a data do saldo
+ * inicial da conta."* The sentence is accurate and leaves out the one thing that
+ * solves it — that the date to compare with is a property of the **account**,
+ * not of the entry, and can be read off it.
+ */
+const BEFORE_THE_OPENING_BALANCE = /data da baixa .*saldo inicial/i;
+
+function aboutTheAccount(error: NodeApiError): NodeApiError {
+	const said = [error.message, error.description].filter(Boolean).join(' ');
+
+	if (BEFORE_THE_OPENING_BALANCE.test(said)) {
+		error.description =
+			`${error.description ?? ''}\n\nThe date compared against belongs to the **bank account**, not to this entry: every account carries an opening balance and the day it was struck, and nothing can be filed before it. Read the account with the Bank Account resource and look at dateOfOpenBalance, then either move this date forward or choose another account.`.trim();
+	}
+
+	return error;
 }

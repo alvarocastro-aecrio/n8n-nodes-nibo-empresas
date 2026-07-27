@@ -103,6 +103,12 @@ export const transactionOperations: INodeProperties[] = TYPES.map((type) => ({
 	// Alphabetical by name, which is what the n8n linter requires.
 	options: [
 		{
+			name: 'Create',
+			value: 'create',
+			action: `Create a ${type.noun}`,
+			description: `Record an amount already ${type.value === 'payment' ? 'paid' : 'received'}, creating the ${type.settles} and settling it in one go`,
+		},
+		{
 			name: 'Get',
 			value: 'get',
 			action: `Get a ${type.noun}`,
@@ -157,6 +163,191 @@ const FILTER_FIELDS: IFilterField[] = [
 export const transactionFilterFieldTypes = filterFieldTypes(FILTER_FIELDS);
 
 export const transactionFields: INodeProperties[] = [
+	/**
+	 * The one screen of this resource that has to warn before the button.
+	 *
+	 * Without a bank account this route answers **200** and creates an **open
+	 * schedule** instead of a settled entry — measured on 2026-07-27. The node
+	 * refuses that rather than letting it happen, and the notice says why the
+	 * account is not optional here.
+	 */
+	{
+		displayName:
+			'Every field below is required by this API. Without a bank account in particular it answers success and creates an unsettled schedule instead of a settled entry, so the node refuses to send it.',
+		name: 'createNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['create'],
+			},
+		},
+	},
+	...TYPES.map(
+		(type): INodeProperties => ({
+			displayName: 'Stakeholder',
+			name: 'stakeholderId',
+			type: 'resourceLocator',
+			default: { mode: 'list', value: '' },
+			required: true,
+			description: `The contact this ${type.noun} is for. The list offers only the kinds the API accepts on this side — measured on 2026-07-27, the same matrix the schedules follow, since a ${type.noun} creates a ${type.settles} underneath. Anything else is refused with "Stakeholder is not compatible".`,
+			modes: [
+				{
+					displayName: 'From List',
+					name: 'list',
+					type: 'list',
+					placeholder: 'Search for a contact…',
+					typeOptions: {
+						searchListMethod: 'searchScheduleStakeholders',
+						// Searched on the server: an organization can have thousands of
+						// customers, and filtering a page of them in the browser would
+						// only ever find what happened to be on that page.
+						searchable: true,
+						searchFilterRequired: false,
+					},
+				},
+				{
+					displayName: 'By ID',
+					name: 'id',
+					type: 'string',
+					placeholder: '2efffcd0-8730-4348-86da-6d9a95be6149',
+					hint: 'The ID as Nibo returns it, or an expression reading it from the incoming item',
+				},
+			],
+			displayOptions: {
+				show: {
+					resource: [type.value],
+					operation: ['create'],
+				},
+			},
+		}),
+	),
+	{
+		displayName: 'Categories',
+		name: 'categories',
+		type: 'fixedCollection',
+		typeOptions: {
+			multipleValues: true,
+		},
+		placeholder: 'Add Category',
+		default: {},
+		required: true,
+		description:
+			'The lines this entry is split into. The amount is their sum — this API keeps no total of its own here either.',
+		options: [
+			{
+				displayName: 'Category',
+				name: 'category',
+				values: [
+					{
+						displayName: 'Category Name or ID',
+						name: 'categoryId',
+						type: 'options',
+						typeOptions: {
+							loadOptionsMethod: 'loadScheduleCategories',
+							loadOptionsDependsOn: ['resource', 'authMode'],
+						},
+						default: '',
+						description:
+							'The financial category this line falls under. The list shows only the half that fits — an expense for a payment, a revenue for a receipt. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+					},
+					{
+						displayName: 'Value',
+						name: 'value',
+						type: 'number',
+						default: 0,
+						description: 'The amount of this line, always typed as a positive number',
+					},
+					{
+						displayName: 'Detail',
+						name: 'description',
+						type: 'string',
+						default: '',
+						description: 'What this line is about, when the entry is split into several',
+					},
+				],
+			},
+		],
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Description',
+		name: 'description',
+		type: 'string',
+		default: '',
+		description: 'What this entry is about, as it will read in Nibo',
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		// On the screen and not in a menu, for the same reason it is on the
+		// schedule form: leaving it out is a decision with a consequence, and a
+		// field nobody sees is a decision nobody took. Measured on 2026-07-27 —
+		// omitted, the API copies `date`, which files the expense in the month the
+		// money moved rather than the month it was incurred.
+		displayName: 'Accrual Date',
+		name: 'accrualDate',
+		type: 'dateTime',
+		typeOptions: { dateOnly: true },
+		default: '',
+		description:
+			'The month this belongs to in the books. Left empty, the API silently copies the date the money moved.',
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		// `isFlag` on the wire and `isFlagged` here, on purpose: the schedule form
+		// has called it `isFlagged` since 0.7.1 and the read side of this very
+		// collection calls it that too. The one place the short spelling exists is
+		// the write body, and nobody should have to know that.
+		displayName: 'Is Flagged',
+		name: 'isFlagged',
+		type: 'boolean',
+		default: false,
+		description: 'Whether to raise the flag Nibo shows next to an entry that needs attention',
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Additional Fields',
+		name: 'additionalFields',
+		type: 'collection',
+		placeholder: 'Add Field',
+		default: {},
+		options: [
+			{
+				displayName: 'Reference',
+				name: 'reference',
+				type: 'string',
+				default: '',
+				description: 'A free reference of your own, such as an invoice or a contract number',
+			},
+		],
+		displayOptions: {
+			show: {
+				resource: EVERY_TYPE,
+				operation: ['create'],
+			},
+		},
+	},
 	...TYPES.map(
 		(type): INodeProperties => ({
 			displayName: 'Schedule ID',
@@ -190,7 +381,7 @@ export const transactionFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: EVERY_TYPE,
-				operation: ['settle'],
+				operation: ['create', 'settle'],
 			},
 		},
 	},
@@ -207,11 +398,12 @@ export const transactionFields: INodeProperties[] = [
 		},
 		required: true,
 		default: '',
-		description: 'The day the money actually moved',
+		description:
+			'The day the money actually moved. It cannot fall before the opening-balance date of the account chosen above — the API refuses that with "A data da baixa é inferior a data do saldo inicial da conta".',
 		displayOptions: {
 			show: {
 				resource: EVERY_TYPE,
-				operation: ['settle'],
+				operation: ['create', 'settle'],
 			},
 		},
 	},
