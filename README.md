@@ -6,7 +6,7 @@ This is an [n8n](https://n8n.io/) community node. It lets you use the **Nibo Emp
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-> **Status: early development (v0.10.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
+> **Status: early development (v0.11.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
 
 ## Installation
 
@@ -22,7 +22,7 @@ n8n-nodes-nibo-empresas
 
 ## Operations
 
-Eleven resources in six families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
+Twelve resources in seven families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
 
 | Family | Resources, as the menu names them | What they are |
 |---|---|---|
@@ -31,7 +31,8 @@ Eleven resources in six families. Within a family the API gives every resource a
 | **Transactions** | Transaction - Payment · Transaction - Receipt | The same entries once the money has **actually moved** — see [Settling a schedule](#settling-a-schedule) |
 | **Category** | Category | The chart of accounts a schedule is filed under. Everything but **Update** and **Delete**, which this API does not have |
 | **Cost Center** | Cost Center | The part of the company an amount belongs to. All five operations |
-| **Bank Account** | Bank Account | The accounts of the organization. **Get Many** only — it is here because a settlement has to name one |
+| **Bank Account** | Bank Account | The accounts, their **balances** and the **import of a bank statement** — see [Bank accounts](#bank-accounts) |
+| **Bank Transfer** | Bank Transfer | Money moved **between two accounts** of the organization — see [Bank transfers](#bank-transfers) |
 
 The family word is part of each name on purpose: the editor builds its **Actions** tab from the Resource menu in the order it is declared, so the names are what put a family together there instead of scattering it alphabetically between the others. It is a label and nothing else — the value the workflow stores (`customer`, `creditSchedule`, …) has never changed.
 
@@ -42,10 +43,10 @@ Contacts, schedules and cost centers have the same five operations each. **Categ
 | Create | Adds a record and returns it as Nibo stored it |
 | Delete | Removes it and returns `{ id, deleted: true }` |
 | Get | Returns one record by ID |
-| Get Many | Returns the collection, paging through it when needed. A stable sort is always applied, and the key differs per collection — `$orderby=id` for a contact or a category, `$orderby=scheduleId` for a schedule, `$orderby=costCenterId` for a cost center. |
+| Get Many | Returns the collection, paging through it when needed. A stable sort is always applied, and the key differs per collection — `$orderby=id` for a contact, a category, an account or a transfer, `$orderby=scheduleId` for a schedule, `$orderby=costCenterId` for a cost center, `$orderby=entryId` for a settled entry, `$orderby=accountId` for a balance. |
 | Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
 
-Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show. Transactions add **Settle**, which is what marks a schedule that already exists as paid or received.
+Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show. Transactions add **Settle**, which is what marks a schedule that already exists as paid or received. Bank Account adds **Get Balances** and **Import Bank Statement**.
 
 Every resource that works on a single record has its own ID field (**Customer ID**, **Supplier ID**, **Credit Schedule ID**, …), so a workflow that already names one keeps working when others are added.
 
@@ -202,9 +203,72 @@ The node reads each one back by its own key, and both tolerate a delay: these co
 
 ### Bank accounts
 
-**Get Many** only. It is here because a settlement has to name an account, and until 0.10.0 the node had nowhere to get one — the same cut Category got in 0.7.0. Balances, transfers and bank-statement imports are a later slice.
+| Operation | What it does |
+|---|---|
+| **Get Many** | The accounts of the organization, with everything the API records about each — including `dateOfOpenBalance`, the day nothing can be filed before |
+| **Get Balances** | What each account holds. A **collection of its own** in this API, not a field of the accounts |
+| **Import Bank Statement** | Sends the lines of a statement to the **reconciliation queue** of an account |
 
 > **An organization can have no account at all**, and then nothing can be settled. The list on the settlement form says so rather than showing an empty box, and it leaves **archived** accounts out — archiving is somebody saying no to that account.
+
+**Creating and editing an account are deliberately absent.** `DELETE /accounts/{id}` is a 404, so an account created by mistake is permanent, and `PUT` is the door to `balanceLockDate` — moving that date back unlocks a closed accounting period, and a partial `PUT` can knock out the account's banking automation. They go in when there is a real use for them.
+
+#### Balances
+
+`Get Balances` is a second collection about the same accounts, and it agrees with the first about almost nothing:
+
+- **The key is `accountId`**, where the accounts page by `id`. On this view `id` and `name` are both an HTTP 500 — neither property exists on it — which is why the ID is `accountId` and the name is `accountName`.
+- **`isArchived` is a 500 here** and a filter over there, so there is no way to ask the server for the balances of the accounts still in use. Read them and match them up.
+- **`balance` and `bankBalance` are different numbers**: the first is what Nibo has recorded, the second what the bank itself reported. On an account with no banking automation the first moves and the second stays at `0.00`.
+- **It lags.** A transfer that had already been recorded took **under five seconds** to show in the balances, in both directions. Read a balance immediately after writing and you will read the old one.
+
+That is why this is an operation of its own rather than a switch on Get Many: one screen for both would be a field menu where the chosen field turns into a server error when a toggle is flipped.
+
+#### Importing a bank statement
+
+**One input item is one line of the statement**, and the node sends them as a single batch — that is the shape the API takes. `Description`, `Value` and `Date` are read per item; **Bank Account** and **Batch Name** are read from the first, because a batch has one of each.
+
+The lines go to the **reconciliation queue** — Nibo's *área de transferência* — and **not to the ledger**: no entry appears under Transaction - Payment or Transaction - Receipt, and no balance changes. That is what the operation is for; it is not a way to record entries.
+
+> ⚠️ **This API accepts a batch half way, in silence.** `POST /accounts/{id}/bankstatement` answers **HTTP 204 with an empty body** whatever happens. A line dated before the account was opened, or dated in a shape the API cannot read, is **dropped without a word** while the rest goes in — a batch of two moved the pending counter by one. And there is nothing to check afterwards: every route that would read the queue back is a 404.
+
+So every defense this operation has happens **before** the request, and each refusal names the item it is about — in a batch of two hundred lines, "an invalid date" is not information:
+
+| Refused | Why |
+|---|---|
+| A line dated before the account's `dateOfOpenBalance` | The API would take it and file nothing. The message says which item, and **what that opening date is** — which is the one thing the API leaves out when it complains about this elsewhere |
+| A date that is not year-month-day | `29/07/2026` is answered 204 and filed nowhere. `07/12/2026` is refused with it: nothing in the value says whether it is 7 December or 12 July, and guessing would file money in the wrong month |
+| An amount that is not a number | `1.234,56` is refused rather than guessed at. `-10,50` is read as the amount it means |
+| Items naming different accounts | One batch goes to one account |
+| The **per-item token** mode | One batch belongs to one organization, the same rule the account list has followed since 0.10.0 |
+| An empty batch | The API answers 204 and does nothing, which would look exactly like an import that worked |
+
+The answer carries what was sent, the line count and a notice — **never a bare `success: true`**, because 204 is an acknowledgement and not a confirmation. The only sign that anything arrived is `pendingReconciliationCount` on **Get Balances**, and it counts transactions rather than batches. It has been seen moving at once and it has been seen taking **more than 150 seconds**; nothing in an n8n execution should wait on it.
+
+### Bank transfers
+
+Money moved from one account of the organization to another. **A resource of its own, because the API made it one**: a transfer is a record with three top-level fields — `id`, `originEntry`, `destinyEntry` — and two whole entries nested inside it.
+
+| Operation | What it does |
+|---|---|
+| **Create** | Moves the money, then reads the transfer back to hand you the record — including the `id` that Delete needs |
+| **Get Many** | The transfers of the organization |
+| **Delete** | Undoes it: the transfer leaves the collection, both entries go with it and both balances return to what they were |
+
+One creation makes **two entries** — a payment on the origin account and a receipt on the destination, both flagged `isTransfer`. They show up under Transaction - Payment and Transaction - Receipt like any other, which is worth knowing before a workflow adds them up.
+
+> **The POST answers 204 with no body: no ID, nothing.** Without a read-back, Create would hand back the fields you typed, which is exactly what a call that wrote nothing would hand back. So the node reads the collection before the write and again after it, and the record that was not there before is the one you just made. It is cheap here and nowhere else — this is the one collection of this API that answers **immediately**.
+
+> ⚠️ **Three of this route's errors name the wrong cause.** A missing origin account, a missing destination account and an account that does not exist all answer *"Não é possivel transferir valores de contas virtuais"*. Nothing is virtual about any of them. The node checks both accounts, the amount and the two sides **before sending**, and says which field is actually empty.
+
+Two more things measured against the API:
+
+- **`Description` is optional**, and left empty it is not sent at all — Nibo then writes its own, *"Transferência de {origin} para {destination}"*. Either way the text comes back in **`identifier`**: there is no `description` field on a transfer anywhere.
+- **A date before the account was opened is accepted here**, unlike a settlement, where the same thing is an HTTP 500. The node does not refuse it.
+
+**The filters go by the nested path**, because that is where the fields are — `originEntry/date`, `originEntry/value`, `originEntry/identifier`, `originEntry/account/id`, `destinyEntry/account/id`. The plain top-level names somebody would try first (`date`, `value`, `createDate`, `transferId`) are all a 500, so they are not on the menu.
+
+> ⚠️ **The same entry has two signs.** A transfer of 123.45 lists `originEntry.value` as **−123.45** and `destinyEntry.value` as **+123.45** — while `/payments`, showing that very same origin entry, lists it as **+123.45**. The node forwards whatever the route answered: inventing a rule of its own would be a fourth convention to keep track of.
 
 ### Filtering
 
@@ -233,7 +297,11 @@ The fields on offer are the ones the API actually filters on, checked against it
 | **Category** | Name · Reference Code · Type · Group Name · Is Editable |
 | **Cost Center** | Description · External Code · ID |
 | **Transactions** | Date · Accrual Date · Description · Stakeholder Name · Value · Is Flagged · ID · Schedule ID |
-| **Bank Account** | Name · ID · Is Archived · Is Virtual |
+| **Bank Account** · Get Many | Name · ID · Is Archived · Is Virtual |
+| **Bank Account** · Get Balances | Account Name · Account ID · Balance · Bank Balance · Is Reconcilable · Is Virtual |
+| **Bank Transfer** | Date · Description · Destination Account ID · ID · Origin Account ID · Origin Value |
+
+The two Bank Account menus are two because the API has two collections: **Is Archived** is a filter on the accounts and an HTTP 500 on the balances, and a name is `name` on one and `accountName` on the other. On a transfer every field but the ID is a **nested path**, and it can be three levels deep (`destinyEntry/account/id`), because the record has only three fields of its own.
 
 What is deliberately missing from each is missing for a measured reason. On a contact, the **document type**: `document/type eq 'Cpf'` is an HTTP 500, because that enum does not compare — filter by **Document Number** instead. On a schedule, the **type** (a constant inside either collection, so it could only ever answer "yes" or "nothing"), **`isDeleted`** (a 500 — the field is not on this view) and **`costCenterValueType`** (a 500, the same enum problem as the document type). On a category and on a cost center, **`isDeleted`** again. On a settled entry, **`isDeleted`**, **`dueDate`** and **`isPaid`** — none is on that view — and **`isFlag`**, which is a trap of its own: that is the name the **write** side uses for the flag, while the read side calls it **`isFlagged`**. Both names are true, one on each side.
 
@@ -408,6 +476,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.9.0 | **The family of classifiers, closed.** Category gains **Get**, **Get Many Groups**, **Get Tree** and **Create** — four operations this project had written off, because `POST`, `PUT`, `DELETE` and `GET /categories/{id}` all answer 404 and that was read as "a category is read-only". The 404s were real; the conclusion was not. **The writing family lives under `/schedules/categories`**, and everything but update and delete answers 200 there. Those two are genuinely absent in both paths, which makes **creating a category an act with no way back** — the node says so above the button rather than in a footnote. The new **Cost Center** resource is the other classifier of this API and has all five operations, being reversible; its key is `costCenterId`, not `id`. And the finding that pays for the version on its own: **a schedule accepts an apportionment across cost centers** and the node offered no way to say it. **Apportion By** and **Cost Centers** are on the creation form and inside *Update Fields*; with no line, neither reaches the API, so every schedule written by 0.8.2 is written identically and an existing apportionment survives an update that does not mention it |
 | 0.9.1 | **Apportion By waits for a cost center.** It belonged to nobody: a selector on every schedule creation screen, asking how to read shares that did not exist yet. It is now a field of the **Cost Centers** block, drawn under the lines and only once there is one — on the creation form and inside *Update Fields* alike. It stays a field of the block rather than of each row because the API keeps a single value type per schedule, so a row that asked again would be a question the payload has no second place to put. Behaviour is unchanged: nothing is sent without a line, and a saved node keeps whatever it had |
 | 0.10.0 | **The settlement**, and with it a capability that was half-built: the node could create a schedule and had no way to mark it paid, which left every settlement in an HTTP Request node. **Transaction - Payment** and **Transaction - Receipt** arrive with **Settle**, **Create**, **Get**, **Get Many** and **Delete**, plus **Bank Account · Get Many**, because a settlement has to name an account and there was nowhere to get one. Three measurements shape it. `POST /payments` **without an account answers 200 and creates an unsettled schedule** instead of a payment — the node refuses to send that. **Settle and Create answer different IDs** (the entry and the schedule), so each reads back by its own. And these collections are **eventually consistent**: the read-back keeps asking for a few seconds, and when the entry still will not appear it says the write **went through** rather than that it failed — because the other sentence makes a workflow pay twice. **Update is not offered**: `PUT /payments/{id}` answers 404, including with the exact body of the production workflow that was supposed to prove otherwise |
+| 0.11.0 | **The bank accounts, for real.** 0.10.0 opened the resource with one operation and opened it out of obligation — a settlement is refused without an account — leaving a resource whose name promised money and which could only hand out identifiers. **Get Balances** and **Import Bank Statement** join it, and the new **Bank Transfer** resource arrives with **Create**, **Get Many** and **Delete**. Half of the transfer is in no documentation at all: `GET /accounts/transfer` and `DELETE /accounts/transfer/{id}` were found through a 500 that said *"Transferência não encontrada"* where a 404 was expected. The import is the reason for the version: this API takes a bank statement **half way, in silence** — a line dated before the account was opened is swallowed with a 204 — and **nothing can read the reconciliation queue back**, so every check happens before the request and each refusal names the item and the opening date the API omits. It is also the node's first **aggregating** operation: one input item is one line, and the run is one call. Three more measurements shape the release: the balance view is a **collection of its own**, keyed by `accountId` where the accounts are keyed by `id`; a transfer's **`description` comes back as `identifier`**, and the origin entry carries the amount **negative** where `/payments` carries the same entry positive; and a transfer **dated before the account was opened is accepted**, where the same date on a settlement is a 500 — so the node does not refuse it |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
