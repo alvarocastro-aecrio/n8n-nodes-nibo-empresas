@@ -575,6 +575,39 @@ describe('executeBankAccount — Update', () => {
 		expect(bodySentToPut()?.balanceLockDate).toBe('2026-07-31');
 	});
 
+	/**
+	 * Found by the acceptance run, not by the probes: the API DOES have one
+	 * guard on the lock — it refuses a lock date on or before the account's own
+	 * `dateOfOpenBalance`, with *"A data de bloqueio deve ser maior que a data
+	 * de início de controle da conta."* The sentence never says which date that
+	 * is, so the node adds it — the same treatment the settlement's date rule
+	 * got in 0.10.0.
+	 */
+	it('names the opening date when the API refuses a lock before it', async () => {
+		const { NodeApiError } = jest.requireActual('n8n-workflow');
+		recordGoes(CURRENT);
+		apiRequest.mockImplementation((_i, method) => {
+			if (method !== 'PUT') return Promise.resolve(undefined);
+			return Promise.reject(
+				new NodeApiError(NODE, {} as never, {
+					message:
+						'Nibo rejected the request: A data de bloqueio deve ser maior que a data de início de controle da conta.',
+					httpCode: '500',
+				}),
+			);
+		});
+
+		const failure = executeBankAccount.call(
+			updating({ balanceLockDate: '2026-07-02' }, { options: { allowMovingLockBack: true } }),
+			'bankAccount',
+			'update',
+		);
+
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/2026-07-01/),
+		});
+	});
+
 	it('refuses an update with nothing to change', async () => {
 		await expect(
 			executeBankAccount.call(updating({}), 'bankAccount', 'update'),

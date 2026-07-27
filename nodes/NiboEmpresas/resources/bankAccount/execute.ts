@@ -345,14 +345,34 @@ async function updateAccount(
 
 	const merged = { ...current, ...changes };
 
-	await niboApiRequest.call(
-		this,
-		itemIndex,
-		'PUT',
-		`${ACCOUNTS}/${encodeURIComponent(id)}`,
-		{},
-		merged,
-	);
+	try {
+		await niboApiRequest.call(
+			this,
+			itemIndex,
+			'PUT',
+			`${ACCOUNTS}/${encodeURIComponent(id)}`,
+			{},
+			merged,
+		);
+	} catch (error) {
+		// The one guard the API does have on the lock, found by the acceptance
+		// run: a lock on or before the account's own opening date is refused with
+		// a sentence that never says which date it is comparing against. The node
+		// knows — it just read the record — so it says.
+		if (
+			error instanceof NodeApiError &&
+			/data de bloqueio deve ser maior/i.test(`${error.message} ${error.description ?? ''}`)
+		) {
+			const openedOn = onlyTheDay(String(current.dateOfOpenBalance ?? ''));
+			error.description =
+				`${error.description ?? ''}\n\nThe date compared against is the account's own opening date (dateOfOpenBalance): **${openedOn || 'not set'}**. The balance lock can only sit after it — move the lock date forward, or change the opening date first.`.trim();
+		}
+		// Rethrown as an expression rather than a bare `throw error`, which the
+		// scanner reads as losing node context.
+		throw error instanceof NodeApiError
+			? error
+			: new NodeOperationError(this.getNode(), error as Error, { itemIndex });
+	}
 
 	const confirmed = await readAccountBack.call(this, itemIndex, id);
 	if (confirmed === undefined) {

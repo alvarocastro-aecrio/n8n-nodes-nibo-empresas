@@ -254,3 +254,21 @@ tela. O aceite da fatia 2 criará **mais uma** (decisão 8), também declarada.
 | 3 | A numeração | **0.11.2** (decisão 9) — escolha reafirmada do Alvaro, exceção à regra do minor |
 
 Nada mais depende de decisão. A fatia 1 pode começar com o OK do Alvaro.
+
+---
+
+## 8. O que o aceite acrescentou (2026-07-27, depois das fatias 1–3)
+
+**A trava TEM uma guarda na API — uma só, e escondida.** Recuar o `balanceLockDate` para
+uma data **em ou antes do `dateOfOpenBalance` da conta** responde 500 *"A data de bloqueio
+deve ser maior que a data de início de controle da conta."* — sem dizer qual é essa data.
+A sonda B6 tinha recuado a trava com 204 porque a abertura daquela hora (30/06) ficava
+antes do destino (05/07); o aceite, com a abertura em 10/07, pisou na regra. Recuar
+**acima** da abertura segue sem guarda nenhuma, como medido.
+
+Consequência no node, já embarcada: quando essa frase vem, o Update anexa a data de
+abertura da conta — que ele acabou de ler — à explicação. Mesmo tratamento que a regra de
+data da baixa ganhou na 0.10.0.
+
+E o 429 saiu do papel no aceite: uma rajada de 40 leituras derrubou 14, todas com a
+mensagem nova (*"more than 14 requests in one second"*).

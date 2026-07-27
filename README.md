@@ -205,13 +205,39 @@ The node reads each one back by its own key, and both tolerate a delay: these co
 
 | Operation | What it does |
 |---|---|
+| **Create** | Opens a new account — **an act this API gives no way back from**, see below |
 | **Get Many** | The accounts of the organization, with everything the API records about each — including `dateOfOpenBalance`, the day nothing can be filed before |
 | **Get Balances** | What each account holds. A **collection of its own** in this API, not a field of the accounts |
 | **Import Bank Statement** | Sends the lines of a statement to the **reconciliation queue** of an account |
+| **Update** | Changes the fields you list and leaves every other one as it is — **including the balance lock**, see below |
 
 > **An organization can have no account at all**, and then nothing can be settled. The list on the settlement form says so rather than showing an empty box, and it leaves **archived** accounts out — archiving is somebody saying no to that account.
 
-**Creating and editing an account are deliberately absent.** `DELETE /accounts/{id}` is a 404, so an account created by mistake is permanent, and `PUT` is the door to `balanceLockDate` — moving that date back unlocks a closed accounting period, and a partial `PUT` can knock out the account's banking automation. They go in when there is a real use for them.
+#### Creating an account
+
+> ⚠️ **What Create makes is permanent.** `DELETE /accounts/{id}` is a 404, and `isArchived` on a `PUT` is answered 204 and **ignored** — there is no way to delete *or archive* an account through this API. Tucking one away is Nibo's screen only. The form says so before the button.
+
+Create asks for a **Name**, and optionally an **Opening Balance** and the **Opening Balance Date** — the day the balance was struck, which is also the day nothing can be filed before. Two measured details:
+
+- **The API stores the opening date one day early on creation** (`2026-07-01` came back as `2026-06-30`), while the same date on an update is stored exactly. The node reads the account back and repairs the date with a corrective update, so **the day you pick is the day that stays**.
+- **`bankNumber` is not on the form**, and that is deliberate: the API ignores it in silence — 341 went in, 0 came out. A field the screen collects and the server throws away is a form that lies.
+
+#### Updating an account, and the balance lock
+
+Update is a merge: the node reads the record, lays your fields on top and sends **the whole of it** back. That shape is not a style choice here — it is the defense:
+
+- **A `PUT` whose body omits `balanceLockDate` CLEARS the lock**, with a 204 and not a word. Because the node always sends the full record, the lock **survives any update that does not mention it**.
+- A partial `PUT` (just a name) is a raw SQL 500 on this route — so the fragment was never an option anyway.
+
+**`Balance Lock Date` is the field closing automations exist for**: nothing on or before it can be written or edited, and moving it forward is how a month is closed. Its rules, all measured:
+
+| Direction | The API | The node |
+|---|---|---|
+| **Forward** (closing a month) | Accepts silently | Sends it — this is the normal gesture |
+| **Backward** (unlocking a closed period) | Accepts silently — no guard | **Refuses**, naming both dates, unless the **Allow Moving the Lock Back** option is on: unlocking a period is a decision for a person |
+| **Backward past the account's opening date** | Refuses — *"A data de bloqueio deve ser maior que a data de início de controle da conta"* — without saying which date that is | Passes the sentence through and **adds the date**: it is the account's own `dateOfOpenBalance`, which the node just read |
+
+**`isArchived` is not among the update fields**, for the same reason `bankNumber` is not on Create: the API accepts it with a 204 and ignores it. Offering it would be selling what does not exist — and the node's own read-back confirmation is what would catch that silent 204.
 
 #### Balances
 
@@ -387,6 +413,7 @@ The Nibo API answers **HTTP 500 for invalid requests too**, which makes a plain 
 | Token missing, expired or from another organization (HTTP 401) | Says the token was rejected | No — fix the token |
 | `validation_error` (bad filter, unknown sort field, broken business rule) | Shows the API's own description of the problem | **No** — retrying repeats the same invalid request |
 | `internal_server_error` | Shows the failure with the original body preserved | **Yes** — this one is a genuine server-side failure |
+| More than **14 calls in one second** (HTTP 429, answered as plain text) | Names the limit and points at *Interval Between Requests*, whose 1000 ms default stays well clear of it | **Yes** — waiting is exactly what fixes it |
 
 A write can also fail without the API saying so — see [Update](#update) for how that one is caught.
 
@@ -478,6 +505,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.10.0 | **The settlement**, and with it a capability that was half-built: the node could create a schedule and had no way to mark it paid, which left every settlement in an HTTP Request node. **Transaction - Payment** and **Transaction - Receipt** arrive with **Settle**, **Create**, **Get**, **Get Many** and **Delete**, plus **Bank Account · Get Many**, because a settlement has to name an account and there was nowhere to get one. Three measurements shape it. `POST /payments` **without an account answers 200 and creates an unsettled schedule** instead of a payment — the node refuses to send that. **Settle and Create answer different IDs** (the entry and the schedule), so each reads back by its own. And these collections are **eventually consistent**: the read-back keeps asking for a few seconds, and when the entry still will not appear it says the write **went through** rather than that it failed — because the other sentence makes a workflow pay twice. **Update is not offered**: `PUT /payments/{id}` answers 404, including with the exact body of the production workflow that was supposed to prove otherwise |
 | 0.11.0 | **The bank accounts, for real.** 0.10.0 opened the resource with one operation and opened it out of obligation — a settlement is refused without an account — leaving a resource whose name promised money and which could only hand out identifiers. **Get Balances** and **Import Bank Statement** join it, and the new **Bank Transfer** resource arrives with **Create**, **Get Many** and **Delete**. Half of the transfer is in no documentation at all: `GET /accounts/transfer` and `DELETE /accounts/transfer/{id}` were found through a 500 that said *"Transferência não encontrada"* where a 404 was expected. The import is the reason for the version: this API takes a bank statement **half way, in silence** — a line dated before the account was opened is swallowed with a 204 — and **nothing can read the reconciliation queue back**, so every check happens before the request and each refusal names the item and the opening date the API omits. It is also the node's first **aggregating** operation: one input item is one line, and the run is one call. Three more measurements shape the release: the balance view is a **collection of its own**, keyed by `accountId` where the accounts are keyed by `id`; a transfer's **`description` comes back as `identifier`**, and the origin entry carries the amount **negative** where `/payments` carries the same entry positive; and a transfer **dated before the account was opened is accepted**, where the same date on a settlement is a 500 — so the node does not refuse it |
 | 0.11.1 | **The apportionment comes back.** 0.9.1 made **Apportion By** wait for a cost center line, and that quietly took the field out of use: pick a centre and it sat there empty, with `The value "" is not supported!` underneath and the node refusing to run. The condition was sound and the reading of it was not — the editor asks two functions, not one. `getNodeParameters` resolves the values it checks visibility against with `onlySimpleTypes`, an object that holds **no collection of any kind**, so a path into one is `undefined` there however the form is filled in; the field counts as hidden and **its value is dropped from what the node saves**, while the editor draws it anyway from the full parameters. No wording survives that: "there is no line yet" and "the check cannot see collections" arrive as the same `undefined`. So the field is unconditional again, still drawn under the lines, and a new sweep over the whole node forbids any `show` rule from reading a path into a collection. Nothing changes on the wire — with no line, neither key is sent — but a node saved while 0.9.1 to 0.11.0 was installed may have lost the choice, and a value apportionment has to be told so again |
+| 0.11.2 | **The account writes**, wanted for closing automations: **Bank Account · Create** and **Update**, with `balanceLockDate` as a first-class field. Everything defensive in it is a measurement. Create is **permanent** — no delete, and `isArchived` on a PUT is ignored with a 204 — so the form warns before the button; the API stores the opening date **one day early** on creation and the node repairs it with a corrective update, so the day you pick is the day that stays; `bankNumber` is ignored in silence and therefore not offered. Update merges over the record it just read, which is what keeps the **balance lock** alive through an update that does not mention it — a body without the field clears the lock, 204, not a word. Moving the lock **back** is refused unless the *Allow Moving the Lock Back* option says a person decided it; past the account's opening date the API refuses it itself, and the node adds the one thing the message omits — which date that is. Also new: **HTTP 429 speaks** — this API allows 14 calls per second, answers the excess in plain text, and the node now names the limit instead of showing the generic failure |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
