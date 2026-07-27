@@ -3,6 +3,7 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
+import { niboReadBack } from '../../transport/save';
 import { onlyTheDay } from '../schedule/normalize';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, requestInterval } from '../shared/options';
@@ -84,11 +85,16 @@ export async function executeBankAccount(
 				await sleep(interval);
 			}
 
+			if (operation === 'create') {
+				returnData.push({ json: await createAccount.call(this, i), pairedItem: { item: i } });
+				continue;
+			}
+
 			if (operation !== 'list' && operation !== 'listBalances') {
-				// There is no Get to offer: `GET /accounts/{id}` is a 404. Creating and
-				// editing an account are out by decision — an account cannot be deleted
-				// and `PUT` is the door to the lock date of a closed period — and moving
-				// money between two of them is the Bank Transfer resource.
+				// There is no Get to offer: `GET /accounts/{id}` is a 404 — one account
+				// is read through Get Many filtered by its ID. Deleting does not exist
+				// in this API at all, and moving money between two accounts is the
+				// Bank Transfer resource.
 				throw new NodeOperationError(
 					this.getNode(),
 					`The operation "${operation}" is not supported`,
@@ -145,6 +151,117 @@ export async function executeBankAccount(
 	}
 
 	return returnData;
+}
+
+/**
+ * Opens an account, and then goes and checks the one thing this API gets wrong.
+ *
+ * **The POST stores the opening date one day early.** A bare `2026-07-01` came
+ * back as `2026-06-30T00:00:00Z`, while the very same shape on a PUT is stored
+ * exactly — both measured on 2026-07-27. So the account is read back, and when
+ * the stored day is not the asked one, a corrective PUT (the whole record, with
+ * the right date) puts it where the user pointed. The day you pick is the day
+ * that stays.
+ *
+ * The read-back goes through the list — `GET /accounts/{id}` is a 404 — and the
+ * refusals sit before the POST, because afterwards there is no undo: `DELETE`
+ * is a 404 and `isArchived` on a PUT is ignored with a 204. What this creates
+ * is permanent.
+ */
+async function createAccount(
+	this: IExecuteFunctions,
+	itemIndex: number,
+): Promise<IDataObject> {
+	const name = String(this.getNodeParameter('name', itemIndex, '') ?? '').trim();
+	if (name === '') {
+		throw new NodeOperationError(this.getNode(), 'This account has no name', {
+			itemIndex,
+			description:
+				'Nothing was sent, and here that matters more than usual: an account this API creates cannot be deleted or archived through it. Give the account the name it should carry in Nibo.',
+		});
+	}
+
+	const askedDate = onlyTheDay(
+		String(this.getNodeParameter('dateOfOpenBalance', itemIndex, '') ?? ''),
+	);
+
+	const body: IDataObject = {
+		name,
+		openBalance: Number(this.getNodeParameter('openBalance', itemIndex, 0)) || 0,
+	};
+	if (askedDate !== '') {
+		body.dateOfOpenBalance = askedDate;
+	}
+
+	const answer = await niboApiRequest.call(this, itemIndex, 'POST', ACCOUNTS, {}, body);
+	const id =
+		typeof answer === 'string' ? answer.trim() : String((answer as IDataObject)?.data ?? '').trim();
+
+	if (id === '') {
+		throw new NodeOperationError(this.getNode(), 'Nibo did not say what it created', {
+			itemIndex,
+			description:
+				'The account may or may not exist now: the API answered the creation with a body this node could not read as an ID. Check the accounts in Nibo before sending it again — a second send would create a second permanent account.',
+		});
+	}
+
+	let record = await readAccountBack.call(this, itemIndex, id);
+
+	// The repair. Compared as days, because that is what both sides are.
+	if (askedDate !== '' && record !== undefined) {
+		const storedDate = onlyTheDay(String(record.dateOfOpenBalance ?? ''));
+
+		if (storedDate !== askedDate) {
+			await niboApiRequest.call(
+				this,
+				itemIndex,
+				'PUT',
+				`${ACCOUNTS}/${encodeURIComponent(id)}`,
+				{},
+				// The whole record, never a fragment: a partial PUT is a 500 on this
+				// route, and an omitted field is a field zeroed.
+				{ ...record, dateOfOpenBalance: askedDate },
+			);
+
+			record = await readAccountBack.call(this, itemIndex, id);
+			const repaired = onlyTheDay(String(record?.dateOfOpenBalance ?? ''));
+
+			if (record !== undefined && repaired !== askedDate) {
+				throw new NodeOperationError(
+					this.getNode(),
+					`The account was created, but its opening date could not be set to ${askedDate}`,
+					{
+						itemIndex,
+						description: `The account "${name}" exists with the ID "${id}" and Nibo keeps storing its opening date as ${repaired}. **Do not create it again** — fix the date with the Update operation or on Nibo's screen.`,
+					},
+				);
+			}
+		}
+	}
+
+	if (record === undefined) {
+		// The wording is the point: the account exists. Saying anything that reads
+		// as failure makes a workflow create it twice, and twice is forever here.
+		throw new NodeOperationError(
+			this.getNode(),
+			'The account was created, but it could not be read back',
+			{
+				itemIndex,
+				description: `Nibo answered the creation with the ID "${id}", so the account does exist. **Do not send it again** — a second send would create a second permanent account. Read it with Get Many, filtering by that ID.`,
+			},
+		);
+	}
+
+	return record;
+}
+
+/** One account, read through the list this API offers instead of a get-by-id */
+async function readAccountBack(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	id: string,
+): Promise<IDataObject | undefined> {
+	return await niboReadBack.call(this, itemIndex, ACCOUNTS, ACCOUNT_ORDER_BY, `id eq ${id}`);
 }
 
 /** One line of the statement, in the shape the API takes it */

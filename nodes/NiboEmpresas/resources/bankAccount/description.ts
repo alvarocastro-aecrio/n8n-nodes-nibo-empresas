@@ -56,6 +56,13 @@ export const bankAccountOperations: INodeProperties[] = [
 		},
 		options: [
 			{
+				name: 'Create',
+				value: 'create',
+				action: 'Create a bank account',
+				description:
+					'Open a new account in the organization — an act this API gives no way back from',
+			},
+			{
 				name: 'Get Balances',
 				value: 'listBalances',
 				action: 'Get the balances of the bank accounts',
@@ -137,8 +144,77 @@ export const bankAccountBalanceFilterFieldTypes = filterFieldTypes(BALANCE_FILTE
 
 export const bankAccountFields: INodeProperties[] = [
 	/**
-	 * The one screen of this node that has to warn before the button, and the
-	 * warning is not about failure — it is about a success that says nothing.
+	 * The creation, warned about before the button: this API has no way back.
+	 * `DELETE /accounts/{id}` is a 404, and `isArchived` on a PUT answers 204
+	 * and changes nothing — both measured on 2026-07-27. Archiving is Nibo's
+	 * screen only.
+	 */
+	{
+		displayName:
+			'An account cannot be deleted or archived through this API: what this creates is permanent, and tucking it away is only possible on Nibo\'s own screen. The node also checks the opening date after creating — this API stores it one day early on creation, and the node puts it right.',
+		name: 'createAccountNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Name',
+		name: 'name',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'Conta corrente Itaú',
+		description: 'What the account is called in Nibo',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		// `bankNumber` is deliberately NOT on this form: the POST ignores it in
+		// silence — 341 went in, 0 came out, measured on 2026-07-27. A field the
+		// screen collects and the server throws away is a form that lies.
+		displayName: 'Opening Balance',
+		name: 'openBalance',
+		type: 'number',
+		default: 0,
+		description:
+			'What the account holds on the opening day. It becomes the starting balance Get Balances reports.',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Opening Balance Date',
+		name: 'dateOfOpenBalance',
+		type: 'dateTime',
+		typeOptions: {
+			// A day, not a moment — same rule as every date of this API.
+			dateOnly: true,
+		},
+		default: '',
+		description:
+			'The day the opening balance was struck. Nothing can be filed into the account before it. The API stores this one day early on creation; the node reads the account back and repairs the date, so the day you pick is the day that stays.',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['create'],
+			},
+		},
+	},
+	/**
+	 * The import, warned about before the button, and the warning is not about
+	 * failure — it is about a success that says nothing.
 	 */
 	{
 		displayName:

@@ -127,11 +127,11 @@ describe('executeBankAccount — Get Many', () => {
 	});
 
 	/**
-	 * `GET /accounts/{id}` is a 404, so there is no Get to offer; creating and
-	 * editing an account are out of 0.11.0 by decision, because an account cannot
-	 * be deleted and `PUT` is the door to `balanceLockDate`.
+	 * `GET /accounts/{id}` is a 404, so there is no Get to offer — one account is
+	 * read through Get Many filtered by ID. And Delete does not exist in this API
+	 * at all, which is precisely what the Create screen warns about.
 	 */
-	it.each(['get', 'create', 'update', 'delete'])(
+	it.each(['get', 'update', 'delete'])(
 		'refuses "%s", which this resource does not offer',
 		async (operation) => {
 			await expect(
@@ -297,6 +297,149 @@ describe('executeBankAccount — the filter it sends', () => {
 				'list',
 			),
 		).rejects.toThrow(/isDeleted/);
+	});
+});
+
+/**
+ * Creating an account — the act this API gives no way back from.
+ *
+ * `DELETE /accounts/{id}` is a 404 and `isArchived` is ignored on a PUT, both
+ * measured on 2026-07-27: an account this operation creates is **permanent and
+ * visible**, and the only way to tuck it away is Nibo's own screen. The notice
+ * on the form says so before the button.
+ *
+ * And the API moves the opening date: a bare `2026-07-01` on the POST was
+ * stored as `2026-06-30` — one day earlier — while the same date on a PUT is
+ * stored exactly. So Create reads its work back and repairs the date with a
+ * corrective PUT when it drifted.
+ */
+describe('executeBankAccount — Create', () => {
+	const CREATED = 'c0ffee00-1111-2222-3333-444455556666';
+
+	function creating(overrides: IDataObject = {}) {
+		return context({
+			name: 'CONTA NOVA',
+			openBalance: 500,
+			dateOfOpenBalance: '2026-07-01T00:00:00.000-03:00',
+			...overrides,
+		});
+	}
+
+	/** What the list answers on each read-back, in order */
+	function readBackAnswers(...records: Array<IDataObject | undefined>) {
+		listRequest.mockReset();
+		for (const record of records.slice(0, -1)) {
+			listRequest.mockResolvedValueOnce({
+				records: record === undefined ? [] : [record],
+				count: record === undefined ? 0 : 1,
+			});
+		}
+		const last = records[records.length - 1];
+		listRequest.mockResolvedValue({
+			records: last === undefined ? [] : [last],
+			count: last === undefined ? 0 : 1,
+		});
+	}
+
+	const STORED_RIGHT = {
+		id: CREATED,
+		name: 'CONTA NOVA',
+		openBalance: 500,
+		dateOfOpenBalance: '2026-07-01T00:00:00Z',
+		isArchived: false,
+	};
+	const STORED_SHIFTED = { ...STORED_RIGHT, dateOfOpenBalance: '2026-06-30T00:00:00Z' };
+
+	beforeEach(() => {
+		apiRequest.mockResolvedValue(CREATED);
+		readBackAnswers(STORED_RIGHT);
+	});
+
+	it('posts the name, the opening balance and the day — and never bankNumber', async () => {
+		await executeBankAccount.call(creating(), 'bankAccount', 'create');
+
+		expect(apiRequest.mock.calls[0][1]).toBe('POST');
+		expect(apiRequest.mock.calls[0][2]).toBe('/accounts');
+		expect(apiRequest.mock.calls[0][4]).toEqual({
+			name: 'CONTA NOVA',
+			openBalance: 500,
+			dateOfOpenBalance: '2026-07-01',
+		});
+	});
+
+	it('leaves the opening date out of the body when it was not given', async () => {
+		readBackAnswers({ ...STORED_RIGHT, dateOfOpenBalance: '2026-07-27T00:00:00Z' });
+
+		await executeBankAccount.call(creating({ dateOfOpenBalance: '' }), 'bankAccount', 'create');
+
+		expect(apiRequest.mock.calls[0][4]).not.toHaveProperty('dateOfOpenBalance');
+		// And with nothing asked there is nothing to repair: no PUT.
+		expect(apiRequest.mock.calls.filter((call) => call[1] === 'PUT')).toHaveLength(0);
+	});
+
+	it('reads the account back through the list, by the bare GUID', async () => {
+		const items = await executeBankAccount.call(creating(), 'bankAccount', 'create');
+
+		expect(listRequest.mock.calls[0][1]).toBe('/accounts');
+		expect((listRequest.mock.calls[0][3] as unknown as IDataObject).filter).toBe(
+			`id eq ${CREATED}`,
+		);
+		expect(items[0].json).toEqual(STORED_RIGHT);
+	});
+
+	/**
+	 * The repair this operation exists for. The POST stored the day before the
+	 * one that was asked, so the node puts it right with the call that was
+	 * measured to store dates exactly.
+	 */
+	it('repairs the shifted opening date with a corrective PUT', async () => {
+		readBackAnswers(STORED_SHIFTED, STORED_RIGHT);
+
+		const items = await executeBankAccount.call(creating(), 'bankAccount', 'create');
+
+		const put = apiRequest.mock.calls.find((call) => call[1] === 'PUT');
+		expect(put?.[2]).toBe(`/accounts/${CREATED}`);
+		expect((put?.[4] as IDataObject).dateOfOpenBalance).toBe('2026-07-01');
+		// The whole record travels, not a fragment: a partial PUT is a 500 here.
+		expect((put?.[4] as IDataObject).name).toBe('CONTA NOVA');
+		expect(items[0].json).toEqual(STORED_RIGHT);
+	});
+
+	it('sends no PUT when the stored date already is the asked one', async () => {
+		await executeBankAccount.call(creating(), 'bankAccount', 'create');
+
+		expect(apiRequest.mock.calls.filter((call) => call[1] === 'PUT')).toHaveLength(0);
+	});
+
+	it('fails honestly when the repair did not take', async () => {
+		readBackAnswers(STORED_SHIFTED, STORED_SHIFTED);
+
+		await expect(
+			executeBankAccount.call(creating(), 'bankAccount', 'create'),
+		).rejects.toThrow(/opening date/i);
+	});
+
+	it('refuses a blank name before anything is sent', async () => {
+		await expect(
+			executeBankAccount.call(creating({ name: '   ' }), 'bankAccount', 'create'),
+		).rejects.toThrow(/name/i);
+
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * The wording matters more here than anywhere: the account **was** created,
+	 * and a workflow told otherwise creates it twice — and twice is forever.
+	 */
+	it('says the account was created when it cannot be read back', async () => {
+		readBackAnswers(undefined);
+
+		const failure = executeBankAccount.call(creating(), 'bankAccount', 'create');
+
+		await expect(failure).rejects.toThrow(/was created/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/again/i),
+		});
 	});
 });
 
@@ -680,13 +823,42 @@ describe('NiboEmpresas — Bank Account on the screen', () => {
 	it('offers the operations this version measured, alphabetically by label', () => {
 		const operation = forAccounts('operation');
 
-		expect(optionValues(operation)).toEqual(['listBalances', 'list', 'importBankStatement']);
+		expect(optionValues(operation)).toEqual([
+			'create',
+			'listBalances',
+			'list',
+			'importBankStatement',
+		]);
 		expect((operation?.options as INodePropertyOptions[]).map((one) => one.name)).toEqual([
+			'Create',
 			'Get Balances',
 			'Get Many',
 			'Import Bank Statement',
 		]);
 		expect(operation?.default).toBe('list');
+	});
+
+	it('asks for the name, the opening balance and the opening day on Create', () => {
+		expect(forAccounts('name', 'create')?.required).toBe(true);
+		expect(forAccounts('openBalance', 'create')?.type).toBe('number');
+		expect(forAccounts('dateOfOpenBalance', 'create')?.typeOptions?.dateOnly).toBe(true);
+	});
+
+	/**
+	 * `bankNumber` is what anybody would expect on this form, and it is not
+	 * there on purpose: the POST ignores it in silence — 341 went in, 0 came
+	 * out, measured on 2026-07-27. A field the screen collects and the server
+	 * throws away is a form that lies.
+	 */
+	it('never offers bankNumber, which the POST ignores in silence', () => {
+		expect(forAccounts('bankNumber', 'create')).toBeUndefined();
+	});
+
+	it('warns before the button that a created account has no way back', () => {
+		const notice = forAccounts('createAccountNotice', 'create');
+
+		expect(notice?.type).toBe('notice');
+		expect(notice?.displayName).toMatch(/deleted|archived/i);
 	});
 
 	it('asks for the account, the batch and the three fields of a line on the import', () => {
