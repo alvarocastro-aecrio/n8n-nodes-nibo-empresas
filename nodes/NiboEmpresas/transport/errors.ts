@@ -17,7 +17,7 @@
  * tested in isolation and used from a single place in the transport.
  */
 
-export type NiboErrorKind = 'auth' | 'validation' | 'server' | 'unknown';
+export type NiboErrorKind = 'auth' | 'validation' | 'server' | 'rateLimit' | 'unknown';
 
 export interface INiboErrorInfo {
 	kind: NiboErrorKind;
@@ -56,6 +56,16 @@ const RETRY_HINT_SERVER =
 	'This one is a genuine server-side failure, so retrying can help — turn on "Retry On Fail" in the node settings if it keeps happening.';
 const AUTH_HINT =
 	'Check the API token in the Nibo Empresas credential. In this API the token selects the organization, so a token that belongs to another organization fails exactly like an expired one.';
+
+/**
+ * Measured on 2026-07-27, the first 429 this project ever saw from this API —
+ * and the body is plain text, not JSON, so none of the JSON discriminators
+ * apply. The classification exists because an unrecognized 429 does worse than
+ * read badly: a probe once took that text body for an empty collection and
+ * briefly "proved" something false about the API.
+ */
+const RATE_LIMIT_HINT =
+	'Nibo allows at most 14 calls per second per organization. The default Interval Between Requests (1000 ms, under Options) stays well clear of it — this usually means the interval was set to 0 on a large batch, or several executions hit the same organization at once. Waiting and retrying works: the request itself is fine.';
 
 function asRecord(value: unknown): UnknownRecord | undefined {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -139,6 +149,16 @@ export function classifyNiboError(error: unknown): INiboErrorInfo {
 			kind: 'auth',
 			message: 'The Nibo Empresas API rejected the token (HTTP 401)',
 			description: AUTH_HINT,
+			httpCode,
+			body,
+		};
+	}
+
+	if (httpCode === '429') {
+		return {
+			kind: 'rateLimit',
+			message: 'Nibo refused the call: more than 14 requests in one second (HTTP 429)',
+			description: RATE_LIMIT_HINT,
 			httpCode,
 			body,
 		};

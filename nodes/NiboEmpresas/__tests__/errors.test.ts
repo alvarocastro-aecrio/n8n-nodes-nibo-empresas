@@ -98,6 +98,39 @@ describe('classifyNiboError', () => {
 		expect(info.message).toContain('The $orderby expression must evaluate to a single value');
 	});
 
+	/**
+	 * The rate limit, met for the first time on 2026-07-27 while probing the
+	 * account writes: **14 calls per second**, answered as HTTP 429 with a body
+	 * that is PLAIN TEXT — `API calls quota exceeded! maximum admitted 14 per
+	 * Second.` — not JSON.
+	 *
+	 * It earned its classification the hard way: a probe read that 429 text as an
+	 * empty collection and "proved" something false about the API. A 429 that
+	 * falls through to the generic message invites exactly that misreading.
+	 */
+	it('classifies HTTP 429 as the rate limit, naming the measured ceiling', () => {
+		const info = classifyNiboError(
+			httpError(429, 'API calls quota exceeded! maximum admitted 14 per Second.'),
+		);
+
+		expect(info.kind).toBe('rateLimit');
+		expect(info.httpCode).toBe('429');
+		expect(info.message).toMatch(/14.*second/i);
+		expect(info.description).toMatch(/Interval Between Requests/);
+	});
+
+	it('classifies a wrapped 429 the same way, even with the text body', () => {
+		const wrapped = new NodeApiError(
+			NODE,
+			axiosError(429, 'API calls quota exceeded! maximum admitted 14 per Second.') as unknown as JsonObject,
+		);
+
+		const info = classifyNiboError(wrapped);
+
+		expect(info.kind).toBe('rateLimit');
+		expect(info.httpCode).toBe('429');
+	});
+
 	it('classifies a wrapped 401 as an authentication problem', () => {
 		const wrapped = new NodeApiError(
 			NODE,
