@@ -295,7 +295,7 @@ está aceito abaixo é o código que vai publicado, não um comando que por acas
 | ☑ | Um agendamento com rateio, editado pelo *Update Fields* **sem** citar rateio, mantém o rateio | Regressão contra a cobaia: descrição trocada, rateio 60/40 intacto |
 | ☐ | Um node salvo na 0.8.2 executa sem ser tocado | Criação e update de agendamento, e Category · Get Many |
 | ☑ | A cobaia termina sem centro de custo e sem agendamento de sonda | `count: 0` nos dois — a lista **atrasa alguns segundos** depois de um `DELETE`, ver 7.5 |
-| ☐ | **Instalação real (regra 7)** | Tela Community Nodes de uma instância limpa, com o pacote vindo do npm |
+| ☑ | **Instalação real (regra 7)** | Ver 7.6 |
 
 **O que continua faltando, e não dá para fechar por API:** olhar na **tela do Nibo** os
 registros escritos (a regra irmã da 7 — gotcha 12 do CLAUDE existe porque a API disse 200 e a
@@ -384,3 +384,26 @@ errados.
   é a view da API. Quem confere limpeza imediatamente depois de apagar vê fantasma.
 - **A ordem das linhas de rateio não é preservada** pela API, nem na criação. Nada no node
   depende disso desde a correção da 7.4.
+
+### 7.6 A regra 7, cumprida — e a evidência é melhor que uma listagem
+
+O Alvaro instalou a **0.9.1 vinda do npm pela tela Community Nodes** da instância de dev
+(n8n 2.18.5, limpa, porta 5679) em 2026-07-27. Conferido de três lados:
+
+1. **`/home/node/.n8n/nodes/package.json` declara `"n8n-nodes-nibo-empresas": "0.9.1"`**, e a
+   pasta instalada traz os cinco módulos de recurso, `costCenter` incluído.
+2. **O tipo carrega dentro do container**: `niboEmpresas`, os **oito** recursos e os **quatro**
+   `loadOptions`. Nenhum *"Unrecognized node type"* e nenhum *"Class could not be found"* no
+   log — que são exatamente as duas formas de reprovar aqui, e a primeira foi o que derrubou
+   a 0.1.0.
+3. **E a evidência que vale mais que qualquer listagem:** o log da instância traz
+   *"Nibo answered with no cost centers to choose from"* — **uma mensagem escrita nesta
+   versão, disparada de dentro daquele n8n, por um campo desta versão**. O pacote não só
+   carregou: o código novo executou na tela.
+
+⚠️ Essa mesma linha diz uma segunda coisa: a lista de centro de custo abre vazia porque **o
+aceite apagou todos os centros de custo da cobaia** (era o combinado, 1.8). Para experimentar
+o rateio na tela é preciso criar um centro de custo antes — o que esta versão sabe fazer.
+
+**O que continua faltando é só o olho no Nibo**: os lançamentos com rateio e as duas
+categorias criadas, olhados na tela do Nibo. Nada disso fecha por API — é a regra irmã da 7.
