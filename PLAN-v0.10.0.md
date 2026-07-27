@@ -180,25 +180,31 @@ Todo o resto foi apagado: os agendamentos e as baixas das sondas, cada um confer
 
 ## 2. Decisões de recorte
 
-0. **Os nomes no menu levam a palavra de família `Settlement`** *(recomendação minha,
-   2026-07-27, delegada pelo Alvaro)*. A regra já existe neste node e só precisava ser
-   aplicada: **família de mais de um recurso ganha prefixo, recurso sozinho não**. Contact
-   são quatro e têm; Schedule são dois e têm; Category e Cost Center são sozinhos e não têm.
-   Payment e Receipt são **dois, com contrato idêntico e um handler só** — logo têm.
-
-   E o efeito colateral é o melhor argumento: `Settlement` cai **imediatamente depois de
-   `Schedule`** na ordenação (`Sch` < `Set`), sem nada no meio. O menu — e com ele a aba
-   Actions, que é a mesma lista — passa a ler na ordem do dinheiro: *agenda, depois baixa*.
-   `Bank Account` entra solto, por ser um só.
+0. **Os nomes no menu levam a palavra de família `Transaction`** *(decidido pelo Alvaro em
+   2026-07-27, vendo os três menus lado a lado)*. `Transaction - Payment` e
+   `Transaction - Receipt`, com os `value` guardados como `payment` e `receipt` — rótulo é
+   palavra, `value` é contrato.
 
    ```
    Bank Account · Category · Contact - Customer · Contact - Employee
    Contact - Partner · Contact - Supplier · Cost Center
-   Schedule - Credit · Schedule - Debit · Settlement - Payment · Settlement - Receipt
+   Schedule - Credit · Schedule - Debit · Transaction - Payment · Transaction - Receipt
    ```
 
-   Os `value` guardados são `payment`, `receipt` e `bankAccount` — rótulo é palavra, `value`
-   é contrato.
+   **O caminho até aqui vale mais que a escolha.** Minha primeira sugestão foi `Settlement`,
+   por duas razões: a regra deste node (família de mais de um recurso leva prefixo) e a
+   posição na ordenação. O Alvaro achou a palavra ruim e pediu outra — e ao procurar, a
+   razão da ordenação caiu: medido com **todos** os recursos que ainda faltam no roteiro,
+   `Payment` e `Receipt` ficam adjacentes **sem prefixo nenhum**, porque nada plausível cai
+   entre eles. O prefixo não conserta agrupamento aqui, ao contrário da 0.8.2, onde
+   `Credit Schedule` caía entre `Category` e `Customer`.
+
+   Ficou então um custo contra um ganho, e os dois são reais: sem prefixo, a palavra que o
+   olho procura vem primeiro — **e isso pesa mais desde que se descobriu que community node
+   não tem busca nas actions** (CLAUDE §4.1, item 3), então o menu é varrido de olho. Com
+   `Transaction`, os dois se leem como uma família e caem logo depois de `Schedule`, na
+   ordem do dinheiro. **`Settlement` perdia dos dois lados**: tomava o primeiro lugar da
+   linha *e* era uma palavra que ninguém diz.
 
 1. **Dois recursos, `Payment` e `Receipt`, com um handler só** — a API dá aos dois um
    contrato idêntico (medido nas cinco operações), exatamente como aos dois agendamentos e
@@ -248,8 +254,8 @@ Todo o resto foi apagado: os agendamentos e as baixas das sondas, cada um confer
 
 | Camada | O que ganha na 0.10.0 |
 |---|---|
-| `resources/settlement/description.ts` **(novo)** | Os dois recursos, cinco operações, filtro assistido |
-| `resources/settlement/execute.ts` **(novo)** | As cinco, com a recusa sem conta e a recusa do tipo trocado |
+| `resources/transaction/description.ts` **(novo)** | Os dois recursos, cinco operações, filtro assistido |
+| `resources/transaction/execute.ts` **(novo)** | As cinco, com a recusa sem conta e a recusa do tipo trocado |
 | `resources/account/description.ts` **(novo)** | `Bank Account · Get Many` |
 | `resources/account/execute.ts` **(novo)** | Uma operação |
 | `resources/account/load.ts` **(novo)** | A lista de contas do formulário de baixa |
@@ -261,7 +267,7 @@ Todo o resto foi apagado: os agendamentos e as baixas das sondas, cada um confer
 
 ## 4. Fatias, com teste antes do código
 
-1. **`Payment`/`Receipt` — Get Many e Get** *(commit próprio)*. Leitura pura. Testes:
+1. **`Transaction · Get Many` e `Get`** *(commit próprio)*. Leitura pura. Testes:
    pagina por `entryId` e nunca por `id`; o filtro assistido só oferece os campos medidos e
    **nunca `isFlag`, `isDeleted`, `dueDate` nem `isPaid`**; Get monta `entryId eq` **sem
    aspas** e recusa o que não é GUID; lista vazia vira "não encontrado".
@@ -331,7 +337,7 @@ Respondidas pelo Alvaro em 2026-07-27.
 
 | # | Estava em aberto | Ficou |
 |---|---|---|
-| 1 | Os nomes no menu | **`Settlement - Payment` / `Settlement - Receipt`** — delegado a mim, ver decisão 0. `Bank Account` solto |
+| 1 | Os nomes no menu | **`Transaction - Payment` / `Transaction - Receipt`** — delegado a mim, minha sugestão (`Settlement`) recusada e refeita com ele. Ver decisão 0. `Bank Account` solto |
 | 2 | Se `Bank Account` entra agora | **Entra**, com `Get Many` só — decisão 6 |
 | 3 | Se vale levantar o `PUT /payments/{id}` | **Levantado e fechado**: a chamada de produção foi lida e reproduzida à risca, responde 404, e o workflow que a fazia está inativo. Não existe recategorização nesta API — ver 1.8 |
 
