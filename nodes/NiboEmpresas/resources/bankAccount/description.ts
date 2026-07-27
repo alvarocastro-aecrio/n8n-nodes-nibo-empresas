@@ -4,19 +4,24 @@ import type { IFilterField } from '../shared/filter';
 import { filterFieldTypes, filterProperties } from '../shared/filter';
 
 /**
- * The bank accounts — and only the reading of them.
+ * The bank accounts: the list of them, and what is in them.
  *
- * This resource exists for one reason, and it is a hard one: **a settlement is
- * refused without an account.** `POST /schedules/debit/{id}/payments` with no
- * `accountId` answers HTTP 500 *"Conta bancária não encontrada."*, and until
- * this cut the node had nowhere to get one. Worse, an organization can
- * genuinely have none — the test company had zero — so the emptiness is a real
- * state a workflow runs into.
+ * The resource arrived in 0.10.0 with a single operation, and it arrived out of
+ * obligation: **a settlement is refused without an account** — `POST
+ * /schedules/debit/{id}/payments` with no `accountId` answers HTTP 500 *"Conta
+ * bancária não encontrada."* — so the node needed somewhere to read an ID. That
+ * left a resource whose name promised money and which could only hand out
+ * identifiers.
  *
- * The **full** Account resource is item 6 of the project's roadmap: balances,
- * transfers and bank-statement imports. None of that is here. What is here is
- * the minimum the settlement needs, which is the same cut Category got in 0.7.0
- * when a schedule needed a category ID.
+ * 0.11.0 pays that debt. **Get Balances** reads what each account holds, and
+ * **Import Bank Statement** files a statement into the reconciliation queue.
+ * Moving money between two accounts is next door, in Bank Transfer: a transfer
+ * is a record of its own in this API, with its own collection and its own ID.
+ *
+ * Creating and editing an account stay out, and by decision rather than by
+ * omission: `DELETE /accounts/{id}` is a 404, so an account created by mistake
+ * is permanent, and `PUT` is the door to `balanceLockDate` — moving it back
+ * unlocks a closed accounting period.
  */
 const BANK_ACCOUNT = 'bankAccount';
 
@@ -29,9 +34,14 @@ export const bankAccountResources: INodePropertyOptions[] = [
 ];
 
 /**
- * One operation, because it is all this cut needs and all that was measured.
- * `GET /accounts/{id}` is a **404** — so there is no Get to offer even if there
- * were a reason to.
+ * There is still no **Get**, and it is measurement rather than an oversight:
+ * `GET /accounts/{id}` is a **404**. One account is read through Get Many
+ * filtered by its ID, which is the same door `/payments` has.
+ *
+ * Alphabetical by name, which is what the n8n linter requires — and it happens
+ * to read in the right order too: the balances before the accounts they belong
+ * to is odd, but a menu sorted any other way would be a lie about what the
+ * editor shows.
  */
 export const bankAccountOperations: INodeProperties[] = [
 	{
@@ -45,6 +55,13 @@ export const bankAccountOperations: INodeProperties[] = [
 			},
 		},
 		options: [
+			{
+				name: 'Get Balances',
+				value: 'listBalances',
+				action: 'Get the balances of the bank accounts',
+				description:
+					'Retrieve what each account holds, from the balance view — a collection of its own, with its own fields',
+			},
 			{
 				name: 'Get Many',
 				value: 'list',
@@ -79,6 +96,38 @@ const FILTER_FIELDS: IFilterField[] = [
 
 export const bankAccountFilterFieldTypes = filterFieldTypes(FILTER_FIELDS);
 
+/**
+ * The balance view, which is a second collection about the same accounts and
+ * agrees with the first about almost nothing.
+ *
+ * Every path here answered HTTP 200 on 2026-07-27, and the absences are what
+ * make this a menu of its own rather than a switch on the one above:
+ *
+ * - **`isArchived` is a 500 here.** It is a filter on `/accounts` and does not
+ *   exist on this DTO, so there is no way to ask the server for the balances of
+ *   the accounts still in use — they have to be matched up afterwards.
+ * - **`id` and `name` are a 500 as well**, which is why the ID is `accountId`
+ *   and the name is `accountName`. The same two words, and neither spelling
+ *   crosses over.
+ *
+ * And one distinction worth the note, because it looks like a bug and is not:
+ * **`balance` and `bankBalance` are different numbers.** The first is what Nibo
+ * has recorded, the second what the bank itself reported — on an account with no
+ * banking automation the first moved and the second stayed at `0.00`.
+ *
+ * Alphabetical by label, as the editor shows and the linter requires.
+ */
+const BALANCE_FILTER_FIELDS: IFilterField[] = [
+	{ label: 'Account ID', path: 'accountId', type: 'guid' },
+	{ label: 'Account Name', path: 'accountName', type: 'text' },
+	{ label: 'Balance', path: 'balance', type: 'number' },
+	{ label: 'Bank Balance', path: 'bankBalance', type: 'number' },
+	{ label: 'Is Reconcilable', path: 'isReconcilable', type: 'boolean' },
+	{ label: 'Is Virtual', path: 'isVirtual', type: 'boolean' },
+];
+
+export const bankAccountBalanceFilterFieldTypes = filterFieldTypes(BALANCE_FILTER_FIELDS);
+
 export const bankAccountFields: INodeProperties[] = [
 	{
 		displayName: 'Return All',
@@ -89,7 +138,7 @@ export const bankAccountFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: [BANK_ACCOUNT],
-				operation: ['list'],
+				operation: ['list', 'listBalances'],
 			},
 		},
 	},
@@ -106,10 +155,16 @@ export const bankAccountFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: [BANK_ACCOUNT],
-				operation: ['list'],
+				operation: ['list', 'listBalances'],
 				returnAll: [false],
 			},
 		},
 	},
 	...filterProperties({ resources: [BANK_ACCOUNT], fields: FILTER_FIELDS, defaultField: 'name' }),
+	...filterProperties({
+		resources: [BANK_ACCOUNT],
+		fields: BALANCE_FILTER_FIELDS,
+		defaultField: 'accountName',
+		operations: ['listBalances'],
+	}),
 ];

@@ -55,6 +55,18 @@ export interface IFilterMenu {
 	fields: IFilterField[];
 	/** Which path a row starts on, so a row added and untouched is a whole condition */
 	defaultField: string;
+	/**
+	 * Which scans these conditions belong to. Every resource until 0.11.0 had
+	 * exactly one, so the name of that one is the default and nothing that already
+	 * calls this had to change.
+	 *
+	 * The bank accounts are the first resource with two, and they are two because
+	 * the API has two collections: the accounts and their balances disagree on the
+	 * name of nearly every field they share, and `isArchived` is a filter on one
+	 * and an HTTP 500 on the other. One menu for both would be a screen where the
+	 * chosen field can turn into a server error when a switch is flipped.
+	 */
+	operations?: string[];
 }
 
 /**
@@ -75,6 +87,8 @@ export function filterFieldTypes(fields: IFilterField[]): Record<string, ODataFi
  * A field nobody can see must never be filtering underneath one they can.
  */
 export function filterProperties(menu: IFilterMenu): INodeProperties[] {
+	const operations = menu.operations ?? ['list'];
+
 	return [
 		{
 			displayName: 'Filters',
@@ -96,7 +110,7 @@ export function filterProperties(menu: IFilterMenu): INodeProperties[] {
 			displayOptions: {
 				show: {
 					resource: menu.resources,
-					operation: ['list'],
+					operation: operations,
 				},
 				// Write an expression by hand and the conditions leave the screen —
 				// and leave the request with it. The editor reads `exists` as
@@ -125,7 +139,7 @@ export function filterProperties(menu: IFilterMenu): INodeProperties[] {
 			displayOptions: {
 				show: {
 					resource: menu.resources,
-					operation: ['list'],
+					operation: operations,
 				},
 				hide: {
 					'/options.filter': [{ _cnd: { exists: true } }],

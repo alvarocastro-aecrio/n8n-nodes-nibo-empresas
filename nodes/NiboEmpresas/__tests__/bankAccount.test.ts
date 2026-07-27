@@ -123,18 +123,127 @@ describe('executeBankAccount — Get Many', () => {
 	});
 
 	/**
-	 * One operation, because that is all this version needs and all that was
-	 * measured to work: `GET /accounts/{id}` is a 404, and creating, editing or
-	 * transferring belongs to the Account slice that is still ahead.
+	 * `GET /accounts/{id}` is a 404, so there is no Get to offer; creating and
+	 * editing an account are out of 0.11.0 by decision, because an account cannot
+	 * be deleted and `PUT` is the door to `balanceLockDate`.
 	 */
 	it.each(['get', 'create', 'update', 'delete'])(
-		'refuses "%s", which this cut does not offer',
+		'refuses "%s", which this resource does not offer',
 		async (operation) => {
 			await expect(
 				executeBankAccount.call(context({}), 'bankAccount', operation),
 			).rejects.toThrow(new RegExp(operation));
 		},
 	);
+});
+
+/**
+ * The balances, which are a collection of their own rather than a field of the
+ * accounts — `GET /accounts/views/balance`, measured on 2026-07-27.
+ *
+ * Two collections about the same things, and almost nothing carries over: the
+ * paging key differs, and the sets of filterable fields barely overlap. That is
+ * why this is an operation of its own and not a switch on Get Many.
+ */
+describe('executeBankAccount — Get Balances', () => {
+	it('reads the balance view', async () => {
+		await executeBankAccount.call(context({ returnAll: true }), 'bankAccount', 'listBalances');
+
+		expect(listRequest.mock.calls[0][1]).toBe('/accounts/views/balance');
+	});
+
+	/**
+	 * The mine of this slice. On this view `$orderby=id` and `$orderby=name` are
+	 * both HTTP 500 — neither property exists on the DTO — and the key is
+	 * `accountId`. It is the exact opposite of `/accounts`, which is the very
+	 * collection sitting beside it in this resource.
+	 */
+	it('pages by accountId, where the accounts themselves page by id', async () => {
+		await executeBankAccount.call(context({ returnAll: true }), 'bankAccount', 'listBalances');
+
+		expect(listRequest.mock.calls[0][2]).toBe('accountId');
+		expect(listRequest.mock.calls[0][2]).not.toBe('id');
+	});
+
+	it('forwards Return All, the limit and the strict scan like every other scan', async () => {
+		await executeBankAccount.call(
+			context({ returnAll: false, limit: 7 }),
+			'bankAccount',
+			'listBalances',
+		);
+
+		expect(optionsSentToTransport()).toMatchObject({
+			returnAll: false,
+			limit: 7,
+			failOnIncomplete: true,
+		});
+	});
+
+	it('hands back the balance and the bank balance as they came', async () => {
+		listRequest.mockResolvedValue({
+			records: [
+				{ accountId: GUID, accountName: 'Conta corrente', balance: 250.5, bankBalance: 0 },
+			],
+			count: 1,
+		});
+
+		const items = await executeBankAccount.call(
+			context({ returnAll: true }),
+			'bankAccount',
+			'listBalances',
+		);
+
+		expect(items[0].json).toEqual({
+			accountId: GUID,
+			accountName: 'Conta corrente',
+			balance: 250.5,
+			bankBalance: 0,
+		});
+	});
+
+	describe('the filter it sends', () => {
+		function withConditions(conditions: IDataObject[]) {
+			return context({ returnAll: true, filters: { conditions } });
+		}
+
+		it('writes the account ID bare, like every ID column of this API', async () => {
+			await executeBankAccount.call(
+				withConditions([{ field: 'accountId', operator: 'eq', guidValue: GUID }]),
+				'bankAccount',
+				'listBalances',
+			);
+
+			expect(optionsSentToTransport().filter).toBe(`accountId eq ${GUID}`);
+		});
+
+		it('searches the account name, which is not called name here', async () => {
+			await executeBankAccount.call(
+				withConditions([
+					{ field: 'accountName', operator: 'containsIgnoreCase', value: 'CORRENTE' },
+				]),
+				'bankAccount',
+				'listBalances',
+			);
+
+			expect(optionsSentToTransport().filter).toBe("contains(tolower(accountName),'corrente')");
+		});
+
+		/**
+		 * `isArchived` exists on `/accounts` and is an HTTP 500 here. There is
+		 * therefore no way to ask the server for the balances of the accounts still
+		 * in use, and a condition that looks like it would is refused before the
+		 * request rather than answered with a server error.
+		 */
+		it('fails the item on isArchived, which is a 500 on this view', async () => {
+			await expect(
+				executeBankAccount.call(
+					withConditions([{ field: 'isArchived', operator: 'eq', booleanValue: false }]),
+					'bankAccount',
+					'listBalances',
+				),
+			).rejects.toThrow(/isArchived/);
+		});
+	});
 });
 
 describe('executeBankAccount — the filter it sends', () => {
@@ -270,11 +379,15 @@ describe('NiboEmpresas — Bank Account on the screen', () => {
 		return description.properties.find((prop) => prop.name === name);
 	}
 
-	function forAccounts(name: string): INodeProperties | undefined {
+	function forAccounts(name: string, operation = 'list'): INodeProperties | undefined {
 		return description.properties.find(
 			(prop) =>
 				prop.name === name &&
-				((prop.displayOptions?.show?.resource ?? []) as string[]).includes('bankAccount'),
+				((prop.displayOptions?.show?.resource ?? []) as string[]).includes('bankAccount') &&
+				// The Operation field itself names no operation, and a field shown on
+				// every one of them names none either: both belong to whichever is asked
+				// for.
+				((prop.displayOptions?.show?.operation ?? [operation]) as string[]).includes(operation),
 		);
 	}
 
@@ -299,14 +412,20 @@ describe('NiboEmpresas — Bank Account on the screen', () => {
 		expect(credential.displayOptions?.show?.resource).toContain('bankAccount');
 	});
 
-	it('offers the one operation this cut measured', () => {
-		expect(optionValues(forAccounts('operation'))).toEqual(['list']);
-		expect(forAccounts('operation')?.default).toBe('list');
+	it('offers the operations this version measured, alphabetically by label', () => {
+		const operation = forAccounts('operation');
+
+		expect(optionValues(operation)).toEqual(['listBalances', 'list']);
+		expect((operation?.options as INodePropertyOptions[]).map((one) => one.name)).toEqual([
+			'Get Balances',
+			'Get Many',
+		]);
+		expect(operation?.default).toBe('list');
 	});
 
-	/** The fields of one row of this resource's condition builder */
-	function conditionFields(): INodeProperties[] {
-		const collections = (forAccounts('filters')?.options ?? []) as Array<{
+	/** The fields of one row of the condition builder of a given operation */
+	function conditionFields(operation = 'list'): INodeProperties[] {
+		const collections = (forAccounts('filters', operation)?.options ?? []) as Array<{
 			name: string;
 			values: INodeProperties[];
 		}>;
@@ -331,5 +450,37 @@ describe('NiboEmpresas — Bank Account on the screen', () => {
 		expect(optionValues(conditionFields().find((one) => one.name === 'field'))).not.toContain(
 			'type',
 		);
+	});
+
+	/**
+	 * The balance view has a menu of its own, and it has to: the two collections
+	 * disagree on the name of nearly every field they both have, and `isArchived`
+	 * is a 500 on one and a filter on the other. One menu with a switch would be a
+	 * screen whose chosen field can turn into a server error.
+	 */
+	it('gives Get Balances the fields measured on the balance view', () => {
+		const field = conditionFields('listBalances').find((one) => one.name === 'field');
+
+		expect(optionValues(field).sort()).toEqual(
+			['accountId', 'accountName', 'balance', 'bankBalance', 'isReconcilable', 'isVirtual'].sort(),
+		);
+	});
+
+	it('never offers isArchived on the balances, where it is a 500', () => {
+		expect(
+			optionValues(conditionFields('listBalances').find((one) => one.name === 'field')),
+		).not.toContain('isArchived');
+	});
+
+	/**
+	 * The hand-written expression is offered on every scan of this node, and a
+	 * scan the option cannot see is a scan whose filter box is missing from the
+	 * screen.
+	 */
+	it('offers the hand-written OData expression on the balances too', () => {
+		const options = (property('options')?.options ?? []) as INodeProperties[];
+		const filter = options.find((one) => one.name === 'filter');
+
+		expect(filter?.displayOptions?.show?.['/operation']).toContain('listBalances');
 	});
 });

@@ -101,6 +101,33 @@ describe('niboListRequest — paging', () => {
 		expect(queryOf(0).$orderby).toBe('id');
 	});
 
+	/**
+	 * The guard the balance view and the transfers walk past without noticing.
+	 *
+	 * `$skip` on its own answers HTTP 500 — *"O Nibo se comportou de forma
+	 * inesperada."* — on `/accounts/views/balance` and on `/accounts/transfer`,
+	 * while `/accounts` tolerates it. Measured on 2026-07-27. This transport has
+	 * injected the key since the foundation, so it passes the mine by design; what
+	 * this test buys is that no page can ever carry the one without the other.
+	 */
+	it('never sends $skip without $orderby, which is a 500 on two of the three collections', async () => {
+		apiRequest
+			.mockResolvedValueOnce(page(500, 1, 900))
+			.mockResolvedValueOnce(page(400, 501, 900));
+
+		await niboListRequest.call(CONTEXT, 0, '/accounts/views/balance', 'accountId', {
+			returnAll: true,
+			limit: 0,
+		});
+
+		const skipped = apiRequest.mock.calls
+			.map((call) => call[3] as IDataObject)
+			.filter((query) => query.$skip !== undefined);
+
+		expect(skipped).not.toHaveLength(0);
+		skipped.forEach((query) => expect(query.$orderby).toBe('accountId'));
+	});
+
 	it('keeps paging with $skip until a short page says the collection ended', async () => {
 		apiRequest
 			.mockResolvedValueOnce(page(500, 1, 1620))

@@ -428,6 +428,19 @@ describe('NiboEmpresas — the assisted filter', () => {
 		return conditionFields().filter((field) => field.name === name);
 	}
 
+	/**
+	 * Every operation of the node that walks a collection, read off the node
+	 * itself rather than from a list somebody keeps in step by hand: a scan is an
+	 * operation that has conditions to filter with.
+	 */
+	function scanOperations(): string[] {
+		const named = description.properties
+			.filter((field) => field.name === 'filters')
+			.flatMap((field) => (field.displayOptions?.show?.operation ?? []) as string[]);
+
+		return [...new Set(named)];
+	}
+
 	function optionValues(field: INodeProperties | undefined): string[] {
 		return ((field?.options ?? []) as INodePropertyOptions[]).map((option) => option.value as string);
 	}
@@ -464,12 +477,17 @@ describe('NiboEmpresas — the assisted filter', () => {
 		expect(filter?.default).toBe('');
 	});
 
-	// The two sets of fields are what Filter Type switches between, so the option
-	// is offered in the mode that is about it — and only on a scan, which is the
-	// only operation with anything to filter.
-	// Nothing to find first: it is on the Add option list of every scan.
-	it('offers that option on every Get Many, with no mode to choose first', () => {
-		expect(option('filter')?.displayOptions?.show).toEqual({ '/operation': ['list'] });
+	/**
+	 * Nothing to find first: it is on the Add option list of every scan — and
+	 * **every** is the word this test defends. Since 0.11.0 there is a second one,
+	 * `listBalances`, and a scan missing from this list would be a screen with the
+	 * conditions but no way to write an expression by hand.
+	 */
+	it('offers that option on every scan, with no mode to choose first', () => {
+		const shown = option('filter')?.displayOptions?.show?.['/operation'] as string[];
+
+		expect(shown).toEqual(['list', 'listBalances']);
+		expect(shown).toEqual(expect.arrayContaining(scanOperations()));
 	});
 
 	it('offers the two condition parameters on Get Many of all four types', () => {
