@@ -2,6 +2,8 @@ import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-wor
 import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboListRequest } from '../../transport/paginate';
+import { niboApiRequest } from '../../transport/request';
+import { onlyTheDay } from '../schedule/normalize';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, requestInterval } from '../shared/options';
 import { bankAccountBalanceFilterFieldTypes, bankAccountFilterFieldTypes } from './description';
@@ -57,6 +59,21 @@ export async function executeBankAccount(
 
 	if (resource !== 'bankAccount') {
 		throw new NodeOperationError(this.getNode(), `The resource "${resource}" is not supported`);
+	}
+
+	// The one operation of this node that does not walk the items one at a time:
+	// the API's format is a batch, so the items ARE the batch. See below.
+	if (operation === 'importBankStatement') {
+		try {
+			return [{ json: await importBankStatement.call(this) }];
+		} catch (error) {
+			if (this.continueOnFail()) {
+				return [{ json: { error: (error as Error).message } }];
+			}
+			throw error instanceof NodeApiError
+				? error
+				: new NodeOperationError(this.getNode(), error as Error);
+		}
 	}
 
 	for (let i = 0; i < items.length; i++) {
@@ -128,4 +145,235 @@ export async function executeBankAccount(
 	}
 
 	return returnData;
+}
+
+/** One line of the statement, in the shape the API takes it */
+interface IStatementLine {
+	description: string;
+	value: number;
+	date: string;
+}
+
+/**
+ * The shapes a date may arrive in, and it is a short list on purpose.
+ *
+ * `29/07/2026` is what a Brazilian spreadsheet writes, and this API answers it
+ * with **204 and files nothing**. So it has to be refused here — and `07/12/2026`
+ * has to be refused with it, because nothing in the value says whether it is the
+ * 7th of December or the 12th of July, and a node that guessed would file money
+ * in the wrong month without anybody noticing.
+ */
+const A_DAY = /^\d{4}-\d{2}-\d{2}(?:[T ].*)?$/;
+
+/**
+ * Sends a bank statement to the reconciliation queue of an account.
+ *
+ * **This operation aggregates**, and it is the only one of this node that does:
+ * one input item is one line, and the whole run becomes a single call, because a
+ * batch is the shape the API takes. Decided by Alvaro on 2026-07-27 — the
+ * alternative would leave standing the code node that does this joining today.
+ *
+ * `Description`, `Value` and `Date` are therefore read **per item** —
+ * `getNodeParameter(name, i)` resolves an expression for that item — while
+ * `Bank Account` and `Batch Name` are read off the **first**, because a batch has
+ * one of each. Which is where two of the refusals come from: items asking for
+ * different accounts, and the per-item token mode, where a batch would span two
+ * organizations.
+ *
+ * **And every check happens before the request**, because there is no check
+ * possible after it. The API answers 204 with an empty body no matter what, it
+ * accepts a batch **half way** in silence — a line dated before the account was
+ * opened simply vanishes — and there is nothing to read back: every route that
+ * would show the queue is a 404, and the one observable sign,
+ * `pendingReconciliationCount` on the balance view, counts transactions rather
+ * than batches and was measured to take **more than 150 seconds** to move. No n8n
+ * execution waits for that.
+ */
+async function importBankStatement(this: IExecuteFunctions): Promise<IDataObject> {
+	const items = this.getInputData();
+
+	// An account ID belongs to one organization, so a batch cannot belong to two.
+	// The same rule the account list has followed since 0.10.0.
+	if (this.getNodeParameter('authMode', 0, 'credential') === 'field') {
+		throw new NodeOperationError(
+			this.getNode(),
+			'A bank statement cannot be imported when the token is read per item',
+			{
+				description:
+					'Nothing was sent. This operation gathers every input item into one batch, and a batch goes to one account of one organization — while the per-item token mode exists precisely to walk several. Use the credential mode here, and split the organizations across separate executions or a loop.',
+			},
+		);
+	}
+
+	const accountId = String(this.getNodeParameter('accountId', 0, '') ?? '').trim();
+	if (accountId === '') {
+		throw new NodeOperationError(this.getNode(), 'This import names no bank account', {
+			description:
+				'Nothing was sent. Pick an account in the Bank Account field, or put an ID there — read the IDs of an organization with Get Many on this same resource.',
+		});
+	}
+
+	const batchName = String(this.getNodeParameter('batchName', 0, '') ?? '').trim();
+
+	const account = await accountBeingFiledInto.call(this, accountId);
+	const openedOn = onlyTheDay(String(account.dateOfOpenBalance ?? ''));
+
+	const transactions = items.map((_item, index) =>
+		statementLine.call(this, index, accountId, openedOn),
+	);
+
+	if (transactions.length === 0) {
+		throw new NodeOperationError(this.getNode(), 'This import has no line to send', {
+			description:
+				'Nothing was sent. Every input item is one line of the statement, and there were none — this API answers an empty batch with 204 and does nothing, which would look exactly like an import that worked.',
+		});
+	}
+
+	await niboApiRequest.call(
+		this,
+		0,
+		'POST',
+		`${ACCOUNTS}/${encodeURIComponent(accountId)}/bankstatement`,
+		{},
+		{ transactions, batchName },
+	);
+
+	// What was sent, how much of it, and a sentence that does not claim more than
+	// the API said. A bare `success: true` would be a lie of exactly the kind this
+	// node exists not to tell: 204 is not a confirmation, it is an acknowledgement.
+	return {
+		accountId,
+		batchName,
+		transactionCount: transactions.length,
+		transactions,
+		_niboReconciliationNotice:
+			'Nibo answered with HTTP 204 and an empty body, which is what it answers whether it filed every line or none. The lines go to the reconciliation queue, not to the ledger: no entry appears under Transaction - Payment or Transaction - Receipt and no balance changes. There is no route in this API that reads the queue back — the only sign is pendingReconciliationCount on Get Balances, and it counts transactions rather than batches and can take several minutes to move.',
+	};
+}
+
+/**
+ * The account this batch is being filed into, read for the one property that
+ * decides whether a line survives.
+ *
+ * `GET /accounts/{id}` is a 404, so it is read through the list filtered by ID —
+ * bare, which is how this API compares an ID column.
+ */
+async function accountBeingFiledInto(
+	this: IExecuteFunctions,
+	accountId: string,
+): Promise<IDataObject> {
+	const { records } = await niboListRequest.call(this, 0, ACCOUNTS, ACCOUNT_ORDER_BY, {
+		returnAll: false,
+		limit: 1,
+		filter: `id eq ${accountId}`,
+		// One record read by ID cannot be an incomplete scan of a collection.
+		failOnIncomplete: false,
+	});
+
+	if (records.length === 0) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Nibo has no bank account with the ID "${accountId}"`,
+			{
+				description:
+					'Nothing was sent. An account ID belongs to one organization, so an ID from another one is simply not here. This route answers an unknown account with HTTP 500 "Conta corrente não encontrada" — the one thing it does refuse outright — but the account has to be read first anyway, for the day it was opened.',
+			},
+		);
+	}
+
+	return records[0];
+}
+
+/**
+ * One item turned into one line, refused by name when it cannot be.
+ *
+ * **The index is in every message on purpose.** A batch of two hundred lines and
+ * a sentence saying "an invalid date" is not information — and the line cannot be
+ * found afterwards, because a batch this node refuses is a batch that was never
+ * sent, and a line the API swallows is gone for good.
+ */
+function statementLine(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	accountId: string,
+	openedOn: string,
+): IStatementLine {
+	const itsAccount = String(this.getNodeParameter('accountId', itemIndex, '') ?? '').trim();
+	if (itsAccount !== '' && itsAccount !== accountId) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Item ${itemIndex} names a different bank account, and one batch goes to one account`,
+			{
+				itemIndex,
+				description: `Nothing was sent. The account is read from the first item — "${accountId}" — and this one asks for "${itsAccount}". A statement belongs to the account it came from, so a batch cannot be split between two: send them as two executions, or split the items before this node.`,
+			},
+		);
+	}
+
+	const raw = String(this.getNodeParameter('date', itemIndex, '') ?? '').trim();
+	if (!A_DAY.test(raw)) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Item ${itemIndex} carries a date this node cannot read: "${raw}"`,
+			{
+				itemIndex,
+				description:
+					'Nothing was sent, and that is the point: this API answers a date it cannot read with HTTP 204 and **drops the line without a word**, so a batch comes back looking imported and is not. The date has to be year-month-day, such as 2026-07-27. A date written 29/07/2026 is refused rather than converted, because 07/12/2026 would be either the 7th of December or the 12th of July and nothing in the value says which.',
+			},
+		);
+	}
+
+	const date = onlyTheDay(raw);
+
+	// The rule this whole operation is built around. The comparison is textual and
+	// that is enough: both sides are year-month-day, where alphabetical order and
+	// calendar order are the same thing.
+	if (openedOn !== '' && date < openedOn) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Item ${itemIndex} is dated ${date}, before the account was opened`,
+			{
+				itemIndex,
+				description: `Nothing was sent. The account's opening balance is dated **${openedOn}**, and Nibo accepts a line before that with HTTP 204 and then **files nothing** — the batch would come back looking imported with this line missing, and no route in this API could show you that. The date to compare with belongs to the account, not to the statement: it is the dateOfOpenBalance field of Get Many. Either move this line's date forward or import it into another account.`,
+			},
+		);
+	}
+
+	const value = amountOf.call(this, itemIndex);
+
+	return {
+		description: String(this.getNodeParameter('description', itemIndex, '') ?? ''),
+		value,
+		date,
+	};
+}
+
+/**
+ * The amount of one line. The sign is the direction here — negative is money out
+ * — which is the one place in this node where it carries meaning rather than
+ * being an artefact of which route answered.
+ */
+function amountOf(this: IExecuteFunctions, itemIndex: number): number {
+	const given = this.getNodeParameter('value', itemIndex, 0);
+	const text = String(given ?? '').trim();
+
+	// The box on the screen is a number box, so most of the time there is nothing
+	// to do. The text path is the other way in: an expression carrying whatever
+	// the incoming line held, and in this country that is written `-10,50`.
+	const written = text.includes(',') && !text.includes('.') ? text.replace(',', '.') : text;
+	const value = Number(written);
+
+	if (written === '' || !Number.isFinite(value)) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Item ${itemIndex} carries an amount this node cannot read: "${given}"`,
+			{
+				itemIndex,
+				description:
+					'Nothing was sent. The amount of a statement line is a number, negative for money out and positive for money in. A value such as 1.234,56 is refused rather than guessed at: read one way it is a thousand and read the other it is one.',
+			},
+		);
+	}
+
+	return value;
 }

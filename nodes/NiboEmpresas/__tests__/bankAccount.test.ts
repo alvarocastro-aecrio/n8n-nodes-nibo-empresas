@@ -10,6 +10,7 @@ import { sleep } from 'n8n-workflow';
 import { NiboEmpresas } from '../NiboEmpresas.node';
 import { executeBankAccount } from '../resources/bankAccount/execute';
 import { niboListRequest } from '../transport/paginate';
+import { niboApiRequest } from '../transport/request';
 
 jest.mock('../transport/paginate');
 jest.mock('../transport/request');
@@ -19,6 +20,7 @@ jest.mock('n8n-workflow', () => ({
 }));
 
 const listRequest = niboListRequest as jest.MockedFunction<typeof niboListRequest>;
+const apiRequest = niboApiRequest as jest.MockedFunction<typeof niboApiRequest>;
 
 const NODE: INode = {
 	id: 'test-node',
@@ -48,6 +50,8 @@ function optionsSentToTransport(): IDataObject {
 beforeEach(() => {
 	listRequest.mockReset();
 	listRequest.mockResolvedValue({ records: [], count: 0 });
+	apiRequest.mockReset();
+	apiRequest.mockResolvedValue(undefined);
 	(sleep as jest.MockedFunction<typeof sleep>).mockClear();
 });
 
@@ -297,6 +301,267 @@ describe('executeBankAccount — the filter it sends', () => {
 });
 
 /**
+ * The bank statement, and the reason this version exists.
+ *
+ * `POST /accounts/{id}/bankstatement` answers **204 with no body** whatever
+ * happens, and it accepts a batch **half way** without a word: a line dated
+ * before the account was opened, or dated in a shape the API cannot read, is
+ * dropped in silence while the rest goes in. Measured on 2026-07-27 — a batch of
+ * two moved the pending counter by one.
+ *
+ * And there is no way to check afterwards. Every route that would read the
+ * reconciliation queue is a 404; the only observable sign is
+ * `pendingReconciliationCount` on the balance view, which counts transactions
+ * rather than batches and takes **minutes** to move. So every defense this
+ * operation has must happen before the request, because after it there is
+ * nothing left to defend with.
+ */
+describe('executeBankAccount — Import Bank Statement', () => {
+	const OPENED = '2026-01-01T00:00:00';
+	const OTHER_ACCOUNT = '7c2b1d0a-9e64-4c53-b1aa-0f7c2d9e4b31';
+
+	/** One input item per statement line, plus what is read off the first of them */
+	function importing(lines: IDataObject[], shared: IDataObject = {}) {
+		const common: IDataObject = { accountId: GUID, batchName: 'extrato.csv', ...shared };
+
+		return {
+			getInputData: () => lines.map(() => ({ json: {} })),
+			getNodeParameter: (name: string, index: number, fallback?: unknown) =>
+				lines[index]?.[name] ?? common[name] ?? fallback,
+			getNode: () => NODE,
+			continueOnFail: () => false,
+		} as unknown as IExecuteFunctions;
+	}
+
+	const LINE = { description: 'PIX RECEBIDO', value: -10.5, date: '2026-07-27T00:00:00.000-03:00' };
+
+	function bodySent(): IDataObject {
+		return apiRequest.mock.calls[0][4] as IDataObject;
+	}
+
+	beforeEach(() => {
+		listRequest.mockResolvedValue({
+			records: [{ id: GUID, name: 'Conta corrente', dateOfOpenBalance: OPENED }],
+			count: 1,
+		});
+	});
+
+	/**
+	 * The first aggregating operation of this node, and it aggregates because the
+	 * API's format is a batch. One item in, one line of the statement.
+	 */
+	it('turns any number of items into one call', async () => {
+		await executeBankAccount.call(
+			importing([LINE, { ...LINE, value: 20 }, { ...LINE, value: -3 }]),
+			'bankAccount',
+			'importBankStatement',
+		);
+
+		const writes = apiRequest.mock.calls.filter((call) => call[1] === 'POST');
+
+		expect(writes).toHaveLength(1);
+		expect((bodySent().transactions as IDataObject[])).toHaveLength(3);
+	});
+
+	it('posts to the statement route of the account', async () => {
+		await executeBankAccount.call(importing([LINE]), 'bankAccount', 'importBankStatement');
+
+		expect(apiRequest.mock.calls[0][1]).toBe('POST');
+		expect(apiRequest.mock.calls[0][2]).toBe(`/accounts/${GUID}/bankstatement`);
+	});
+
+	it('reads the description, the value and the date of each item', async () => {
+		await executeBankAccount.call(
+			importing([LINE, { description: 'TARIFA', value: -8, date: '2026-07-28' }]),
+			'bankAccount',
+			'importBankStatement',
+		);
+
+		expect(bodySent().transactions).toEqual([
+			{ description: 'PIX RECEBIDO', value: -10.5, date: '2026-07-27' },
+			{ description: 'TARIFA', value: -8, date: '2026-07-28' },
+		]);
+	});
+
+	/**
+	 * One batch goes to one account and carries one name, so both are read off the
+	 * first item. What the others say about them is not ignored — see the refusal
+	 * below.
+	 */
+	it('takes the batch name from the first item', async () => {
+		await executeBankAccount.call(
+			importing([LINE, LINE], { batchName: 'julho.ofx' }),
+			'bankAccount',
+			'importBankStatement',
+		);
+
+		expect(bodySent().batchName).toBe('julho.ofx');
+	});
+
+	it('answers one item for the whole batch, carrying the count', async () => {
+		const items = await executeBankAccount.call(
+			importing([LINE, LINE]),
+			'bankAccount',
+			'importBankStatement',
+		);
+
+		expect(items).toHaveLength(1);
+		expect(items[0].json).toMatchObject({
+			accountId: GUID,
+			batchName: 'extrato.csv',
+			transactionCount: 2,
+		});
+	});
+
+	/**
+	 * A bare `success: true` would be the exact kind of lie this node exists not
+	 * to tell: the API said 204 and 204 says nothing about what was filed.
+	 */
+	it('does not pretend Nibo confirmed anything, and says where to look', async () => {
+		const items = await executeBankAccount.call(
+			importing([LINE]),
+			'bankAccount',
+			'importBankStatement',
+		);
+
+		expect(items[0].json).not.toHaveProperty('success');
+		expect(String(items[0].json._niboReconciliationNotice)).toMatch(/minutes|Get Balances/i);
+		expect(String(items[0].json._niboReconciliationNotice)).toMatch(
+			/pendingReconciliationCount/,
+		);
+	});
+
+	describe('the refusals, which all happen before anything is sent', () => {
+		async function refused(
+			lines: IDataObject[],
+			shared: IDataObject,
+			expected: RegExp,
+		): Promise<void> {
+			await expect(
+				executeBankAccount.call(importing(lines, shared), 'bankAccount', 'importBankStatement'),
+			).rejects.toThrow(expected);
+
+			expect(apiRequest.mock.calls.filter((call) => call[1] === 'POST')).toHaveLength(0);
+		}
+
+		/**
+		 * **The defense this version is about.** The line is swallowed with a 204 and
+		 * cannot be read back, so the refusal has to name which line it is — in a
+		 * batch of two hundred, "an invalid date" is not information — and the date it
+		 * is being compared with, which is a property of the account and is precisely
+		 * what the API leaves out when it complains about this elsewhere.
+		 */
+		it('refuses a line dated before the account was opened, naming the line and the date', async () => {
+			await expect(
+				executeBankAccount.call(
+					importing([LINE, { ...LINE, date: '2025-12-31' }]),
+					'bankAccount',
+					'importBankStatement',
+				),
+			).rejects.toThrow(/item 1/i);
+
+			await expect(
+				executeBankAccount.call(
+					importing([LINE, { ...LINE, date: '2025-12-31' }]),
+					'bankAccount',
+					'importBankStatement',
+				),
+			).rejects.toMatchObject({ description: expect.stringContaining('2026-01-01') });
+
+			expect(apiRequest.mock.calls.filter((call) => call[1] === 'POST')).toHaveLength(0);
+		});
+
+		it('lets a line dated on the opening day itself through', async () => {
+			await executeBankAccount.call(
+				importing([{ ...LINE, date: '2026-01-01' }]),
+				'bankAccount',
+				'importBankStatement',
+			);
+
+			expect(bodySent().transactions).toEqual([
+				{ description: 'PIX RECEBIDO', value: -10.5, date: '2026-01-01' },
+			]);
+		});
+
+		/**
+		 * `29/07/2026` is the shape a Brazilian spreadsheet writes, and the API takes
+		 * it with a 204 and files nothing. Refused here — and `07/12/2026` is refused
+		 * with it, because nothing in the value says whether it is 7 December or 12
+		 * July, and guessing would file the money in the wrong month.
+		 */
+		it.each(['29/07/2026', '07/12/2026', 'ontem', ''])(
+			'refuses the date "%s", which this node will not guess at',
+			async (date) => {
+				await refused([LINE, { ...LINE, date }], {}, /item 1/i);
+			},
+		);
+
+		it('refuses a value that is not a number', async () => {
+			await refused([{ ...LINE, value: 'muito' }], {}, /item 0/i);
+		});
+
+		it('refuses items that name different accounts, because one batch has one account', async () => {
+			await refused([LINE, { ...LINE, accountId: OTHER_ACCOUNT }], {}, /one account/i);
+		});
+
+		/**
+		 * The same rule the account list has followed since 0.10.0: an account ID
+		 * belongs to one organization, so a batch cannot belong to two.
+		 */
+		it('refuses the per-item token mode, where a batch would span organizations', async () => {
+			await refused([LINE], { authMode: 'field' }, /per item/i);
+		});
+
+		it('refuses a batch with no account at all', async () => {
+			await refused([LINE], { accountId: '' }, /no bank account/i);
+		});
+
+		it('refuses an empty batch rather than sending one', async () => {
+			await refused([], {}, /no line/i);
+		});
+	});
+
+	/**
+	 * The opening date is a property of the **account**, and the only way to know
+	 * it is to ask. `GET /accounts/{id}` is a 404, so it is read through the list
+	 * filtered by ID — bare, as this API compares an ID column.
+	 */
+	it('reads the account first, to learn the day it was opened', async () => {
+		await executeBankAccount.call(importing([LINE]), 'bankAccount', 'importBankStatement');
+
+		expect(listRequest.mock.calls[0][1]).toBe('/accounts');
+		expect((listRequest.mock.calls[0][3] as unknown as IDataObject).filter).toBe(`id eq ${GUID}`);
+	});
+
+	it('refuses when Nibo has no such account, instead of writing into nothing', async () => {
+		listRequest.mockResolvedValue({ records: [], count: 0 });
+
+		await expect(
+			executeBankAccount.call(importing([LINE]), 'bankAccount', 'importBankStatement'),
+		).rejects.toThrow(/no bank account/i);
+
+		expect(apiRequest.mock.calls.filter((call) => call[1] === 'POST')).toHaveLength(0);
+	});
+
+	/**
+	 * An account with no opening date recorded has nothing to compare against.
+	 * Refusing every line for that would be refusing on a rule the account does
+	 * not have.
+	 */
+	it('imports without the date check when the account has no opening date', async () => {
+		listRequest.mockResolvedValue({ records: [{ id: GUID, name: 'Conta corrente' }], count: 1 });
+
+		await executeBankAccount.call(
+			importing([{ ...LINE, date: '1999-01-01' }]),
+			'bankAccount',
+			'importBankStatement',
+		);
+
+		expect(bodySent().transactions).toHaveLength(1);
+	});
+});
+
+/**
  * The list behind the account field of a settlement.
  *
  * Same shape as every other list of this node, and the same refusal in the
@@ -415,12 +680,37 @@ describe('NiboEmpresas — Bank Account on the screen', () => {
 	it('offers the operations this version measured, alphabetically by label', () => {
 		const operation = forAccounts('operation');
 
-		expect(optionValues(operation)).toEqual(['listBalances', 'list']);
+		expect(optionValues(operation)).toEqual(['listBalances', 'list', 'importBankStatement']);
 		expect((operation?.options as INodePropertyOptions[]).map((one) => one.name)).toEqual([
 			'Get Balances',
 			'Get Many',
+			'Import Bank Statement',
 		]);
 		expect(operation?.default).toBe('list');
+	});
+
+	it('asks for the account, the batch and the three fields of a line on the import', () => {
+		for (const name of ['accountId', 'batchName', 'description', 'value', 'date']) {
+			expect(
+				forAccounts(name, 'importBankStatement')?.displayOptions?.show?.operation,
+			).toEqual(['importBankStatement']);
+		}
+	});
+
+	it('asks for the day and not the moment, as the API takes no hour', () => {
+		expect(forAccounts('date', 'importBankStatement')?.typeOptions?.dateOnly).toBe(true);
+	});
+
+	/**
+	 * The one screen of this resource that has to warn before the button: the API
+	 * takes a batch half way and says nothing, and nothing can be read back
+	 * afterwards.
+	 */
+	it('warns on the import screen that Nibo does not confirm what it filed', () => {
+		const notice = forAccounts('importNotice', 'importBankStatement');
+
+		expect(notice?.type).toBe('notice');
+		expect(notice?.displayName).toMatch(/reconcil/i);
 	});
 
 	/** The fields of one row of the condition builder of a given operation */

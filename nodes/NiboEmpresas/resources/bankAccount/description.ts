@@ -68,6 +68,13 @@ export const bankAccountOperations: INodeProperties[] = [
 				action: 'Get many bank accounts',
 				description: 'Retrieve the bank accounts of the organization',
 			},
+			{
+				name: 'Import Bank Statement',
+				value: 'importBankStatement',
+				action: 'Import a bank statement',
+				description:
+					'Send the lines of a statement to the reconciliation queue of an account, one input item per line',
+			},
 		],
 		default: 'list',
 	},
@@ -129,6 +136,106 @@ const BALANCE_FILTER_FIELDS: IFilterField[] = [
 export const bankAccountBalanceFilterFieldTypes = filterFieldTypes(BALANCE_FILTER_FIELDS);
 
 export const bankAccountFields: INodeProperties[] = [
+	/**
+	 * The one screen of this node that has to warn before the button, and the
+	 * warning is not about failure — it is about a success that says nothing.
+	 */
+	{
+		displayName:
+			'One input item is one line of the statement, and the node sends them as a single batch. The lines go to the reconciliation queue, not to the ledger: no entry appears and no balance moves. Nibo answers this with 204 and an empty body whether it filed everything or half of it, and nothing in this API can read the queue back — so every check this node makes happens before the lines are sent.',
+		name: 'importNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['importBankStatement'],
+			},
+		},
+	},
+	{
+		displayName: 'Bank Account Name or ID',
+		name: 'accountId',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'loadBankAccounts',
+			// The way back from the per-item mode, where the list refuses to load.
+			loadOptionsDependsOn: ['authMode'],
+		},
+		required: true,
+		default: '',
+		description:
+			'The account the statement belongs to. It is read from the first input item and every item has to agree with it: one batch goes to one account. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['importBankStatement'],
+			},
+		},
+	},
+	{
+		displayName: 'Batch Name',
+		name: 'batchName',
+		type: 'string',
+		default: '',
+		placeholder: 'extrato.csv',
+		description:
+			'What to call this batch in Nibo, usually the name of the file it came from. Read from the first input item, since the batch is one thing.',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['importBankStatement'],
+			},
+		},
+	},
+	{
+		displayName: 'Description',
+		name: 'description',
+		type: 'string',
+		default: '',
+		description:
+			'What this line of the statement says, as it will read in the reconciliation screen. Read per item, so it is normally an expression over the incoming line.',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['importBankStatement'],
+			},
+		},
+	},
+	{
+		displayName: 'Value',
+		name: 'value',
+		type: 'number',
+		required: true,
+		default: 0,
+		description:
+			'How much moved on this line, negative for money out and positive for money in. Unlike everywhere else in this node, the sign is what says the direction here: a statement has both.',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['importBankStatement'],
+			},
+		},
+	},
+	{
+		displayName: 'Date',
+		name: 'date',
+		type: 'dateTime',
+		typeOptions: {
+			// The API takes a day and there is no hour in it.
+			dateOnly: true,
+		},
+		required: true,
+		default: '',
+		description:
+			'The day of this line. It cannot fall before the day the account was opened: Nibo accepts such a line with 204 and files nothing, so the node refuses it instead. Written by hand it has to be year-month-day — a date such as 29/07/2026 is refused rather than guessed at, because 07/12/2026 could be either month.',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['importBankStatement'],
+			},
+		},
+	},
 	{
 		displayName: 'Return All',
 		name: 'returnAll',
