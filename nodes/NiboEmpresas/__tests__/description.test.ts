@@ -1106,91 +1106,127 @@ describe('NiboEmpresas — the fields a schedule is created with', () => {
 	});
 
 	/**
-	 * Apportion By belongs to the Cost Centers block and is not on the screen
-	 * until there is a line for it to describe — Alvaro, 2026-07-27, having used
-	 * the form. Before that it sat on every creation screen, asking how to read
-	 * shares that did not exist.
+	 * Apportion By is on the screen from the moment the creation form is, and
+	 * this block is what is left of 0.11.0's attempt to make it wait for a cost
+	 * center line.
 	 *
-	 * It is a field of the **block** and not of each row, and that is the one
-	 * part of his wording this does not follow literally: the API keeps a single
-	 * `costCenterValueType` for the whole schedule, so a row that asked again
-	 * would be a question the payload cannot answer twice.
+	 * The condition read `/costCenters.costCenter` with `_cnd: exists`, and
+	 * `displayParameter` answers it exactly as intended — when it is handed the
+	 * node's whole parameters, which is what the tests here used to hand it. The
+	 * editor never hands it those. `getNodeParameters` builds the values it
+	 * checks visibility against with `onlySimpleTypes`, and that object holds no
+	 * collection of any kind, so the path resolves to `undefined`, the field
+	 * counts as not displayed, and **its value is dropped from what the node
+	 * holds and saves**. The field is still drawn — the editor decides that from
+	 * the full values — but drawn with nothing in it, and n8n writes
+	 * `The value "" is not supported!` underneath. Reported by Alvaro on
+	 * 2026-07-27 against 0.11.0, with the apportionment unusable because of it.
 	 *
-	 * Checked with n8n's own `displayParameter` rather than by reading the
-	 * condition and believing it — `_cnd` resolution has exactly the sharp edge
-	 * this depends on: an empty fixedCollection stores `{}`, so the condition has
-	 * to be on the nested array, and lodash `get` returning `undefined` is what
-	 * makes it false.
+	 * No wording of the condition survives that: "there is no line yet" and "the
+	 * visibility check cannot see collections" both arrive as the same
+	 * `undefined`, and the second one is not something a node can answer. So the
+	 * field stays on the screen, as it was in 0.9.0 and 0.10.0.
+	 *
+	 * These tests ask the editor's own two functions in the order the editor
+	 * calls them — resolve the parameters first, then decide what to draw. The
+	 * first step is the one 0.11.0 never asked.
 	 */
-	describe('Apportion By waits for a cost center', () => {
+	describe('Apportion By, as the editor resolves and draws it', () => {
 		const NODE_VERSION = { typeVersion: 1 };
 
-		function shownOnCreate(costCenters: INodeParameters): boolean {
+		/** The parameters the editor holds for a node whose author chose these */
+		function asTheEditorHoldsIt(chosen: INodeParameters): INodeParameters {
+			return NodeHelpers.getNodeParameters(
+				description.properties,
+				chosen,
+				true,
+				false,
+				NODE_VERSION,
+				description as INodeTypeDescription,
+			) as INodeParameters;
+		}
+
+		const ONE_LINE = { costCenter: [{ costCenterId: 'centre-a', share: 100 }] };
+
+		it('keeps the chosen Apportion By on a creation', () => {
+			const held = asTheEditorHoldsIt({
+				resource: 'creditSchedule',
+				operation: 'create',
+				costCenters: ONE_LINE,
+				apportionBy: 'value',
+			});
+
+			expect(held.apportionBy).toBe('value');
+		});
+
+		it('keeps it with no cost center line as well, rather than emptying the field', () => {
+			const held = asTheEditorHoldsIt({
+				resource: 'creditSchedule',
+				operation: 'create',
+				apportionBy: 'value',
+			});
+
+			expect(held.apportionBy).toBe('value');
+		});
+
+		it('keeps the chosen Apportion By inside Update Fields', () => {
+			const held = asTheEditorHoldsIt({
+				resource: 'creditSchedule',
+				operation: 'update',
+				creditScheduleId: 'schedule-1',
+				updateFields: { costCenters: ONE_LINE, apportionBy: 'value' },
+			});
+
+			expect((held.updateFields as INodeParameters).apportionBy).toBe('value');
+		});
+
+		it('draws it on the creation screen, with lines and without', () => {
 			const field = description.properties.find(
 				(prop) =>
 					prop.name === 'apportionBy' &&
 					((prop.displayOptions?.show?.resource ?? []) as string[]).includes('creditSchedule'),
 			) as INodeProperties;
-			const values = { resource: 'creditSchedule', operation: 'create', costCenters };
 
-			return NodeHelpers.displayParameter(values, field, NODE_VERSION, null, values);
-		}
+			for (const costCenters of [{}, ONE_LINE]) {
+				const values = asTheEditorHoldsIt({
+					resource: 'creditSchedule',
+					operation: 'create',
+					costCenters,
+				});
 
-		it('is hidden while the collection has never been opened', () => {
-			expect(shownOnCreate({})).toBe(false);
+				expect(
+					NodeHelpers.displayParameter(
+						values,
+						field,
+						NODE_VERSION,
+						description as INodeTypeDescription,
+						values,
+					),
+				).toBe(true);
+			}
 		});
 
-		it('is hidden while the collection is open and empty', () => {
-			expect(shownOnCreate({ costCenter: [] })).toBe(false);
-		});
-
-		it('appears as soon as one cost center line is added', () => {
-			expect(shownOnCreate({ costCenter: [{ costCenterId: 'centre-a', share: 60 }] })).toBe(true);
-		});
-
-		it('stays on the screen with several lines', () => {
-			expect(
-				shownOnCreate({
-					costCenter: [
-						{ costCenterId: 'centre-a', share: 60 },
-						{ costCenterId: 'centre-b', share: 40 },
-					],
-				}),
-			).toBe(true);
-		});
-
-		// A row added and not filled in yet is still a row: the question is real
-		// the moment the block has one.
-		it('appears for a line that is still empty', () => {
-			expect(shownOnCreate({ costCenter: [{}] })).toBe(true);
-		});
-
-		/**
-		 * And the same inside Update Fields, where the path has to be anchored at
-		 * the root: there the option is resolved against the collection's own
-		 * values, so a relative path would look for `costCenters` in the wrong
-		 * place.
-		 */
-		function shownOnUpdate(updateFields: INodeParameters): boolean {
+		it('is offered inside Update Fields whether or not Cost Centers was added', () => {
 			const menu = (description.properties.find(
 				(prop) =>
 					prop.name === 'updateFields' &&
 					((prop.displayOptions?.show?.resource ?? []) as string[]).includes('creditSchedule'),
 			)?.options ?? []) as INodeProperties[];
 			const field = menu.find((option) => option.name === 'apportionBy') as INodeProperties;
-			const root = { resource: 'creditSchedule', operation: 'update', updateFields };
 
-			return NodeHelpers.displayParameter(updateFields, field, NODE_VERSION, null, root);
-		}
+			for (const updateFields of [{ description: 'CHANGED' }, { costCenters: ONE_LINE }]) {
+				const root = { resource: 'creditSchedule', operation: 'update', updateFields };
 
-		it('is not offered on an update until Cost Centers is added', () => {
-			expect(shownOnUpdate({ description: 'CHANGED' })).toBe(false);
-		});
-
-		it('is offered on an update once Cost Centers carries a line', () => {
-			expect(
-				shownOnUpdate({ costCenters: { costCenter: [{ costCenterId: 'centre-a', share: 70 }] } }),
-			).toBe(true);
+				expect(
+					NodeHelpers.displayParameter(
+						updateFields,
+						field,
+						NODE_VERSION,
+						description as INodeTypeDescription,
+						root,
+					),
+				).toBe(true);
+			}
 		});
 	});
 
@@ -1441,5 +1477,53 @@ describe('NiboEmpresas — what the editor draws for each filter type', () => {
 
 		expect(drawn('filters', one)).toBe(false);
 		expect(drawnInOptions('filter', one)).toBe(false);
+	});
+});
+
+/**
+ * The one condition n8n cannot be asked, anywhere in this node.
+ *
+ * `getNodeParameters` decides what is displayed against values it resolves with
+ * `onlySimpleTypes` — an object that holds no collection and no fixedCollection
+ * — so a `show` rule reading a path into one is always false there, and a field
+ * hidden there has **its value dropped from what the node saves**. The editor
+ * draws the field anyway, from the full parameters, so what the user gets is an
+ * empty box and `The value "" is not supported!` underneath.
+ *
+ * That is the whole of the 0.11.0 apportionment defect, and it is a shape rather
+ * than a mistake in one field: any `show` on a collection's contents does it.
+ * `hide` is the safe direction — an unresolvable path leaves the field alone —
+ * and Filter (OData) uses it on purpose, so only `show` is checked here.
+ */
+describe('NiboEmpresas — no field waits on something inside a collection', () => {
+	const COLLECTIONS = ['collection', 'fixedCollection'];
+
+	/** Every parameter of the node, at every depth, with the collections named */
+	function everyProperty(properties: INodeProperties[]): INodeProperties[] {
+		return properties.flatMap((property) => [
+			property,
+			...everyProperty((property.options ?? []) as INodeProperties[]),
+			...everyProperty(
+				((property.options ?? []) as Array<{ values?: INodeProperties[] }>).flatMap(
+					(option) => option.values ?? [],
+				),
+			),
+		]);
+	}
+
+	const all = everyProperty(description.properties as INodeProperties[]);
+	const collectionNames = all
+		.filter((property) => COLLECTIONS.includes(property.type))
+		.map((property) => property.name);
+
+	it('has no show rule reading a path into a collection', () => {
+		const offenders = all.flatMap((property) =>
+			Object.keys(property.displayOptions?.show ?? {})
+				.map((key) => key.replace(/^\//, ''))
+				.filter((key) => collectionNames.includes(key.split('.')[0]))
+				.map((key) => `${property.name} waits on ${key}`),
+		);
+
+		expect(offenders).toEqual([]);
 	});
 });

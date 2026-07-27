@@ -218,21 +218,30 @@ const CATEGORIES: INodeProperties = {
  * complaining that the amounts do not add up to the schedule, and never that the
  * pair is the wrong way round.
  *
- * **It belongs to the Cost Centers block and is not on the screen until there is
- * a line for it to describe** — Alvaro, 2026-07-27, having used the form. Before
- * that it sat on every creation screen, asking how to read shares that did not
- * exist.
- *
- * A field of the **block**, not of each row, and that is the one part of his
- * wording this does not follow to the letter: the API keeps a single
+ * A field of the **block**, not of each row: the API keeps a single
  * `costCenterValueType` for the whole schedule, so a row that asked again would
  * be a question the payload has no second place to put.
  *
- * The condition is on the **nested array**, and that is not a stylistic choice.
- * An empty fixedCollection stores `{}`, which `exists` reads as present; the
- * array inside it is `undefined` until a line is added, which is what makes the
- * condition false. Read out of n8n's own `getPropertyValues` and held in place
- * by tests that ask `displayParameter` itself rather than trusting the reading.
+ * **It is on the screen from the start, and it cannot be made to wait for a cost
+ * center line.** 0.11.0 tried, with `show` on `/costCenters.costCenter` and
+ * `_cnd: exists`, at Alvaro's request after using the form — and it took the
+ * field out of use altogether: `The value "" is not supported!` under an empty
+ * box, reported on 2026-07-27.
+ *
+ * The reason is in n8n's own `getNodeParameters`, and it is not reachable from
+ * the condition. Before deciding what is displayed, it resolves the values it
+ * will check against with `onlySimpleTypes` — an object that holds no collection
+ * of any kind — so `/costCenters.costCenter` is `undefined` there however the
+ * form is filled in, the field counts as hidden, and **its value is dropped from
+ * what the node saves**. The editor still draws it, because it decides that from
+ * the full parameters, so what is left on the screen is the field with nothing
+ * in it and a refusal underneath. `displayParameter` on its own answers the
+ * condition correctly, which is why the tests of 0.11.0 passed: they asked the
+ * second step without the first.
+ *
+ * There is no wording that survives this. "No line yet" and "the check cannot
+ * see collections" arrive as the same `undefined`, and only one of them is a
+ * thing this node knows.
  */
 const APPORTION_BY: INodeProperties = {
 	displayName: 'Apportion By',
@@ -256,25 +265,6 @@ const APPORTION_BY: INodeProperties = {
 	description:
 		'How the share of each cost center line above is read. It is sent only when there is at least one line, so a schedule with no apportionment is written exactly as it was before this field existed.',
 };
-
-/**
- * The same field, told where to look for the lines it describes.
- *
- * The path differs by where it is drawn: on the creation screen the lines are a
- * parameter of the node, and inside Update Fields they are a key of that
- * collection — where the option is resolved against the collection's own values,
- * so the path is anchored at the root with a leading slash.
- */
-function apportionBy(linesAt: string): INodeProperties {
-	return {
-		...APPORTION_BY,
-		displayOptions: {
-			show: {
-				[linesAt]: [{ _cnd: { exists: true } }],
-			},
-		},
-	};
-}
 
 /**
  * The apportionment lines — which parts of the company this amount belongs to.
@@ -598,9 +588,10 @@ export const scheduleFields: INodeProperties[] = [
 		},
 	},
 	// After the categories, because the split of an amount comes after the amount
-	// — and Apportion By *under* the lines, as a field of that block rather than
-	// a question asked before there is anything to ask it about.
-	...[COST_CENTERS, apportionBy('/costCenters.costCenter')].map(
+	// — and Apportion By *under* the lines, so the block reads as one thing: the
+	// lines, and then how to read them. Under them rather than after them is as
+	// close to "part of the block" as this gets, for the reason written above it.
+	...[COST_CENTERS, APPORTION_BY].map(
 		(field): INodeProperties => ({
 			...field,
 			displayOptions: {
@@ -648,12 +639,13 @@ export const scheduleFields: INodeProperties[] = [
 			// "a field you did not add is not touched" has to prevent, and does,
 			// because the safe cycle sends the stored record back whole.
 			//
-			// Apportion By is not on the Add Field list until Cost Centers carries a
-			// line, for the same reason it waits on the creation screen: on its own
-			// it changes nothing, and the handler refuses lines that arrive without
-			// it rather than guessing.
+			// Apportion By is on the Add Field list unconditionally, for the reason
+			// written above the field: a condition on the lines is a condition n8n
+			// resolves by dropping the value. On its own it changes nothing — the
+			// handler sends neither key without lines — and lines added without it
+			// are refused rather than guessed at.
 			COST_CENTERS,
-			apportionBy('/updateFields.costCenters.costCenter'),
+			APPORTION_BY,
 			{
 				displayName: 'Accrual Date',
 				name: 'accrualDate',
