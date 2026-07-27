@@ -242,6 +242,24 @@ export class NiboEmpresas implements INodeType {
 				default: {},
 				options: [
 					{
+						// Unlocking a closed accounting period is a decision for a person,
+						// not a side effect of an update — the API itself accepts it
+						// without a word, measured on 2026-07-27. Opt-in, at the end,
+						// like every operational adjustment (§4.1).
+						displayName: 'Allow Moving the Lock Back',
+						name: 'allowMovingLockBack',
+						type: 'boolean',
+						default: false,
+						description:
+							'Whether a Balance Lock Date earlier than the current one may be sent. Moving the lock back unlocks an accounting period that was closed, so the node refuses it unless this is on.',
+						displayOptions: {
+							show: {
+								'/resource': ['bankAccount'],
+								'/operation': ['update'],
+							},
+						},
+					},
+					{
 						displayName: 'Fail on Incomplete Results',
 						name: 'failOnIncomplete',
 						type: 'boolean',

@@ -82,6 +82,13 @@ export const bankAccountOperations: INodeProperties[] = [
 				description:
 					'Send the lines of a statement to the reconciliation queue of an account, one input item per line',
 			},
+			{
+				name: 'Update',
+				value: 'update',
+				action: 'Update a bank account',
+				description:
+					'Change the fields you list and leave every other one as it is — including the balance lock date, which is how a closing automation locks a period',
+			},
 		],
 		default: 'list',
 	},
@@ -209,6 +216,84 @@ export const bankAccountFields: INodeProperties[] = [
 			show: {
 				resource: [BANK_ACCOUNT],
 				operation: ['create'],
+			},
+		},
+	},
+	/**
+	 * The update: which account, and what to change. The merge underneath reads
+	 * the record first and sends the whole of it back, which is what keeps the
+	 * lock date alive through an update that does not mention it — this API
+	 * CLEARS the lock on any body that omits it, with a 204 and not a word.
+	 */
+	{
+		displayName: 'Bank Account Name or ID',
+		name: 'bankAccountId',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'loadBankAccounts',
+			// The way back from the per-item mode, where the list refuses to load.
+			loadOptionsDependsOn: ['authMode'],
+		},
+		required: true,
+		default: '',
+		description:
+			'The account to change. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['update'],
+			},
+		},
+	},
+	{
+		displayName: 'Update Fields',
+		name: 'updateFields',
+		type: 'collection',
+		placeholder: 'Add Field',
+		default: {},
+		description:
+			'The fields to change. Every field you do not add stays exactly as it is — the balance lock included.',
+		options: [
+			{
+				displayName: 'Balance Lock Date',
+				name: 'balanceLockDate',
+				type: 'dateTime',
+				typeOptions: { dateOnly: true },
+				default: '',
+				description:
+					'The day the books are locked up to — nothing before it can be written or edited. Moving it forward is how a closing automation closes a month. Moving it back unlocks a closed period, so the node refuses that unless the "Allow Moving the Lock Back" option is on.',
+			},
+			{
+				displayName: 'Name',
+				name: 'name',
+				type: 'string',
+				default: '',
+				description: 'What the account is called in Nibo',
+			},
+			{
+				displayName: 'Opening Balance',
+				name: 'openBalance',
+				type: 'number',
+				default: 0,
+				description: 'What the account held on the opening day',
+			},
+			{
+				displayName: 'Opening Balance Date',
+				name: 'dateOfOpenBalance',
+				type: 'dateTime',
+				typeOptions: { dateOnly: true },
+				default: '',
+				description:
+					'The day the opening balance was struck. Nothing can be filed into the account before it.',
+			},
+			// `isArchived` is deliberately NOT here: the PUT answers 204 and ignores
+			// the field — measured on 2026-07-27. Offering it would be selling what
+			// does not exist. Archiving is Nibo's screen only.
+		],
+		displayOptions: {
+			show: {
+				resource: [BANK_ACCOUNT],
+				operation: ['update'],
 			},
 		},
 	},

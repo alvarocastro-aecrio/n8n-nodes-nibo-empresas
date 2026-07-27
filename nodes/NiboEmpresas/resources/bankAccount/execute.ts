@@ -6,7 +6,7 @@ import { niboApiRequest } from '../../transport/request';
 import { niboReadBack } from '../../transport/save';
 import { onlyTheDay } from '../schedule/normalize';
 import { listFilter } from '../shared/filter';
-import { failOnIncomplete, requestInterval } from '../shared/options';
+import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { bankAccountBalanceFilterFieldTypes, bankAccountFilterFieldTypes } from './description';
 
 const ACCOUNTS = '/accounts';
@@ -87,6 +87,14 @@ export async function executeBankAccount(
 
 			if (operation === 'create') {
 				returnData.push({ json: await createAccount.call(this, i), pairedItem: { item: i } });
+				continue;
+			}
+
+			if (operation === 'update') {
+				returnData.push({
+					json: await updateAccount.call(this, i, options),
+					pairedItem: { item: i },
+				});
 				continue;
 			}
 
@@ -253,6 +261,131 @@ async function createAccount(
 	}
 
 	return record;
+}
+
+/** The shape a day arrives in after `onlyTheDay`, comparable as text */
+const A_PLAIN_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Changes an account the only way this API can take a change without losing
+ * something: read the record, merge on top, send **the whole of it** back.
+ *
+ * Two measurements of 2026-07-27 shape it. A PUT whose body omits
+ * `balanceLockDate` **clears the lock** — 204, not a word — so the merge is
+ * what keeps a closed period closed through an update about something else.
+ * And a partial PUT (just a name) is a raw SQL 500, so the fragment is never
+ * an option anyway.
+ *
+ * The lock has one more rule of its own: the API accepts moving it **back**
+ * as quietly as moving it forward, and backwards is what unlocks a period an
+ * accountant already closed. Forward — the closing automation — passes;
+ * backward is refused unless the option says a person decided it.
+ */
+async function updateAccount(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	options: IDataObject,
+): Promise<IDataObject> {
+	const id = recordId.call(this, 'bankAccountId', itemIndex);
+	const asked = this.getNodeParameter('updateFields', itemIndex, {}) as IDataObject;
+
+	// Normalized first, so days are days before anything is compared or sent.
+	const changes: IDataObject = {};
+	if (typeof asked.name === 'string' && asked.name.trim() !== '') {
+		changes.name = asked.name.trim();
+	}
+	if (asked.openBalance !== undefined) {
+		changes.openBalance = Number(asked.openBalance) || 0;
+	}
+	for (const field of ['dateOfOpenBalance', 'balanceLockDate']) {
+		const day = onlyTheDay(String(asked[field] ?? ''));
+		if (day !== '') {
+			changes[field] = day;
+		}
+	}
+
+	if (Object.keys(changes).length === 0) {
+		throw new NodeOperationError(this.getNode(), 'This update was given no field to change', {
+			itemIndex,
+			description:
+				'Add at least one field under Update Fields. The node will not send an update that rewrites the record with itself — in this API that is a write like any other.',
+		});
+	}
+
+	const current = await readAccountBack.call(this, itemIndex, id);
+	if (current === undefined) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Nibo has no bank account with the ID "${id}"`,
+			{
+				itemIndex,
+				description:
+					'The update was not sent: without the stored record there is nothing to merge onto. An account ID belongs to one organization, so an ID from another one is simply not here.',
+			},
+		);
+	}
+
+	// The one guard of this form. Forward closes a month; backward unlocks one.
+	if (typeof changes.balanceLockDate === 'string') {
+		const currentLock = onlyTheDay(String(current.balanceLockDate ?? ''));
+		const allowed = options.allowMovingLockBack === true;
+
+		if (currentLock !== '' && (changes.balanceLockDate as string) < currentLock && !allowed) {
+			throw new NodeOperationError(
+				this.getNode(),
+				`This update would move the balance lock back, from ${currentLock} to ${changes.balanceLockDate}`,
+				{
+					itemIndex,
+					description:
+						'Nothing was written. The lock is what keeps a closed accounting period closed, and this API moves it back as quietly as it moves it forward — measured, and not a word either way. Unlocking a period is a decision for a person: if that is what you mean to do, add the "Allow Moving the Lock Back" option at the end of the node and run again.',
+				},
+			);
+		}
+	}
+
+	const merged = { ...current, ...changes };
+
+	await niboApiRequest.call(
+		this,
+		itemIndex,
+		'PUT',
+		`${ACCOUNTS}/${encodeURIComponent(id)}`,
+		{},
+		merged,
+	);
+
+	const confirmed = await readAccountBack.call(this, itemIndex, id);
+	if (confirmed === undefined) {
+		throw new NodeOperationError(this.getNode(), 'The update could not be confirmed', {
+			itemIndex,
+			description: `Nibo answered the update but returned no record when it was read back. Check the account "${id}" in Nibo.`,
+		});
+	}
+
+	// Each asked field, compared as what it is: a day with a day, the rest as
+	// text. A change the API answered 204 to and did not apply is a failure —
+	// this API has been measured doing exactly that, on this very route.
+	const missing = Object.entries(changes).filter(([field, value]) => {
+		const stored = confirmed[field];
+		if (typeof value === 'string' && A_PLAIN_DAY.test(value)) {
+			return onlyTheDay(String(stored ?? '')) !== value;
+		}
+		return String(stored ?? '').trim() !== String(value ?? '').trim();
+	});
+
+	if (missing.length > 0) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Nibo did not apply the update to: ${missing.map(([field]) => field).join(', ')}`,
+			{
+				itemIndex,
+				description:
+					'The API answered the update without an error, but reading the account back shows those fields unchanged. It has been measured doing this — isArchived, for one, is accepted with a 204 and ignored. Nothing else in the record was touched.',
+			},
+		);
+	}
+
+	return confirmed;
 }
 
 /** One account, read through the list this API offers instead of a get-by-id */

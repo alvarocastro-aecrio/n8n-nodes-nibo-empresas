@@ -131,7 +131,7 @@ describe('executeBankAccount — Get Many', () => {
 	 * read through Get Many filtered by ID. And Delete does not exist in this API
 	 * at all, which is precisely what the Create screen warns about.
 	 */
-	it.each(['get', 'update', 'delete'])(
+	it.each(['get', 'delete'])(
 		'refuses "%s", which this resource does not offer',
 		async (operation) => {
 			await expect(
@@ -440,6 +440,166 @@ describe('executeBankAccount — Create', () => {
 		await expect(failure).rejects.toMatchObject({
 			description: expect.stringMatching(/again/i),
 		});
+	});
+});
+
+/**
+ * Updating an account — the operation that touches `balanceLockDate`, which is
+ * why it exists: at month end a closing automation moves the lock forward.
+ *
+ * Everything here answers one measurement or another from 2026-07-27: the PUT
+ * takes the whole record and an omitted `balanceLockDate` CLEARS the lock in
+ * silence, so the node merges over the current record and the lock survives by
+ * construction; and the API accepts moving the lock BACK without a word, so
+ * the node refuses that direction unless the option says otherwise — unlocking
+ * a closed period is a decision for a person, not a side effect.
+ */
+describe('executeBankAccount — Update', () => {
+	const CURRENT = {
+		id: GUID,
+		name: 'CONTA ANTIGA',
+		openBalance: 100,
+		dateOfOpenBalance: '2026-07-01T00:00:00Z',
+		balanceLockDate: '2026-07-10T00:00:00Z',
+		isArchived: false,
+		isReconcilable: true,
+		canBeAutomated: true,
+	};
+
+	function updating(updateFields: IDataObject, parameters: IDataObject = {}) {
+		return context({ bankAccountId: GUID, updateFields, ...parameters });
+	}
+
+	/** What the list answers: the current record, then the confirmation read */
+	function recordGoes(current: IDataObject | undefined, confirmed?: IDataObject) {
+		listRequest.mockReset();
+		listRequest.mockResolvedValueOnce({
+			records: current === undefined ? [] : [current],
+			count: current === undefined ? 0 : 1,
+		});
+		const after = confirmed ?? current;
+		listRequest.mockResolvedValue({
+			records: after === undefined ? [] : [after],
+			count: after === undefined ? 0 : 1,
+		});
+	}
+
+	function bodySentToPut(): IDataObject | undefined {
+		return apiRequest.mock.calls.find((call) => call[1] === 'PUT')?.[4] as IDataObject;
+	}
+
+	it('reads the record through the list, merges on top and sends the WHOLE of it', async () => {
+		recordGoes(CURRENT, { ...CURRENT, name: 'CONTA NOVA' });
+
+		const items = await executeBankAccount.call(
+			updating({ name: 'CONTA NOVA' }),
+			'bankAccount',
+			'update',
+		);
+
+		expect((listRequest.mock.calls[0][3] as unknown as IDataObject).filter).toBe(`id eq ${GUID}`);
+
+		const body = bodySentToPut();
+		expect(body?.name).toBe('CONTA NOVA');
+		// The rest of the record travels untouched — a partial PUT is a 500 here,
+		// and an omitted field is a field zeroed.
+		expect(body?.openBalance).toBe(100);
+		expect(body?.isReconcilable).toBe(true);
+		expect(items[0].json).toEqual({ ...CURRENT, name: 'CONTA NOVA' });
+	});
+
+	/**
+	 * The defense the whole operation is shaped around: an update that says
+	 * nothing about the lock must leave the lock exactly where it was — the API
+	 * would clear it on any body that omits it.
+	 */
+	it('carries the current lock through an update that does not mention it', async () => {
+		recordGoes(CURRENT, { ...CURRENT, name: 'CONTA NOVA' });
+
+		await executeBankAccount.call(updating({ name: 'CONTA NOVA' }), 'bankAccount', 'update');
+
+		expect(bodySentToPut()?.balanceLockDate).toBe('2026-07-10T00:00:00Z');
+	});
+
+	it('moves the lock forward, which is what a closing automation does', async () => {
+		recordGoes(CURRENT, { ...CURRENT, balanceLockDate: '2026-07-31T00:00:00Z' });
+
+		await executeBankAccount.call(
+			updating({ balanceLockDate: '2026-07-31T00:00:00.000-03:00' }),
+			'bankAccount',
+			'update',
+		);
+
+		expect(bodySentToPut()?.balanceLockDate).toBe('2026-07-31');
+	});
+
+	it('refuses to move the lock back, before anything is written', async () => {
+		recordGoes(CURRENT);
+
+		const failure = executeBankAccount.call(
+			updating({ balanceLockDate: '2026-07-05' }),
+			'bankAccount',
+			'update',
+		);
+
+		await expect(failure).rejects.toThrow(/lock.*back|back.*lock/i);
+		await expect(
+			executeBankAccount.call(updating({ balanceLockDate: '2026-07-05' }), 'bankAccount', 'update'),
+		).rejects.toMatchObject({ description: expect.stringMatching(/closed|unlock/i) });
+
+		expect(apiRequest.mock.calls.filter((call) => call[1] === 'PUT')).toHaveLength(0);
+	});
+
+	it('moves the lock back when the option says a person decided that', async () => {
+		recordGoes(CURRENT, { ...CURRENT, balanceLockDate: '2026-07-05T00:00:00Z' });
+
+		await executeBankAccount.call(
+			updating({ balanceLockDate: '2026-07-05' }, { options: { allowMovingLockBack: true } }),
+			'bankAccount',
+			'update',
+		);
+
+		expect(bodySentToPut()?.balanceLockDate).toBe('2026-07-05');
+	});
+
+	it('locks for the first time without asking anything, since nothing is unlocked by it', async () => {
+		const unlocked = { ...CURRENT, balanceLockDate: undefined };
+		recordGoes(unlocked, { ...unlocked, balanceLockDate: '2026-07-31T00:00:00Z' });
+
+		await executeBankAccount.call(
+			updating({ balanceLockDate: '2026-07-31' }),
+			'bankAccount',
+			'update',
+		);
+
+		expect(bodySentToPut()?.balanceLockDate).toBe('2026-07-31');
+	});
+
+	it('refuses an update with nothing to change', async () => {
+		await expect(
+			executeBankAccount.call(updating({}), 'bankAccount', 'update'),
+		).rejects.toThrow(/no field/i);
+
+		expect(apiRequest).not.toHaveBeenCalled();
+		expect(listRequest).not.toHaveBeenCalled();
+	});
+
+	it('refuses when Nibo has no such account', async () => {
+		recordGoes(undefined);
+
+		await expect(
+			executeBankAccount.call(updating({ name: 'X' }), 'bankAccount', 'update'),
+		).rejects.toThrow(/no bank account/i);
+
+		expect(apiRequest.mock.calls.filter((call) => call[1] === 'PUT')).toHaveLength(0);
+	});
+
+	it('reports the fields Nibo answered the update without applying', async () => {
+		recordGoes(CURRENT, CURRENT);
+
+		await expect(
+			executeBankAccount.call(updating({ name: 'CONTA NOVA' }), 'bankAccount', 'update'),
+		).rejects.toThrow(/did not apply/i);
 	});
 });
 
@@ -828,14 +988,56 @@ describe('NiboEmpresas — Bank Account on the screen', () => {
 			'listBalances',
 			'list',
 			'importBankStatement',
+			'update',
 		]);
 		expect((operation?.options as INodePropertyOptions[]).map((one) => one.name)).toEqual([
 			'Create',
 			'Get Balances',
 			'Get Many',
 			'Import Bank Statement',
+			'Update',
 		]);
 		expect(operation?.default).toBe('list');
+	});
+
+	it('asks which account on Update, offering the list of the organization', () => {
+		const id = forAccounts('bankAccountId', 'update');
+
+		expect(id?.typeOptions?.loadOptionsMethod).toBe('loadBankAccounts');
+		expect(id?.required).toBe(true);
+	});
+
+	it('offers under Update Fields exactly what was measured writable', () => {
+		const fields = ((forAccounts('updateFields', 'update')?.options ?? []) as INodeProperties[]).map(
+			(field) => field.name,
+		);
+
+		expect(fields.sort()).toEqual(
+			['balanceLockDate', 'dateOfOpenBalance', 'name', 'openBalance'].sort(),
+		);
+	});
+
+	/**
+	 * `isArchived` is what anybody would look for on an update, and it is not
+	 * here on purpose: the PUT answers 204 and ignores the field — measured on
+	 * 2026-07-27. Offering it would be selling what does not exist.
+	 */
+	it('never offers isArchived, which the PUT ignores with a 204', () => {
+		const fields = ((forAccounts('updateFields', 'update')?.options ?? []) as INodeProperties[]).map(
+			(field) => field.name,
+		);
+
+		expect(fields).not.toContain('isArchived');
+	});
+
+	it('offers the unlock permission as an option, only where it means something', () => {
+		const options = (property('options')?.options ?? []) as INodeProperties[];
+		const allow = options.find((one) => one.name === 'allowMovingLockBack');
+
+		expect(allow?.type).toBe('boolean');
+		expect(allow?.default).toBe(false);
+		expect(allow?.displayOptions?.show?.['/operation']).toEqual(['update']);
+		expect(allow?.displayOptions?.show?.['/resource']).toEqual(['bankAccount']);
 	});
 
 	it('asks for the name, the opening balance and the opening day on Create', () => {
