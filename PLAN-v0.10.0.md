@@ -125,11 +125,22 @@ O catálogo marca `PUT /payments/{id}` como ✔ — *"há workflow de produção
 `PUT /schedules/{s}/payments/{e}` · `PUT /schedules/debit/{s}/payments/{e}` ·
 `PUT /schedules/debit/{s}/payments` · `POST /payments/{entryId}`
 
-A categoria e a descrição do lançamento **não mudaram** em nenhuma delas. Duas leituras
-possíveis, e a honesta é a segunda: ou a rota sumiu, ou **o id que o workflow de produção
-passa não é nenhum dos dois que eu tenho** — e descobrir qual exige olhar o workflow, que
-não é deste repositório. **Enquanto isso não for levantado, a operação não entra no menu**
-(a regra da 0.3.1: entrada de menu sem rota atrás é o defeito).
+A categoria e a descrição do lançamento **não mudaram** em nenhuma delas.
+
+**Levantado em 2026-07-27, a pedido do Alvaro, e a resposta é fechada.** O workflow de
+produção que sustentava o ✔ foi lido: ele chama `PUT /payments/{entryId}` — **o mesmo id
+que eu já tinha testado** — com um corpo de sete campos. Esse corpo foi reproduzido
+**exatamente**, campo a campo, contra um lançamento vivo na cobaia, inclusive o
+`categoryid` de inicial minúscula que ele escreve: **404**. Com `categoryId` correto:
+**404**. A categoria não mudou.
+
+E o que fecha a leitura: **esse workflow está inativo**, com `retryOnFail` e
+`onError: continueErrorOutput`. O ✔ do catálogo significava *"alguém escreveu esse node"*,
+nunca *"isto funciona"*.
+
+**Conclusão: recategorizar um pagamento não é possível por esta API.** A operação não entra
+no menu — a regra da 0.3.1, entrada de menu sem rota atrás é o defeito — e agora isso é
+medição, não cautela.
 
 ### 1.9 A rota cruzada, que aceita e faz a coisa errada
 
@@ -169,6 +180,26 @@ Todo o resto foi apagado: os agendamentos e as baixas das sondas, cada um confer
 
 ## 2. Decisões de recorte
 
+0. **Os nomes no menu levam a palavra de família `Settlement`** *(recomendação minha,
+   2026-07-27, delegada pelo Alvaro)*. A regra já existe neste node e só precisava ser
+   aplicada: **família de mais de um recurso ganha prefixo, recurso sozinho não**. Contact
+   são quatro e têm; Schedule são dois e têm; Category e Cost Center são sozinhos e não têm.
+   Payment e Receipt são **dois, com contrato idêntico e um handler só** — logo têm.
+
+   E o efeito colateral é o melhor argumento: `Settlement` cai **imediatamente depois de
+   `Schedule`** na ordenação (`Sch` < `Set`), sem nada no meio. O menu — e com ele a aba
+   Actions, que é a mesma lista — passa a ler na ordem do dinheiro: *agenda, depois baixa*.
+   `Bank Account` entra solto, por ser um só.
+
+   ```
+   Bank Account · Category · Contact - Customer · Contact - Employee
+   Contact - Partner · Contact - Supplier · Cost Center
+   Schedule - Credit · Schedule - Debit · Settlement - Payment · Settlement - Receipt
+   ```
+
+   Os `value` guardados são `payment`, `receipt` e `bankAccount` — rótulo é palavra, `value`
+   é contrato.
+
 1. **Dois recursos, `Payment` e `Receipt`, com um handler só** — a API dá aos dois um
    contrato idêntico (medido nas cinco operações), exatamente como aos dois agendamentos e
    aos quatro contatos. Custam uma tabela e nenhuma lógica.
@@ -193,14 +224,15 @@ Todo o resto foi apagado: os agendamentos e as baixas das sondas, cada um confer
 5. **`Delete` é estorno, e o nome tem que dizer isso.** Ela não apaga o agendamento: devolve
    ele a *em aberto*. O texto da tela diz, e a resposta do node é
    `{ scheduleId, entryId, reversed: true }` em vez do `deleted: true` dos outros recursos.
-6. **Entra `Bank Account` com `Get Many` só** *(a decidir com o Alvaro)*. A baixa exige um
+6. **Entra `Bank Account` com `Get Many` só** *(decidido pelo Alvaro em 2026-07-27)*. A baixa exige um
    `accountId` e o node não tem de onde tirar um. A lista assistida resolve na tela; **no
    modo token-por-item ela recusa carregar** (regra da 0.7.0), e aí é preciso um jeito de
    ler o ID por empresa — que é exatamente o que `Category · Get Many` faz desde a 0.7.0.
    O recurso Account **completo** (saldos, transferência, extrato) é o item 6 do roteiro e
    continua fora.
-7. **Recategorizar não entra**, pela medição 1.8. Fica registrado como pendência com o que
-   falta para destravá-la: olhar o workflow de produção que o catálogo diz que a usa.
+7. **Recategorizar não entra**, pela medição 1.8 — e não é mais pendência: o workflow de
+   produção foi lido, a chamada dele foi reproduzida à risca e responde 404. A capacidade
+   não existe nesta API.
 8. **Settle recusa o agendamento do outro tipo.** A API aceita com 200 (1.9). O node já faz
    isso no `Get` do agendamento desde a 0.6.0 e a mensagem já existe — aqui ela vale mais,
    porque lá o prejuízo era ler errado e aqui é **escrever** no lado errado do caixa.
@@ -293,16 +325,14 @@ Todo o resto foi apagado: os agendamentos e as baixas das sondas, cada um confer
 
 ---
 
-## 7. O que este plano deixa em aberto para o Alvaro decidir
+## 7. As três que estavam em aberto, e como ficaram
 
-1. **Os nomes no menu.** Hoje ele lê por família: `Category`, `Contact - …`,
-   `Cost Center`, `Schedule - …`. `Payment` e `Receipt` entram como nomes soltos, entre
-   *Cost Center* e *Schedule*. Funciona e é alfabético — mas nada na tela diz que **Payment
-   é a baixa de um Schedule - Debit**. A alternativa é uma palavra de família
-   (`Settlement - Payment` / `Settlement - Receipt`), que junta os dois e ainda os põe
-   depois de *Schedule*, longe do agendamento que eles baixam. Nenhuma das duas é
-   obviamente melhor.
-2. **Se `Bank Account` entra agora** (decisão 6) ou se a conta fica só como campo de texto
-   nesta versão, adiando a leitura para o item 6 do roteiro.
-3. **Se vale levantar o `PUT /payments/{id}`** (1.8) no workflow de produção que o catálogo
-   diz que o usa — é a única forma de saber se recategorizar é possível.
+Respondidas pelo Alvaro em 2026-07-27.
+
+| # | Estava em aberto | Ficou |
+|---|---|---|
+| 1 | Os nomes no menu | **`Settlement - Payment` / `Settlement - Receipt`** — delegado a mim, ver decisão 0. `Bank Account` solto |
+| 2 | Se `Bank Account` entra agora | **Entra**, com `Get Many` só — decisão 6 |
+| 3 | Se vale levantar o `PUT /payments/{id}` | **Levantado e fechado**: a chamada de produção foi lida e reproduzida à risca, responde 404, e o workflow que a fazia está inativo. Não existe recategorização nesta API — ver 1.8 |
+
+Nada mais deste plano depende de decisão. A fatia 1 pode começar.
