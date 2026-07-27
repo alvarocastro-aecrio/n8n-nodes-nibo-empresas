@@ -67,6 +67,13 @@ export const bankTransferOperations: INodeProperties[] = [
 		},
 		options: [
 			{
+				name: 'Create',
+				value: 'create',
+				action: 'Create a bank transfer',
+				description:
+					'Move money from one account of the organization to another, which records a payment on one and a receipt on the other',
+			},
+			{
 				name: 'Delete',
 				value: 'delete',
 				action: 'Delete a bank transfer',
@@ -116,6 +123,113 @@ const FILTER_FIELDS: IFilterField[] = [
 export const bankTransferFilterFieldTypes = filterFieldTypes(FILTER_FIELDS);
 
 export const bankTransferFields: INodeProperties[] = [
+	/**
+	 * The screen that has to warn before the button, because three of this
+	 * route's refusals name the wrong cause.
+	 */
+	{
+		displayName:
+			'A missing or unknown account is answered by this API with "Não é possivel transferir valores de contas virtuais" — a sentence about a setting that has nothing to do with it. The node checks both accounts, the amount and the two sides before sending anything.',
+		name: 'createNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: [BANK_TRANSFER],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Origin Account Name or ID',
+		name: 'originAccountId',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'loadBankAccounts',
+			// The way back from the per-item mode, where the list refuses to load.
+			loadOptionsDependsOn: ['authMode'],
+		},
+		required: true,
+		default: '',
+		description:
+			'The account the money leaves. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: {
+			show: {
+				resource: [BANK_TRANSFER],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Destination Account Name or ID',
+		name: 'destinyAccountId',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'loadBankAccounts',
+			loadOptionsDependsOn: ['authMode'],
+		},
+		required: true,
+		default: '',
+		description:
+			'The account the money reaches. It cannot be the same as the origin — this API refuses that with "Você não pode transferir valores entre as mesmas contas correntes", and the node refuses it first. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: {
+			show: {
+				resource: [BANK_TRANSFER],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Date',
+		name: 'date',
+		type: 'dateTime',
+		typeOptions: {
+			// A transfer happens on a day. The API takes YYYY-MM-DD and there is no
+			// hour in it, so a clock offers a decision that does not exist — and one
+			// with a wrong answer, since the editor hands over the moment with its
+			// offset and midnight in Brasília is the day before in UTC.
+			dateOnly: true,
+		},
+		required: true,
+		default: '',
+		description:
+			'The day the money moved. Unlike a settlement, this one may fall before the opening-balance date of either account: the API was measured to accept it, so the node does not refuse it.',
+		displayOptions: {
+			show: {
+				resource: [BANK_TRANSFER],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Value',
+		name: 'value',
+		type: 'number',
+		required: true,
+		default: 0,
+		description:
+			'How much moved, as a positive number. Zero, a negative amount and no amount at all are the same refusal in this API — "O valor informado deve ser positivo" — and the node makes it before sending.',
+		displayOptions: {
+			show: {
+				resource: [BANK_TRANSFER],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Description',
+		name: 'description',
+		type: 'string',
+		default: '',
+		description:
+			'What the transfer is about. Left empty it is not sent at all, and Nibo writes its own — "Transferência de {origin} para {destination}". Either way the text comes back in the identifier field of the two entries: this API has no description field on a transfer.',
+		displayOptions: {
+			show: {
+				resource: [BANK_TRANSFER],
+				operation: ['create'],
+			},
+		},
+	},
 	{
 		displayName: 'Transfer ID',
 		name: 'transferId',

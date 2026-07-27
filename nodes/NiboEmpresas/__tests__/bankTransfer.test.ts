@@ -264,6 +264,215 @@ describe('executeBankTransfer — Delete', () => {
 	});
 });
 
+/**
+ * Making one, which is the operation with a defense in front of it.
+ *
+ * Three of this route's error messages are wrong in the same way: a missing
+ * origin account, a missing destination account and an account that does not
+ * exist all answer HTTP 500 *"Não é possivel transferir valores de/para contas
+ * virtuais"*. The account is not virtual — it was not sent, or it is not there —
+ * and anybody reading that sentence goes looking for a setting that has nothing
+ * to do with it.
+ */
+describe('executeBankTransfer — Create', () => {
+	const DESTINATION = '7c2b1d0a-9e64-4c53-b1aa-0f7c2d9e4b31';
+	const CREATED = 'c0ffee00-1111-2222-3333-444455556666';
+
+	function creating(overrides: IDataObject = {}) {
+		return context({
+			originAccountId: ORIGIN,
+			destinyAccountId: DESTINATION,
+			date: '2026-07-27T00:00:00.000-03:00',
+			value: 123.45,
+			description: 'Aporte',
+			...overrides,
+		});
+	}
+
+	/**
+	 * What the collection answers before the write, and then after it. The reset
+	 * is what makes it authoritative: without it a second call would queue behind
+	 * the first and the read before the write would answer somebody else's setup.
+	 */
+	function collectionGoes(before: IDataObject[], ...after: IDataObject[][]) {
+		listRequest.mockReset();
+		listRequest.mockResolvedValueOnce({ records: before, count: before.length });
+
+		after.forEach((records, index) =>
+			index === after.length - 1
+				? listRequest.mockResolvedValue({ records, count: records.length })
+				: listRequest.mockResolvedValueOnce({ records, count: records.length }),
+		);
+	}
+
+	const NEW_RECORD = {
+		id: CREATED,
+		originEntry: { value: -123.45, identifier: 'Aporte', account: { id: ORIGIN } },
+		destinyEntry: { value: 123.45, account: { id: DESTINATION } },
+	};
+
+	beforeEach(() => collectionGoes([], [NEW_RECORD]));
+
+	it('posts the body the API was measured to take', async () => {
+		await executeBankTransfer.call(creating(), 'bankTransfer', 'create');
+
+		expect(apiRequest.mock.calls[0][1]).toBe('POST');
+		expect(apiRequest.mock.calls[0][2]).toBe('/accounts/transfer');
+		expect(apiRequest.mock.calls[0][4]).toEqual({
+			originAccountId: ORIGIN,
+			destinyAccountId: DESTINATION,
+			// The day that was chosen is the day that travels: the editor hands over
+			// the moment with its offset, and midnight in Brasília is the day before
+			// in UTC.
+			date: '2026-07-27',
+			value: 123.45,
+			description: 'Aporte',
+		});
+	});
+
+	/**
+	 * Omitted, the API invents one — *"Transferência de {origin} para {destiny}"* —
+	 * and answers 204 all the same. So a blank one has to be genuinely absent
+	 * rather than sent empty.
+	 */
+	it('leaves the description out when it is blank, and the API writes its own', async () => {
+		collectionGoes([], [{ ...NEW_RECORD, originEntry: { identifier: 'Transferência de A para B' } }]);
+
+		const items = await executeBankTransfer.call(
+			creating({ description: '   ' }),
+			'bankTransfer',
+			'create',
+		);
+
+		expect(apiRequest.mock.calls[0][4]).not.toHaveProperty('description');
+		expect((items[0].json.originEntry as IDataObject).identifier).toBe(
+			'Transferência de A para B',
+		);
+	});
+
+	it('hands back the record it read, which is where the ID comes from', async () => {
+		const items = await executeBankTransfer.call(creating(), 'bankTransfer', 'create');
+
+		expect(items[0].json.id).toBe(CREATED);
+	});
+
+	/**
+	 * The POST answers **204 with no body at all** — no ID, nothing. Without the
+	 * read-back the operation would hand back what the user typed, which is
+	 * indistinguishable from a call that wrote nothing, and the Delete next door
+	 * would have no ID to work with.
+	 *
+	 * Which of the records is the new one is answered by looking before and
+	 * looking again: anything else would have to guess between two transfers of
+	 * the same amount on the same day.
+	 */
+	it('tells the new transfer from the ones that were already there', async () => {
+		const OLD = { id: TRANSFER, originEntry: { value: -50 }, destinyEntry: { value: 50 } };
+		collectionGoes([OLD], [OLD, NEW_RECORD]);
+
+		const items = await executeBankTransfer.call(creating(), 'bankTransfer', 'create');
+
+		expect(items[0].json.id).toBe(CREATED);
+	});
+
+	it('reads the collection through the two accounts, which are nested paths', async () => {
+		await executeBankTransfer.call(creating(), 'bankTransfer', 'create');
+
+		const filter = String((listRequest.mock.calls[0][3] as unknown as IDataObject).filter);
+
+		expect(filter).toContain(`originEntry/account/id eq ${ORIGIN}`);
+		expect(filter).toContain(`destinyEntry/account/id eq ${DESTINATION}`);
+	});
+
+	it('forwards the negative sign of the origin entry as it came', async () => {
+		const items = await executeBankTransfer.call(creating(), 'bankTransfer', 'create');
+
+		expect((items[0].json.originEntry as IDataObject).value).toBe(-123.45);
+	});
+
+	it('asks again when the collection has not caught up yet', async () => {
+		collectionGoes([], [], [NEW_RECORD]);
+
+		const items = await executeBankTransfer.call(creating(), 'bankTransfer', 'create');
+
+		expect(items[0].json.id).toBe(CREATED);
+		expect(listRequest).toHaveBeenCalledTimes(3);
+	});
+
+	/**
+	 * And when it never appears, the sentence has to be exactly right: the money
+	 * **moved**. Telling a workflow it failed is what makes it transfer twice.
+	 */
+	it('says the transfer went through when it cannot be read back', async () => {
+		collectionGoes([], []);
+
+		const failure = executeBankTransfer.call(creating(), 'bankTransfer', 'create');
+
+		await expect(failure).rejects.toThrow(/could not be read back/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/again/i),
+		});
+	});
+
+	describe('the refusals, which all happen before anything is sent', () => {
+		async function refused(overrides: IDataObject, expected: RegExp) {
+			await expect(
+				executeBankTransfer.call(creating(overrides), 'bankTransfer', 'create'),
+			).rejects.toThrow(expected);
+
+			expect(apiRequest).not.toHaveBeenCalled();
+			expect(listRequest).not.toHaveBeenCalled();
+		}
+
+		it('refuses the same account on both sides', async () => {
+			await refused({ destinyAccountId: ORIGIN }, /same account/i);
+		});
+
+		it.each([0, -1])('refuses the value %s, which has to be positive', async (value) => {
+			await refused({ value }, /positive/i);
+		});
+
+		/**
+		 * The one that matters most: left blank, the API blames a virtual account.
+		 * The refusal here has to name the field that is actually empty, and it must
+		 * not repeat the API's word for it.
+		 */
+		it('refuses a blank origin account, naming the field and not the API’s wrong reason', async () => {
+			await refused({ originAccountId: '' }, /origin account/i);
+
+			// The message says which field is empty; the explanation underneath is
+			// where the API's sentence is quoted and taken apart, so that nobody who
+			// meets it elsewhere goes hunting for a virtual-account setting.
+			await expect(
+				executeBankTransfer.call(creating({ originAccountId: '' }), 'bankTransfer', 'create'),
+			).rejects.toMatchObject({ description: expect.stringMatching(/virtual/i) });
+		});
+
+		it('refuses a blank destination account', async () => {
+			await refused({ destinyAccountId: '  ' }, /destination account/i);
+		});
+	});
+
+	/**
+	 * And the rule this version deliberately does **not** have.
+	 *
+	 * A settlement dated before the account's opening balance is an HTTP 500. The
+	 * first draft of this slice proposed refusing the same thing here, by analogy.
+	 * It was measured on 2026-07-27: a transfer dated before the account was opened
+	 * answers **204 and is accepted**. A defense there would block an operation the
+	 * API allows — the rule belongs to the bank statement, and only to it.
+	 */
+	it('sends a date earlier than the account was opened, because the API takes it', async () => {
+		await executeBankTransfer.call(
+			creating({ date: '1999-01-01T00:00:00.000-03:00' }),
+			'bankTransfer',
+			'create',
+		);
+
+		expect(apiRequest.mock.calls[0][4]).toMatchObject({ date: '1999-01-01' });
+	});
+});
+
 describe('NiboEmpresas — Bank Transfer on the screen', () => {
 	const description = new NiboEmpresas().description;
 
@@ -306,9 +515,32 @@ describe('NiboEmpresas — Bank Transfer on the screen', () => {
 		expect(credential.displayOptions?.show?.resource).toContain('bankTransfer');
 	});
 
-	it('offers the operations this slice measured', () => {
-		expect(optionValues(forTransfers('operation'))).toEqual(['delete', 'list']);
+	it('offers the operations this version measured', () => {
+		expect(optionValues(forTransfers('operation'))).toEqual(['create', 'delete', 'list']);
 		expect(forTransfers('operation')?.default).toBe('list');
+	});
+
+	it('asks for both accounts on Create, each from the list of the organization', () => {
+		for (const name of ['originAccountId', 'destinyAccountId']) {
+			const field = forTransfers(name, 'create');
+
+			expect(field?.typeOptions?.loadOptionsMethod).toBe('loadBankAccounts');
+			expect(field?.required).toBe(true);
+			expect(field?.displayOptions?.show?.operation).toEqual(['create']);
+		}
+	});
+
+	/**
+	 * A transfer happens on a day. The API takes `YYYY-MM-DD` and there is no hour
+	 * in it, so a clock would offer a decision that does not exist — and one with
+	 * a wrong answer, since midnight in Brasília is the day before in UTC.
+	 */
+	it('asks for the day and not the moment', () => {
+		expect(forTransfers('date', 'create')?.typeOptions?.dateOnly).toBe(true);
+	});
+
+	it('leaves the description optional, because the API writes one itself', () => {
+		expect(forTransfers('description', 'create')?.required).toBeUndefined();
 	});
 
 	/** The fields of one row of this resource's condition builder */
