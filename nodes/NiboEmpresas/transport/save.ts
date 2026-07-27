@@ -1,7 +1,8 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeOperationError, sleep } from 'n8n-workflow';
 
 import { deepMerge } from './merge';
+import { niboListRequest } from './paginate';
 import { niboApiRequest } from './request';
 
 /** A leaf of the change: where it goes and what should end up there */
@@ -209,6 +210,72 @@ export async function niboSafeUpdate(
 	}
 
 	return confirmed;
+}
+
+export interface INiboReadBackOptions {
+	/** How many times to ask before giving up. Defaults to the window below. */
+	tries?: number;
+}
+
+/**
+ * How long the read-back keeps asking, and it is a measurement rather than a
+ * guess: on 2026-07-27 a settled entry took about **three seconds** to appear in
+ * its collection. These waits add up to six, which is twice what was seen,
+ * spread over four questions rather than a long sleep.
+ */
+const READ_BACK_WAITS = [500, 1000, 2000, 2500];
+
+/**
+ * Reads a record back through the list filtered by its ID, tolerating a
+ * collection that has not caught up yet.
+ *
+ * Some collections of this API are **eventually consistent**, and `/payments`
+ * and `/receipts` are the ones where it was caught: after a settlement the list
+ * answered `count: 0, items: 0` for about three seconds before showing the
+ * record. Worse, the two fields lag independently — the same list has answered
+ * `items` with a record and `count: 0` at once, and `count: 3` over an empty
+ * collection after a delete.
+ *
+ * A read-back that asked once would therefore report a write that worked as a
+ * write that failed, which is the worst answer this node can give: it is the
+ * one that makes a workflow retry the write and pay twice.
+ *
+ * `undefined` when the record never appeared. That is not the same as an error:
+ * the caller knows what it wrote and is the one that can say what the absence
+ * means.
+ */
+export async function niboReadBack(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	endpoint: string,
+	orderBy: string,
+	filter: string,
+	options: INiboReadBackOptions = {},
+): Promise<IDataObject | undefined> {
+	const tries = Math.max(1, options.tries ?? READ_BACK_WAITS.length + 1);
+
+	for (let attempt = 0; attempt < tries; attempt++) {
+		if (attempt > 0) {
+			await sleep(READ_BACK_WAITS[Math.min(attempt - 1, READ_BACK_WAITS.length - 1)]);
+		}
+
+		const { records } = await niboListRequest.call(this, itemIndex, endpoint, orderBy, {
+			returnAll: false,
+			limit: 1,
+			filter,
+			// A scan of one record by ID cannot be an incomplete scan of a
+			// collection — and `count` is precisely the field that lies during the
+			// lag this function exists for, so comparing it here would turn the lag
+			// into a hard failure of its own.
+			failOnIncomplete: false,
+		});
+
+		if (records.length > 0) {
+			return records[0];
+		}
+	}
+
+	return undefined;
 }
 
 function asRecord(value: unknown): IDataObject | undefined {
