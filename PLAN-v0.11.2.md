@@ -1,4 +1,4 @@
-# PLANO DE IMPLEMENTAÇÃO — v0.12.0
+# PLANO DE IMPLEMENTAÇÃO — v0.11.2
 
 > **Não é spec.** Convenção igual à dos planos anteriores: um documento só, com as
 > medições, as decisões de recorte e as fatias.
@@ -7,7 +7,7 @@
 > workflow, ID de credencial — e **nenhum token**. Os GUIDs citados são das contas de
 > sonda da empresa de teste, criadas por este projeto.
 
-**Escopo da v0.12.0:** **a escrita de contas bancárias** — `Bank Account · Create` e
+**Escopo da v0.11.2:** **a escrita de contas bancárias** — `Bank Account · Create` e
 `Bank Account · Update`, com o **`balanceLockDate`** (a trava do período contábil) como
 campo de primeira classe.
 
@@ -15,11 +15,13 @@ campo de primeira classe.
 `PUT /accounts/{id}` de fora *"até haver uso real"*. A condição foi cumprida em
 2026-07-27: o Alvaro os quer para **automações de fechamento contábil** — ao fechar o
 mês, a automação avança a trava da conta. Files & Annotations, que seria a próxima fatia
-pela ordem do contrato, passa a ser a 0.13.0.
+pela ordem do contrato, continua sendo a próxima: vira a 0.12.0.
 
-**Por que é minor e não patch:** capacidades novas — duas operações que não existiam.
-As 0.11.x publicadas são imutáveis, e a regra deste projeto desde a 0.11.0 é que
-operação nova é minor.
+**Por que 0.11.2, contra a regra da casa:** a regra escrita do projeto diz que
+capacidade nova é minor — e esta versão traz duas operações novas. O Alvaro decidiu
+**0.11.2** mesmo assim, em 2026-07-27, reafirmando depois de a regra ser apontada:
+para ele, a escrita de contas fecha o ciclo das contas bancárias aberto na 0.11.0.
+Exceção consciente, registrada aqui; a convenção volta a valer na próxima versão.
 
 **Fora de escopo:** limpar a trava (`balanceLockDate` → nada) — sem uso declarado, e
 limpar por omissão é justamente o acidente que o merge existe para impedir (1.3);
@@ -112,7 +114,8 @@ esta API responde 429 ao projeto, em ~12 versões de medições.
 ### 1.7 O que ficou na cobaia
 
 ⚠️ **Permanente, e declarado:** **uma conta** — `SONDA CONTA 0.12.0 ESCRITA` — criada
-pela sonda do POST. Saldo **zerado por PUT** ao final (`openBalance: 0`, conferido na
+pela sonda do POST, batizada antes de o rótulo virar 0.11.2 (o aceite do Update pode
+renomeá-la, e é até um bom teste). Saldo **zerado por PUT** ao final (`openBalance: 0`, conferido na
 view), sem trava, sem lançamento. Não sai por API (1.4); se incomodar, arquiva-se pela
 tela. O aceite da fatia 2 criará **mais uma** (decisão 8), também declarada.
 
@@ -156,18 +159,19 @@ tela. O aceite da fatia 2 criará **mais uma** (decisão 8), também declarada.
 
 8. **O aceite do `Create` cria uma conta permanente — declarada aqui, antes.** Não há
    como aceitar uma criação sem criar (1.4: não se apaga nem se arquiva por API). Nome:
-   `SONDA CONTA 0.12.0 ACEITE`, saldo zero. O aceite do `Update` usa a conta de sonda
+   `SONDA CONTA 0.11.2 ACEITE`, saldo zero. O aceite do `Update` usa a conta de sonda
    que já existe (1.7) — resíduo novo nenhum.
 
-9. **A numeração é 0.12.0.** O pedido original era "ainda na 0.11", e a ordem foi
-   honrada — esta versão sai **antes** de Files & Annotations. O rótulo, porém, segue a
-   regra escrita do projeto: versão publicada é imutável e capacidade nova é minor.
+9. **A numeração é 0.11.2, por decisão do Alvaro** (2026-07-27, reafirmada). A regra
+   da casa — capacidade nova é minor — foi apontada e ele escolheu o rótulo 0.11.x
+   assim mesmo: a escrita de contas fecha o ciclo aberto na 0.11.0. As 0.11.0 e
+   0.11.1 publicadas seguem imutáveis; esta sai por cima como 0.11.2.
 
 ---
 
 ## 3. Arquitetura — onde cada comportamento mora
 
-| Camada | O que ganha na 0.12.0 |
+| Camada | O que ganha na 0.11.2 |
 |---|---|
 | `resources/bankAccount/description.ts` | `Create` e `Update`, os campos e os dois avisos (sem volta; trava) |
 | `resources/bankAccount/execute.ts` | O ciclo do Create (POST → relê → conserta) e o merge do Update (lê pela lista → `deepMerge` → PUT inteiro → confirma) |
@@ -194,7 +198,7 @@ tela. O aceite da fatia 2 criará **mais uma** (decisão 8), também declarada.
    update só de nome; **recuar a trava é recusado sem a option e passa com ela**;
    avançar passa sempre; primeiro fechamento (sem trava atual) passa; a confirmação
    relê e compara os caminhos pedidos; `isArchived` não é campo oferecido.
-4. **README, catálogo e bump 0.12.0** *(commit próprio)*. `endpoints.md`/`payloads.md`:
+4. **README, catálogo e bump 0.11.2** *(commit próprio)*. `endpoints.md`/`payloads.md`:
    o POST e seus campos (com o `bankNumber` ignorado e o −1 dia), o PUT exato, a
    omissão que limpa a trava, o `isArchived` ignorado, o 429 de 14/s e o falso-sumiço
    que ele fabrica; `SKILL.md`: gotchas novos + triagem; a nota de ressincronização do
@@ -204,14 +208,14 @@ tela. O aceite da fatia 2 criará **mais uma** (decisão 8), também declarada.
 
 ## 5. Onde cada regra inviolável continua atendida
 
-| Regra | Na v0.12.0 |
+| Regra | Na v0.11.2 |
 |---|---|
 | 3 — escrita só na cobaia | Sondas da seção 1 e aceites: só a cobaia, com liberação explícita de 2026-07-27; resíduo na 1.7 e na decisão 8 |
 | 4 — nenhum token em código ou commit | Sondas leram de variável de ambiente |
 | 5 — zero dep de runtime | `dependencies` segue `{}` |
 | 6 — nada de caminho absoluto | Sondas descartáveis no scratchpad |
 | Decisão 9 (projeto) — inglês | Campos, rótulos, mensagens, README |
-| 7 — instalação real | A 0.12.0 só fecha depois da tela Community Nodes |
+| 7 — instalação real | A 0.11.2 só fecha depois da tela Community Nodes |
 | 8 — repo público | Este plano não nomeia cliente nem credencial |
 
 ---
@@ -247,6 +251,6 @@ tela. O aceite da fatia 2 criará **mais uma** (decisão 8), também declarada.
 |---|---|---|
 | 1 | Se `POST/PUT /accounts` entram | **Entram já, antes de Files** — decisão do Alvaro, 2026-07-27, para automações de fechamento |
 | 2 | Escrita na cobaia para medir | **Liberada**, resíduo declarado (1.7) |
-| 3 | A numeração | **0.12.0** (decisão 9) — 0.11.x publicadas são imutáveis |
+| 3 | A numeração | **0.11.2** (decisão 9) — escolha reafirmada do Alvaro, exceção à regra do minor |
 
 Nada mais depende de decisão. A fatia 1 pode começar com o OK do Alvaro.
