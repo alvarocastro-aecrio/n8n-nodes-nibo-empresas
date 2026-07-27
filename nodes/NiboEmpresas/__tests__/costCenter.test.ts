@@ -462,6 +462,7 @@ describe('NiboEmpresas — Cost Center on the screen', () => {
 		);
 
 		expect(names).toEqual([
+			'Bank Account',
 			'Category',
 			'Contact - Customer',
 			'Contact - Employee',

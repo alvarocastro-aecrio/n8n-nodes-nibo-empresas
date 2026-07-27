@@ -20,6 +20,13 @@ const MAIN_CONNECTION: MainConnection = NodeConnectionTypes
 import type { INodePropertyOptions } from 'n8n-workflow';
 
 import {
+	bankAccountFields,
+	bankAccountOperations,
+	bankAccountResources,
+} from './resources/bankAccount/description';
+import { executeBankAccount } from './resources/bankAccount/execute';
+import { loadBankAccounts } from './resources/bankAccount/load';
+import {
 	categoryFields,
 	categoryOperations,
 	categoryResources,
@@ -78,6 +85,7 @@ const RESOURCES: INodePropertyOptions[] = [
 	...categoryResources,
 	...costCenterResources,
 	...transactionResources,
+	...bankAccountResources,
 ].sort((one, other) => one.name.localeCompare(other.name));
 
 /** Which handler each resource belongs to — the whole of what the node knows about them */
@@ -102,6 +110,9 @@ const HANDLERS: Record<string, Handler> = {
 	),
 	...Object.fromEntries(
 		transactionResources.map((resource) => [resource.value as string, executeTransaction]),
+	),
+	...Object.fromEntries(
+		bankAccountResources.map((resource) => [resource.value as string, executeBankAccount]),
 	),
 };
 
@@ -204,11 +215,13 @@ export class NiboEmpresas implements INodeType {
 			...categoryOperations,
 			...costCenterOperations,
 			...transactionOperations,
+			...bankAccountOperations,
 			...stakeholderFields,
 			...scheduleFields,
 			...categoryFields,
 			...costCenterFields,
 			...transactionFields,
+			...bankAccountFields,
 			{
 				displayName: 'Options',
 				name: 'options',
@@ -271,6 +284,7 @@ export class NiboEmpresas implements INodeType {
 	 */
 	methods = {
 		loadOptions: {
+			loadBankAccounts,
 			loadCategoryGroups,
 			loadCategorySubgroups,
 			loadCostCenters,
