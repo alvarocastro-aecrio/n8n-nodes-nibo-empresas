@@ -109,6 +109,12 @@ export const transactionOperations: INodeProperties[] = TYPES.map((type) => ({
 			description: `Record an amount already ${type.value === 'payment' ? 'paid' : 'received'}, creating the ${type.settles} and settling it in one go`,
 		},
 		{
+			name: 'Delete',
+			value: 'delete',
+			action: `Delete a ${type.noun}`,
+			description: `Remove the ${type.noun}, which puts the ${type.settles} it settled back to unpaid`,
+		},
+		{
 			name: 'Get',
 			value: 'get',
 			action: `Get a ${type.noun}`,
@@ -360,7 +366,7 @@ export const transactionFields: INodeProperties[] = [
 			displayOptions: {
 				show: {
 					resource: [type.value],
-					operation: ['settle'],
+					operation: ['delete', 'settle'],
 				},
 			},
 		}),
@@ -434,7 +440,7 @@ export const transactionFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: EVERY_TYPE,
-				operation: ['get'],
+				operation: ['delete', 'get'],
 			},
 		},
 	},

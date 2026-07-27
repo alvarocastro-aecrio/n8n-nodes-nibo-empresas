@@ -331,13 +331,22 @@ describe('NiboEmpresas — the two transaction resources on the screen', () => {
 	});
 
 	it('offers the operations these slices built', () => {
-		expect(optionValues(forTransactions('operation'))).toEqual(['create', 'get', 'list', 'settle']);
+		expect(optionValues(forTransactions('operation'))).toEqual(['create', 'delete', 'get', 'list', 'settle']);
 		expect(forTransactions('operation')?.default).toBe('list');
 	});
 
-	it('asks for the entry ID on Get, and only there', () => {
-		expect(forTransactions('entryId')?.displayOptions?.show?.operation).toEqual(['get']);
+	/**
+	 * The two operations that work on one entry that already exists — reading it
+	 * and removing it. Delete needs the schedule ID as well, because the route
+	 * that answers 204 carries both.
+	 */
+	it('asks for the entry ID where one entry is worked on, and for both IDs on Delete', () => {
+		expect(forTransactions('entryId')?.displayOptions?.show?.operation).toEqual(['delete', 'get']);
 		expect(forTransactions('entryId')?.required).toBe(true);
+		expect(forTransactions('scheduleId')?.displayOptions?.show?.operation).toEqual([
+			'delete',
+			'settle',
+		]);
 	});
 
 	/** The fields of one row of this resource's condition builder */
@@ -653,5 +662,69 @@ describe('executeTransaction — Create', () => {
 		await expect(failure).rejects.toMatchObject({
 			description: expect.stringMatching(/twice|again/i),
 		});
+	});
+});
+
+/**
+ * Undoing a settlement — and the route that took three wrong guesses to find.
+ *
+ * The project's catalogue documented `DELETE /schedules/{scheduleId}/payments/
+ * {paymentId}`, which is a **404**. So are `DELETE /payments/{entryId}` and
+ * `DELETE /schedules/{scheduleId}/payments`. The one that answers **204** carries
+ * the kind: `DELETE /schedules/debit/{scheduleId}/payments/{entryId}`, and the
+ * schedule goes back to unpaid. Measured on 2026-07-27.
+ */
+describe('executeTransaction — Delete', () => {
+	const SCHEDULE = 'f0d1ba25-a132-4dd3-a832-9efadcae3ad1';
+
+	function deleting(parameters: IDataObject = {}) {
+		return context({ scheduleId: SCHEDULE, entryId: GUID, ...parameters });
+	}
+
+	it.each([
+		['payment', `/schedules/debit/${SCHEDULE}/payments/${GUID}`],
+		['receipt', `/schedules/credit/${SCHEDULE}/receipts/${GUID}`],
+	])('deletes a %s through the route that carries the kind', async (resource, route) => {
+		await executeTransaction.call(deleting(), resource, 'delete');
+
+		expect(apiRequest.mock.calls[0][1]).toBe('DELETE');
+		expect(apiRequest.mock.calls[0][2]).toBe(route);
+	});
+
+	// The segment the catalogue omitted is the difference between 204 and 404.
+	it('never sends the route without the kind, which is the 404', async () => {
+		await executeTransaction.call(deleting(), 'payment', 'delete');
+
+		expect(apiRequest.mock.calls[0][2]).not.toBe(`/schedules/${SCHEDULE}/payments/${GUID}`);
+	});
+
+	/**
+	 * The API answers 204 with no body, so the confirmation is built here — and
+	 * it says the second thing that happened, which no field of the answer could:
+	 * the schedule this entry settled is open again.
+	 */
+	it('confirms what the 204 does not say, including the schedule reopening', async () => {
+		const items = await executeTransaction.call(deleting(), 'payment', 'delete');
+
+		expect(items[0].json).toEqual({
+			entryId: GUID,
+			scheduleId: SCHEDULE,
+			deleted: true,
+			scheduleReopened: true,
+		});
+	});
+
+	it.each([
+		['scheduleId', 'entryId'],
+		['entryId', 'scheduleId'],
+	])('refuses when %s is missing, because the route needs both', async (missing) => {
+		const failure = executeTransaction.call(
+			deleting({ [missing]: '' }),
+			'payment',
+			'delete',
+		);
+
+		await expect(failure).rejects.toThrow(/ID/);
+		expect(apiRequest).not.toHaveBeenCalled();
 	});
 });

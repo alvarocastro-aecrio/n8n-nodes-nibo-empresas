@@ -145,6 +145,31 @@ export async function executeTransaction(
 					json: await createEntry.call(this, i, collection),
 					pairedItem: { item: i },
 				});
+			} else if (operation === 'delete') {
+				const scheduleId = recordId.call(this, 'scheduleId', i);
+				const entryId = recordId.call(this, 'entryId', i);
+
+				// The route carries the kind, and that segment is the whole difference
+				// between 204 and 404. The catalogue of this project documented it
+				// without — `DELETE /schedules/{scheduleId}/payments/{entryId}` — and
+				// that form answers 404, as do `DELETE /payments/{entryId}` and
+				// `DELETE /schedules/{scheduleId}/payments`. Measured on 2026-07-27.
+				await niboApiRequest.call(
+					this,
+					i,
+					'DELETE',
+					`/schedules/${collection.kind}/${encodeURIComponent(scheduleId)}/${collection.endpoint.slice(1)}/${encodeURIComponent(entryId)}`,
+				);
+
+				// The API answers 204 with no body at all, so the confirmation is
+				// built here — and it carries the second thing that happened, which no
+				// field of an empty answer could: the schedule this entry settled is
+				// open again. A workflow that deleted an entry usually cares about
+				// that more than about the entry.
+				returnData.push({
+					json: { entryId, scheduleId, deleted: true, scheduleReopened: true },
+					pairedItem: { item: i },
+				});
 			} else if (operation === 'settle') {
 				returnData.push({
 					json: await settle.call(this, i, collection),
