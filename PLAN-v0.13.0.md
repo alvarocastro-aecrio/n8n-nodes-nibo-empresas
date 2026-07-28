@@ -60,7 +60,22 @@ O cerco fecha assim:
 | Emitir numa **empresa real** | **Regra inviolável 3** — escrita só na cobaia. Suspensa por exceção explícita do Alvaro em 2026-07-28, para R$ 10 sobre um contato de teste no nome dele; ver a decisão 2 da seção 7 |
 | Deduzir dos workflows | O corpo é conhecido (está no `payloads.md`), mas **payload conhecido não é comportamento medido** — é o erro que este projeto já pagou caro |
 
-Então a escrita não entra. Não é cautela: é que **não existe lugar onde medi-la**.
+Então a escrita não entra pela cobaia. Não é cautela: é que ali **não existe o que medir**.
+
+**Para contraste, a empresa de produção tem exatamente um perfil**, e ele responde assim:
+
+```json
+{ "paymentMethods": [{ "paymentForm": "BankSlip", "provider": "PJBank" }] }
+```
+
+⚠️ **`paymentMethods` não é a lista de formas de pagamento que o tomador vê.** Ler `BankSlip`
+ali e concluir *"esta empresa não faz Pix"* é errado — e foi o que este plano concluiu antes de
+o Alvaro corrigir em 2026-07-28: **todo boleto emitido já sai com o QR de Pix junto**,
+automaticamente. O campo descreve o **meio de emissão** (quem imprime o boleto, e por qual
+provedor), não o que o pagador pode escolher.
+
+É a terceira vez neste documento que um campo lido isoladamente sugere uma ausência que não
+existe — ver 1.5, e o gotcha 14 do projeto.
 
 ### 1.2 A coleção da cobaia está vazia — e foi a leitura em produção que fechou o buraco
 
@@ -359,7 +374,7 @@ Tudo de leitura: o aceite desta versão não escreve em lugar nenhum.
 | # | Em aberto | Situação |
 |---|---|---|
 | 1 | ~~Ler cobranças de uma empresa real~~ | ✅ **Resolvida em 2026-07-28.** Autorizada e feita: 5 cobranças de sonda de 2019 deram o registro (1.3), os códigos de `status` (1.5) e o link público (1.12). Foi ela que corrigiu o erro da 1.5 |
-| 2 | 🔴 **`Create` e `Cancel`** | **Autorizados pelo Alvaro** — R$ 10, contato de teste no nome dele, "uma de cada tipo" — e **não medidos**: o gate de permissão do ambiente barrou o script de escrita. Para medir, o Alvaro precisa liberar essa permissão. Duas notas antes disso: o perfil daquela empresa só tem **BankSlip (PJBank), não tem Pix**, então "cada tipo" só pode ser o `deliveryType`; e o `deliveryType: 0` **manda e-mail de verdade** ao tomador — que, sendo o contato no nome dele, é ele mesmo |
+| 2 | 🔴 **`Create` e `Cancel`** | **Autorizados pelo Alvaro** — R$ 10, contato de teste no nome dele, "uma de cada tipo" — e **não medidos**: o gate de permissão do ambiente barrou o script de escrita. Para medir, o Alvaro precisa liberar essa permissão. O que "cada tipo" quer dizer ficou resolvido: **não é boleto contra Pix**, porque todo boleto já sai com o QR de Pix junto (1.1) — é o `deliveryType`, um retido e um pela régua. A nota que fica: o `deliveryType: 0` **manda e-mail de verdade** ao tomador, que sendo o contato no nome dele é ele mesmo |
 | 3 | **Juntar os outros auxiliares na mesma versão** | Collections sozinha destrava ~2 nodes. `Banks`, `Users` e `Organizations` fechariam a fatia 8 inteira, e `Banks` trocaria o `Bank 341` da lista de contas por `Itaú`. **Recomendo juntar**, mas é escopo, e escopo é do Alvaro |
 | 4 | **A numeração** | **0.13.0** — capacidade nova é minor |
 
