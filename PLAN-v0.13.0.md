@@ -478,7 +478,11 @@ Tudo de leitura: o aceite desta versão não escreve em lugar nenhum.
 | ☐ | Item | Como conferir |
 |---|---|---|
 ✅ **Aceite executado em 2026-07-28: 15/15, 22 chamadas, resíduo zero.** Uma cobrança de R$ 10
-emitida com Delivery retido, cancelada, e o agendamento apagado — conferido.
+emitida, cancelada, e o agendamento apagado — conferido.
+
+✅ **Versão finalizada pelo Alvaro em 2026-07-28**, na **0.13.1** — a 0.13.0 saiu com os rótulos
+do Delivery errados e foi corrigida no mesmo dia (seção 9). Aceite, publicação e instalação real
+fechados.
 
 | ☑ | `Get Many` chama `/public/collections` e pagina por `id` | Contra a cobaia |
 | ☑ | O filtro por `scheduleId` monta o GUID **sem aspas** | Contra a cobaia — 500 se errar |
@@ -493,7 +497,7 @@ emitida com Delivery retido, cancelada, e o agendamento apagado — conferido.
 | ☑ | `Cancel` chama `POST …/cancel` e a releitura mostra `Cancelada` | 1.16 |
 | ☑ | Resíduo conferido: cobranças canceladas, agendamentos apagados | Toda sonda de escrita fecha assim |
 | ☑ | Node salvo na 0.12.x executa sem ser tocado | `File · Upload` e `Schedule · Get Many` |
-| ☐ | **Instalação real (regra 7)** | Tela Community Nodes de instância limpa |
+| ☑ | **Instalação real (regra 7)** | Tela Community Nodes de instância limpa |
 
 ---
 
