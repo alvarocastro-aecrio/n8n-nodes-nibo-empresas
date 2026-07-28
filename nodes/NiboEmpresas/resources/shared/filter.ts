@@ -46,6 +46,14 @@ export interface IFilterField {
 	 * `revenue`, `Receita` or `IN`.
 	 */
 	choices?: INodePropertyOptions[];
+	/**
+	 * A sentence appended to the description of the list, for when the choices are
+	 * **what was measured rather than what exists**. The status codes of a charge
+	 * are the first case: three states showed up in the records read, the API has
+	 * no route that enumerates its enum, and a list that stayed silent about that
+	 * would make a missing state look like an impossible one.
+	 */
+	choicesNote?: string;
 }
 
 export interface IFilterMenu {
@@ -273,7 +281,12 @@ function conditionFields(menu: IFilterMenu): INodeProperties[] {
 		// other kind gets. Two closed lists in one menu do not hold the same
 		// choices, and a shared box would offer one field the other's answers —
 		// which the API would then reject for a reason nothing on the screen shows.
-		...menu.fields.filter((field) => field.type === 'options').flatMap(choiceFields),
+		// `code` joins `options` here: both are drawn as a closed list, and they
+		// differ only in the literal the builder writes — quoted for one, bare for
+		// the other. That difference is the transport's business, not the screen's.
+		...menu.fields
+			.filter((field) => field.type === 'options' || field.type === 'code')
+			.flatMap(choiceFields),
 		...forType('text', [
 			{
 				displayName: 'Value',
@@ -360,7 +373,7 @@ function choiceFields(field: IFilterField): INodeProperties[] {
 			type: 'options',
 			options: choices,
 			default: firstChoice,
-			description: `Which ${field.label.toLowerCase()} to look for`,
+			description: `Which ${field.label.toLowerCase()} to look for.${field.choicesNote ? ` ${field.choicesNote}` : ''}`,
 			displayOptions: { show },
 		},
 	];
@@ -376,7 +389,7 @@ interface IFilterRow {
 	booleanValue?: boolean;
 	/** The box of an amount */
 	numberValue?: number;
-	/** The list of a field whose answers are a closed set */
+	/** The list of a field whose answers are a closed set, named or numeric */
 	optionsValue?: string;
 	/** The picker of a date field */
 	dateValue?: string;
@@ -466,7 +479,7 @@ function filterValue(row: IFilterRow, type: ODataFieldType | undefined): unknown
 	if (type === 'number') {
 		return row.numberValue;
 	}
-	if (type === 'options') {
+	if (type === 'options' || type === 'code') {
 		return row.optionsValue;
 	}
 	if (type === 'date') {

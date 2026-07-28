@@ -288,6 +288,82 @@ describe('buildODataFilter — the options type', () => {
  * every text field of this API requires, which is why it is a type rather than
  * a special case somebody has to remember.
  */
+/**
+ * The `code` type, added in 0.13.0 for the one column that is a **closed list of
+ * numbers**: the status of a collection.
+ *
+ * It is neither of the two types that already existed. `options` writes a quoted
+ * literal — `status/code eq '3'` is a 500 *"incompatible types"* — and `number`
+ * writes bare but offers a box, which asks somebody to remember that a paid
+ * charge is `3`. So: the dropdown of `options`, the bare literal of `number`.
+ *
+ * Measured on 2026-07-28: `$filter=status/code eq 3` answers 200. And the codes
+ * are not guessable — `1` pending, `3` paid, `-1` cancelled.
+ */
+describe('buildODataFilter — the code type', () => {
+	it('writes the chosen code bare, because the column is a number', () => {
+		const filter = buildODataFilter(
+			[condition({ field: 'status/code', operator: 'eq', value: '3', type: 'code' })],
+			'and',
+		);
+
+		expect(filter).toBe('status/code eq 3');
+	});
+
+	it('writes a negative code, which is what a cancelled charge is', () => {
+		const filter = buildODataFilter(
+			[condition({ field: 'status/code', operator: 'ne', value: '-1', type: 'code' })],
+			'and',
+		);
+
+		expect(filter).toBe('status/code ne -1');
+	});
+
+	it('takes the code as a number as well as a string, since the list stores either', () => {
+		const filter = buildODataFilter(
+			[condition({ field: 'status/code', operator: 'eq', value: 1, type: 'code' })],
+			'and',
+		);
+
+		expect(filter).toBe('status/code eq 1');
+	});
+
+	// The same two an identifier gets, and for the same reason: a handful of
+	// named states has nothing to be greater than.
+	it.each(['gt', 'lt', 'contains'])('refuses the operator %s, which the list cannot answer', (operator) => {
+		expect(() =>
+			buildODataFilter(
+				[condition({ field: 'status/code', operator, value: '3', type: 'code' })],
+				'and',
+			),
+		).toThrow(/not one this node can write/);
+	});
+
+	/**
+	 * A value that is not a number would be pasted straight into the expression
+	 * and answered with a 500 about operand types — the same failure the guid
+	 * type refuses locally, for the same reason: a condition that fails is a scan
+	 * that hands back nothing, which reads as "no records" to whoever is watching.
+	 */
+	it('refuses a code that is not a number rather than sending it', () => {
+		expect(() =>
+			buildODataFilter(
+				[condition({ field: 'status/code', operator: 'eq', value: 'Paga', type: 'code' })],
+				'and',
+			),
+		).toThrow(/"Paga"/);
+	});
+
+	it('skips a row whose code was never chosen', () => {
+		expect(
+			buildODataFilter(
+				[condition({ field: 'status/code', operator: 'eq', value: '', type: 'code' })],
+				'and',
+			),
+		).toBe('');
+	});
+});
+
 describe('buildODataFilter — the guid type', () => {
 	const ID = '2efffcd0-8730-4348-86da-6d9a95be6149';
 

@@ -465,6 +465,7 @@ describe('NiboEmpresas — Cost Center on the screen', () => {
 			'Bank Account',
 			'Bank Transfer',
 			'Category',
+			'Collection',
 			'Contact - Customer',
 			'Contact - Employee',
 			'Contact - Partner',

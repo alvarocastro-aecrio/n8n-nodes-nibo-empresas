@@ -36,7 +36,14 @@
  * here requires, which is why it is a type of its own rather than a special
  * case somebody has to remember.
  */
-export type ODataFieldType = 'text' | 'boolean' | 'number' | 'options' | 'date' | 'guid';
+export type ODataFieldType =
+	| 'text'
+	| 'boolean'
+	| 'number'
+	| 'options'
+	| 'code'
+	| 'date'
+	| 'guid';
 
 export interface IODataCondition {
 	/** The field path as the API names it, e.g. `name` or `document/number` */
@@ -74,6 +81,10 @@ const OPERATORS_OF: Record<ODataFieldType, string[]> = {
 	// which is not a given, since the same shape is a 500 on the stakeholders'
 	// `document/type`. A closed list is only offered where it was measured.
 	options: ['eq', 'ne'],
+	// A closed list whose answers are numbers — the status of a collection, and
+	// the first column of this API that is both. Two operators, like `options`
+	// and like `guid`: a handful of named states has nothing to be greater than.
+	code: ['eq', 'ne'],
 	date: ['gt', 'ge', 'lt', 'le'],
 	// Two, and no more: an identifier is the same one or a different one. There
 	// is nothing to be greater than and no substring worth looking for.
@@ -140,6 +151,25 @@ function writeCondition(condition: IODataCondition): string | undefined {
 		const amount = numberLiteral(condition.value);
 
 		return amount === undefined ? undefined : `${field} ${operator} ${amount}`;
+	}
+
+	if (condition.type === 'code') {
+		const chosen = String(condition.value ?? '').trim();
+		if (chosen === '') {
+			return undefined;
+		}
+
+		// Refused here rather than sent, exactly as a malformed GUID is: the
+		// server's answer would be a 500 about operand types naming neither the
+		// field nor the value, and a condition that fails is a scan that hands
+		// back nothing — which reads as "no records" to whoever is watching.
+		if (!/^-?\d+$/.test(chosen)) {
+			throw new Error(`The filter value "${chosen}" is not the code this node can compare with`);
+		}
+
+		// Bare. Quoting it is the 500 — `status/code eq '3'` answers
+		// "incompatible types", measured on 2026-07-28.
+		return `${field} ${operator} ${chosen}`;
 	}
 
 	if (condition.type === 'guid') {
