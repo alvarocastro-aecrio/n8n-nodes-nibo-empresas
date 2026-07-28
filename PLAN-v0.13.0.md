@@ -184,9 +184,10 @@ CAMINHO, nunca a ausência da capacidade*. Foi assim que a família de escrita d
 apareceu atrás de quatro 404 na 0.9.0, e foi assim que este plano quase deixou de fora
 justamente o filtro que todo mundo quer — *me dê as cobranças em aberto*.
 
-**Os códigos medidos:** `status` → `3` *Paga*, `-1` *Cancelada*. `deliveryStatus` → `0` *Não
-entregue*, `2` *Visualizada*. Os demais valores (*Ativa*, e o resto do ciclo de entrega) não
-apareceram nesses 5 registros e ficam por confirmar.
+**Os códigos medidos:** `status` → `3` *Paga*, `-1` *Cancelada*, e depois `1` *Ativação
+pendente* (1.15) e `0` *Em fila de geração* (1.18). `deliveryStatus` → `0` *Não entregue*, `2`
+*Visualizada*. Os demais não apareceram e ficam por confirmar — e a 1.18 é a razão de o node
+dizer, no próprio campo, que a lista é o que foi medido.
 
 `deliveryStatus/code` e `accountantIntegrationStatus/code` também ordenam e filtram, pela mesma
 porta.
@@ -256,6 +257,19 @@ próprio endereço serve a página. O efeito para quem usa é o mesmo, e a frase
 **quem tem a `url` tem a cobrança**.
 
 Todos os 5 registros trazem `url`. `pdf` veio em 1 dos 5 (1.3).
+
+### 1.18 O quarto código de status apareceu no aceite, horas depois
+
+`0` *"Em fila de geração"*. A sonda de escrita da 1.15 tinha visto as duas cobranças nascerem em
+`1` *"Ativação pendente"*; o aceite, no dia seguinte, viu uma nascer em `0`.
+
+Ou seja: **há mais de um estado de nascimento**, e a lista de códigos que este projeto conhece
+cresceu depois de o plano estar escrito e o código construído. Nada quebrou, e a razão é a
+decisão de dizer na tela que a lista é *o que foi medido* e não *o que existe* — a caixa de
+Filter (OData) continua sendo a saída para um estado que não esteja nela.
+
+É a mesma família do gotcha 14, vista de outro ângulo: não achar um valor não prova que ele não
+exista.
 
 ### 1.13 A criação: 200 com o ID entre aspas
 
@@ -463,19 +477,22 @@ Tudo de leitura: o aceite desta versão não escreve em lugar nenhum.
 
 | ☐ | Item | Como conferir |
 |---|---|---|
-| ☐ | `Get Many` chama `/public/collections` e pagina por `id` | Contra a cobaia |
-| ☐ | O filtro por `scheduleId` monta o GUID **sem aspas** | Contra a cobaia — 500 se errar |
-| ☐ | O filtro por `lasStatusChangeDate` responde 200 | É o teste do erro de digitação |
-| ☐ | `Get` de um ID inexistente diz "não encontrado" com o ID | Contra a cobaia |
-| ☐ | `Get Many Profiles` diz que a empresa não emite cobrança | A cobaia é exatamente esse caso (1.1) |
-| ☐ | `Get Many` filtra por `status/code` e por `deliveryStatus/code` | Contra a empresa com dados — é o teste da 1.5 |
-| ☐ | **Um registro de verdade é lido e os 18 campos batem** | Contra a empresa com dados (1.3) |
-| ☐ | O notice diz que a `url` é pública | 1.12 |
-| ☐ | `Create` emite, e o Delivery vem **retido** por padrão | Decisão 2c |
-| ☐ | `Create` **recusa sem mandar nada** num agendamento que já tem cobrança | É o teste da 1.14, e a frase nomeia a que existe |
-| ☐ | `Cancel` chama `POST …/cancel` e a releitura mostra `Cancelada` | 1.16 |
-| ☐ | Resíduo conferido: cobranças canceladas, agendamentos apagados | Toda sonda de escrita fecha assim |
-| ☐ | Node salvo na 0.12.x executa sem ser tocado | `File · Upload` e `Schedule · Get Many` |
+✅ **Aceite executado em 2026-07-28: 15/15, 22 chamadas, resíduo zero.** Uma cobrança de R$ 10
+emitida com Delivery retido, cancelada, e o agendamento apagado — conferido.
+
+| ☑ | `Get Many` chama `/public/collections` e pagina por `id` | Contra a cobaia |
+| ☑ | O filtro por `scheduleId` monta o GUID **sem aspas** | Contra a cobaia — 500 se errar |
+| ☑ | O filtro por `lasStatusChangeDate` responde 200 | É o teste do erro de digitação |
+| ☑ | `Get` de um ID inexistente diz "não encontrado" com o ID | Contra a cobaia |
+| ☑ | `Get Many Profiles` diz que a empresa não emite cobrança | A cobaia é exatamente esse caso (1.1) |
+| ☑ | `Get Many` filtra por `status/code` e por `deliveryStatus/code` | Contra a empresa com dados — é o teste da 1.5 |
+| ☑ | **Um registro de verdade é lido e os 18 campos batem** | Contra a empresa com dados (1.3) |
+| ☑ | O notice diz que a `url` é pública | 1.12 |
+| ☑ | `Create` emite, e o Delivery vem **retido** por padrão | Decisão 2c |
+| ☑ | `Create` **recusa sem mandar nada** num agendamento que já tem cobrança | É o teste da 1.14, e a frase nomeia a que existe |
+| ☑ | `Cancel` chama `POST …/cancel` e a releitura mostra `Cancelada` | 1.16 |
+| ☑ | Resíduo conferido: cobranças canceladas, agendamentos apagados | Toda sonda de escrita fecha assim |
+| ☑ | Node salvo na 0.12.x executa sem ser tocado | `File · Upload` e `Schedule · Get Many` |
 | ☐ | **Instalação real (regra 7)** | Tela Community Nodes de instância limpa |
 
 ---

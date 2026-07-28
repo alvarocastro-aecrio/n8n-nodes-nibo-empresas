@@ -608,6 +608,9 @@ describe('NiboEmpresas — what the Collection screen offers', () => {
 	 * so, because a state that never appeared in the sample would otherwise look
 	 * like a state that does not exist.
 	 */
+	// Four, and the fourth is the argument for the caveat: `0` only turned up
+	// during the acceptance, hours after the other three, on a charge that had
+	// been born `1` the day before.
 	it('offers the status as the named codes that were measured', () => {
 		const value = ((property('filters')?.options ?? []) as Array<{ values?: INodeProperties[] }>)
 			.flatMap((one) => one.values ?? [])
@@ -619,8 +622,9 @@ describe('NiboEmpresas — what the Collection screen offers', () => {
 
 		expect((value?.options as INodePropertyOptions[]).map((one) => one.value)).toEqual([
 			'-1',
-			'1',
 			'3',
+			'1',
+			'0',
 		]);
 	});
 

@@ -89,20 +89,31 @@ export const collectionOperations: INodeProperties[] = [
  * compares: `status/code eq 3` answers 200 and `status/code eq '3'` is a 500
  * about incompatible types.
  *
- * ⚠️ **This list is what was measured, not what exists.** Three states showed up
- * across the records read on 2026-07-28. The API's own enum may hold more, and
- * there is no route that enumerates it — `status/description` answers HTTP 500
- * on every comparison. A state that is not here is reachable through
- * Filter (OData), and the field says so.
+ * ⚠️ **This list is what was measured, not what exists** — and the fourth entry
+ * is the proof. Three states showed up while the version was being built, and a
+ * fourth (`0`) turned up hours later during its acceptance, on a charge that had
+ * been born `1` the day before. The API's own enum may hold more, there is no
+ * route that enumerates it, and `status/description` answers HTTP 500 on every
+ * comparison. A state that is not here is reachable through Filter (OData), and
+ * the field says so.
  */
 const STATUS_CODES: INodePropertyOptions[] = [
 	{ name: 'Cancelled', value: '-1', description: 'Code -1 — the charge was cancelled' },
 	{
+		name: 'Paid',
+		value: '3',
+		description: 'Code 3',
+	},
+	{
 		name: 'Pending Activation',
 		value: '1',
-		description: 'Code 1 — how every charge is born, whichever delivery was chosen',
+		description: 'Code 1 — one of the two states a charge is born in',
 	},
-	{ name: 'Paid', value: '3', description: 'Code 3' },
+	{
+		name: 'Queued for Generation',
+		value: '0',
+		description: 'Code 0 — the other one, seen while the boleto is still being produced',
+	},
 ];
 
 /** The delivery side of the same record, measured the same way and just as partial */
