@@ -651,9 +651,13 @@ describe('NiboEmpresas — the two schedule resources', () => {
 		);
 
 		expect(names).toEqual([...names].sort());
+		// Three of them since 0.12.0: the attachments of a schedule took the family
+		// word for the same reason the other two carry it, and the sort put it
+		// where somebody looking for it would look.
 		expect(names.filter((name) => name.startsWith('Schedule - '))).toEqual([
 			'Schedule - Credit',
 			'Schedule - Debit',
+			'Schedule - File',
 		]);
 		expect(names.indexOf('Contact - Supplier')).toBeLessThan(names.indexOf('Schedule - Credit'));
 	});
@@ -1438,6 +1442,23 @@ describe('NiboEmpresas — what the editor draws for each filter type', () => {
 		expect(drawn('filters', GET_MANY)).toBe(true);
 		expect(drawn('filterCombine', GET_MANY)).toBe(true);
 		expect(drawnInOptions('filter', GET_MANY)).toBe(true);
+	});
+
+	/**
+	 * And it stays away from the one Get Many that does not filter. The
+	 * attachments of a schedule are read in a single call with no `$filter` and no
+	 * paging key (0.12.0, decision 4) — offering a box that goes nowhere would be
+	 * a filter that is one thing on the screen and nothing on the wire.
+	 *
+	 * The mechanism is the operation's own value, `listFiles` rather than `list`,
+	 * which is the same reason Bank Account's balances are `listBalances`. This
+	 * test is here so that renaming it back would be noticed.
+	 */
+	it('offers neither the conditions nor the OData box on the files of a schedule', () => {
+		const files = { resource: 'scheduleFile', operation: 'listFiles' };
+
+		expect(drawn('filters', files)).toBe(false);
+		expect(drawnInOptions('filter', files)).toBe(false);
 	});
 
 	/**

@@ -932,6 +932,7 @@ describe('NiboEmpresas — Category on the screen', () => {
 			'File',
 			'Schedule - Credit',
 			'Schedule - Debit',
+			'Schedule - File',
 			'Transaction - Payment',
 			'Transaction - Receipt',
 		]);
@@ -957,6 +958,7 @@ describe('NiboEmpresas — Category on the screen', () => {
 			'file',
 			'creditSchedule',
 			'debitSchedule',
+			'scheduleFile',
 			'payment',
 			'receipt',
 		]);

@@ -59,6 +59,12 @@ import {
 } from './resources/schedule/description';
 import { executeSchedule } from './resources/schedule/execute';
 import {
+	scheduleFileFields,
+	scheduleFileOperations,
+	scheduleFileResources,
+} from './resources/scheduleFile/description';
+import { executeScheduleFile } from './resources/scheduleFile/execute';
+import {
 	stakeholderFields,
 	stakeholderOperations,
 	stakeholderResources,
@@ -96,6 +102,7 @@ const RESOURCES: INodePropertyOptions[] = [
 	...bankAccountResources,
 	...bankTransferResources,
 	...fileResources,
+	...scheduleFileResources,
 ].sort((one, other) => one.name.localeCompare(other.name));
 
 /** Which handler each resource belongs to — the whole of what the node knows about them */
@@ -128,6 +135,9 @@ const HANDLERS: Record<string, Handler> = {
 		bankTransferResources.map((resource) => [resource.value as string, executeBankTransfer]),
 	),
 	...Object.fromEntries(fileResources.map((resource) => [resource.value as string, executeFile])),
+	...Object.fromEntries(
+		scheduleFileResources.map((resource) => [resource.value as string, executeScheduleFile]),
+	),
 };
 
 // Thin description + router. No HTTP call and no API rule lives here: the
@@ -232,6 +242,7 @@ export class NiboEmpresas implements INodeType {
 			...bankAccountOperations,
 			...bankTransferOperations,
 			...fileOperations,
+			...scheduleFileOperations,
 			...stakeholderFields,
 			...scheduleFields,
 			...categoryFields,
@@ -240,6 +251,7 @@ export class NiboEmpresas implements INodeType {
 			...bankAccountFields,
 			...bankTransferFields,
 			...fileFields,
+			...scheduleFileFields,
 			{
 				displayName: 'Options',
 				name: 'options',
