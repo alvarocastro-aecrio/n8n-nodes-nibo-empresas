@@ -22,7 +22,7 @@ n8n-nodes-nibo-empresas
 
 ## Operations
 
-Fifteen resources in eight families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
+Sixteen resources in nine families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
 
 | Family | Resources, as the menu names them | What they are |
 |---|---|---|
@@ -34,6 +34,7 @@ Fifteen resources in eight families. Within a family the API gives every resourc
 | **Bank Account** | Bank Account | The accounts, their **balances** and the **import of a bank statement** — see [Bank accounts](#bank-accounts) |
 | **Bank Transfer** | Bank Transfer | Money moved **between two accounts** of the organization — see [Bank transfers](#bank-transfers) |
 | **File** | File | A stored document, on its own: **upload**, **upload and attach**, **download** — see [Files and annotations](#files-and-annotations) |
+| **Collection** | Collection | The **charges** — boleto, with the Pix QR printed on it — issued from a receivable, see [Collections](#collections) |
 
 The family word is part of each name on purpose: the editor builds its **Actions** tab from the Resource menu in the order it is declared, so the names are what put a family together there instead of scattering it alphabetically between the others. It is a label and nothing else — the value the workflow stores (`customer`, `creditSchedule`, …) has never changed.
 
@@ -47,7 +48,7 @@ Contacts, schedules and cost centers have the same five operations each. **Categ
 | Get Many | Returns the collection, paging through it when needed. A stable sort is always applied, and the key differs per collection — `$orderby=id` for a contact, a category, an account or a transfer, `$orderby=scheduleId` for a schedule, `$orderby=costCenterId` for a cost center, `$orderby=entryId` for a settled entry, `$orderby=accountId` for a balance. |
 | Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
 
-Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show. Transactions add **Settle**, which is what marks a schedule that already exists as paid or received. Bank Account adds **Get Balances** and **Import Bank Statement**. File has **Upload**, **Upload and Attach** and **Download**; Schedule - File has **Get Many**, **Attach** and **Delete**; Schedule - Annotation has **Create** and nothing else, because nothing else exists.
+Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show. Transactions add **Settle**, which is what marks a schedule that already exists as paid or received. Bank Account adds **Get Balances** and **Import Bank Statement**. File has **Upload**, **Upload and Attach** and **Download**; Schedule - File has **Get Many**, **Attach** and **Delete**; Schedule - Annotation has **Create** and nothing else, because nothing else exists. Collection has **Get Many**, **Get**, **Create**, **Cancel** and **Get Many Profiles**.
 
 Every resource that works on a single record has its own ID field (**Customer ID**, **Supplier ID**, **Credit Schedule ID**, …), so a workflow that already names one keeps working when others are added.
 
@@ -327,6 +328,32 @@ The file always comes from the **binary field of the item**, never from disk, an
 
 **What this API has no route for**, and therefore what the node does not offer: listing the files of an organization (`GET /files` and `GET /files/{id}` are both 404, so a document uploaded and never attached cannot be found again), attaching anything to a payment or a receipt, and reading, editing or deleting an annotation.
 
+### Collections
+
+The charges Nibo issues from a receivable — a boleto, with the Pix QR code printed on it. You do not create a charge from nothing: you charge a schedule that already exists, and the amount and the description come from it.
+
+| Operation | What it does |
+|---|---|
+| **Get Many** | The charges of the organization, with the assisted filter |
+| **Get** | One charge by ID — read through the list, because this API has no get-by-ID route for a charge |
+| **Create** | Issues a charge from a receivable |
+| **Cancel** | Cancels it, which leaves the record in place marked Cancelled |
+| **Get Many Profiles** | The collection profiles — what a charge is issued through, and the only way to know whether an organization can issue one at all |
+
+> 🔴 **Delivery is the field to read twice.** *Send It* makes Nibo **e-mail the boleto to the payer** and start its automatic reminder sequence — an action that reaches your customer's customer and does not come back. *Hold for Review* keeps the charge on the Nibo screen and sends nothing. The node defaults to **Hold for Review**, and it cannot tell you afterwards which happened: both choices produce an identical record, so nothing downstream can distinguish them.
+
+> ⚠️ **One charge per schedule.** The API refuses the second with *"Não é possível criar mais de uma cobrança por agendamento"*. The node checks first and names the charge that is in the way, so you can decide whether to cancel it — unless the one already there is cancelled, in which case it sends and lets the API answer, because that case was never measured.
+
+> ⚠️ **Cancelling does not delete.** The record stays, with its status set to Cancelled, and the public link keeps answering. There is a second way it happens that nobody expects: **deleting the schedule cancels the charge hanging off it.** And a charge can only be cancelled once.
+
+> 🔴 **The url of a charge is public.** Measured with a bare request: it answers `text/html` with no token, no cookie and no header of any kind. Whoever holds the link opens the payment page. Treat it as the charge itself.
+
+**Filtering by status works, through `status/code`** — and the codes are worth writing down, because nothing on the wire spells them: **1** pending activation (how every charge is born), **3** paid, **-1** cancelled. The delivery side has its own: **0** not delivered, **2** viewed. Those are the codes seen in the records measured; this API has no route that lists the whole set, so for a state that is not on the list, write the condition in **Filter (OData)**.
+
+**Two things in this family are spelled oddly, and both are the API's.** The routes carry a `/public/` prefix — the only ones that do, and nothing about them is unauthenticated. And the date field is `lasStatusChangeDate`, missing the `t` of "last": writing it correctly answers HTTP 500. The node shows the right label and sends the wrong spelling, which is the only way round it.
+
+**A profile cannot be created through this API.** It ties a contracted bank provider to the organization and is set up in Nibo. An organization without one cannot issue charges, and the node says exactly that instead of showing an empty box.
+
 ### Filtering
 
 The filter is narrowed **on the server**, so what does not match is never paged through in the first place. There are two ways to write it, and you never choose between them in a menu: the second one takes over the moment you use it.
@@ -538,6 +565,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.11.1 | **The apportionment comes back.** 0.9.1 made **Apportion By** wait for a cost center line, and that quietly took the field out of use: pick a centre and it sat there empty, with `The value "" is not supported!` underneath and the node refusing to run. The condition was sound and the reading of it was not — the editor asks two functions, not one. `getNodeParameters` resolves the values it checks visibility against with `onlySimpleTypes`, an object that holds **no collection of any kind**, so a path into one is `undefined` there however the form is filled in; the field counts as hidden and **its value is dropped from what the node saves**, while the editor draws it anyway from the full parameters. No wording survives that: "there is no line yet" and "the check cannot see collections" arrive as the same `undefined`. So the field is unconditional again, still drawn under the lines, and a new sweep over the whole node forbids any `show` rule from reading a path into a collection. Nothing changes on the wire — with no line, neither key is sent — but a node saved while 0.9.1 to 0.11.0 was installed may have lost the choice, and a value apportionment has to be told so again |
 | 0.11.2 | **The account writes**, wanted for closing automations: **Bank Account · Create** and **Update**, with `balanceLockDate` as a first-class field. Everything defensive in it is a measurement. Create is **permanent** — no delete, and `isArchived` on a PUT is ignored with a 204 — so the form warns before the button; the API stores the opening date **one day early** on creation and the node repairs it with a corrective update, so the day you pick is the day that stays; `bankNumber` is ignored in silence and therefore not offered. Update merges over the record it just read, which is what keeps the **balance lock** alive through an update that does not mention it — a body without the field clears the lock, 204, not a word. Moving the lock **back** is refused unless the *Allow Moving the Lock Back* option says a person decided it; past the account's opening date the API refuses it itself, and the node adds the one thing the message omits — which date that is. Also new: **HTTP 429 speaks** — this API allows 14 calls per second, answers the excess in plain text, and the node now names the limit instead of showing the generic failure |
 | 0.12.0 | **Files and annotations**, which is what every workflow that files a document has been writing by hand. **File** arrives with **Upload**, **Upload and Attach** and **Download**; **Schedule - File** with **Get Many**, **Attach** and **Delete**; **Schedule - Annotation** with **Create**, the only operation this API has for a note. The document always comes from the item's binary field and never from disk. Four measurements shape it, and three of them are warnings the API never gives. **The download link Nibo publishes is public** — it serves the document with no token at all, so whoever holds a `fileId` holds the file. **A document belongs to one schedule at a time**: attaching it elsewhere moves it, and the first schedule silently loses it. **Attaching to a schedule that does not exist is answered 204** and writes the invented ID onto the file, so reading it back confirms a write that went nowhere — which is why every write here asks Nibo for the schedule *first*, the annotation included, since an annotation can never be read, edited or deleted afterwards by anybody. And **Delete is not a detach**: it destroys the document, which can then be attached nowhere, while the stored object keeps serving any link handed out before. The **10 MB ceiling** is a ceiling on the whole request, so the node refuses from 10,484,736 bytes upwards before calling — the API's own answer at that size is *"O Nibo se comportou de forma inesperada."*, which names neither size nor file nor limit |
+| 0.13.0 | **Collections** — the charges issued from a receivable, with **Get Many**, **Get**, **Create**, **Cancel** and **Get Many Profiles**. The version cost an exception to this project's own rule that writes only happen against a test organization: that organization **cannot issue charges at all**, because a collection profile ties a contracted bank provider to the company, so the write side was measured against a production one with charges of R$ 10 on a test contact, and cleaned up. What it bought could not have been read: **the cancel route in this project's catalogue does not exist** — `DELETE` answers 404, and the real one is `POST …/{id}/cancel`, found because it answered a *business* error where the others answered a *route* one. **One charge per schedule**, so the node checks before issuing and names the one in the way. And **the delivery choice is write-only**: sending the boleto by e-mail and holding it for review produce an identical record, so the node defaults to holding and never claims anything was sent. Reading was measured against two organizations, and the second corrected the first: **status filters through `status/code`**, which a probe against an empty collection had wrongly reported as impossible |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
