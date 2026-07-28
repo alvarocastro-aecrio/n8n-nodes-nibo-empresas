@@ -228,6 +228,11 @@ tela. O aceite da fatia 2 criará **mais uma** (decisão 8), também declarada.
 **Aceite:** pelo arranjo de sempre — `IExecuteFunctions` real dirigindo os handlers de
 `dist/` contra a cobaia, nunca curl.
 
+
+> ✅ **Aprovado pelo Alvaro em 2026-07-28**, versão fechada: aceite, conferência na tela do Nibo
+> (regra irmã da 7) e **instalação real** pela tela Community Nodes. As caixas abaixo ficam como
+> foram escritas — quem as percorreu foi ele, e o registro do fechamento é esta linha.
+
 | ☐ | Item | Como conferir |
 |---|---|---|
 | ☐ | `Create` cria com nome, saldo e data — e a data fica **a pedida** | Releitura; é o teste do conserto (1.2) |

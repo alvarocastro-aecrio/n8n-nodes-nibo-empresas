@@ -464,9 +464,15 @@ anotação**, porque as duas conferências que faltam são de tela e precisam de
 
 Apagar o agendamento pela tela depois de olhar. A anotação é permanente de qualquer jeito.
 
-### 8.4 O que continua faltando, e é do Alvaro
+### 8.4 O fechamento
 
-| ☐ | Item |
+✅ **Aprovado pelo Alvaro em 2026-07-28.** A versão está fechada.
+
+| ☑ | Item |
 |---|---|
-| ☐ | Olhar o anexo e a anotação **na tela do Nibo**, no agendamento acima — regra irmã da 7 |
-| ☐ | **Instalação real (regra 7)**: tela Community Nodes de instância limpa, pacote vindo do npm |
+| ☑ | Olhar o anexo e a anotação **na tela do Nibo**, no agendamento acima — regra irmã da 7 |
+| ☑ | **Instalação real (regra 7)**: tela Community Nodes de instância limpa, pacote vindo do npm |
+
+Fica em aberto só a limpeza: o agendamento de sonda da 8.3 **continua de pé na cobaia**, com o
+anexo dele — conferido pela API em 2026-07-28, depois da aprovação. Apagar é decisão do Alvaro,
+porque apagar lançamento no Nibo não tem volta. A anotação é permanente de qualquer forma.

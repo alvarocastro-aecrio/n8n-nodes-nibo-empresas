@@ -392,6 +392,11 @@ os saldos voltaram exatamente aos valores de antes.
 helper HTTP real e o token da cobaia, chamando **os handlers compilados em `dist/`**, nunca
 curl. Cada fatia é aceita no seu commit, com limpeza no fim.
 
+
+> ✅ **Aprovado pelo Alvaro em 2026-07-28**, versão fechada: aceite, conferência na tela do Nibo
+> (regra irmã da 7) e **instalação real** pela tela Community Nodes. As caixas abaixo ficam como
+> foram escritas — quem as percorreu foi ele, e o registro do fechamento é esta linha.
+
 | ☐ | Item | Como conferir |
 |---|---|---|
 | ☐ | `Get Balances` traz as duas contas com saldo | Contra a cobaia |
