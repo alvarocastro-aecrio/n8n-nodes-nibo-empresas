@@ -46,10 +46,24 @@ export const collectionOperations: INodeProperties[] = [
 		},
 		options: [
 			{
+				name: 'Get',
+				value: 'get',
+				action: 'Get a collection',
+				description:
+					'Retrieve one charge by ID, read through the list — this API has no get-by-ID route for a charge',
+			},
+			{
 				name: 'Get Many',
 				value: 'list',
 				action: 'Get many collections',
 				description: 'Retrieve the charges of the organization',
+			},
+			{
+				name: 'Get Many Profiles',
+				value: 'listProfiles',
+				action: 'Get many collection profiles',
+				description:
+					'Retrieve the collection profiles, which is what a charge is issued through and the only way to know whether this organization can issue one',
 			},
 		],
 		default: 'list',
@@ -156,6 +170,22 @@ export const collectionFields: INodeProperties[] = [
 			show: {
 				resource: [COLLECTION],
 				operation: ['list'],
+			},
+		},
+	},
+	{
+		displayName: 'Collection ID',
+		name: 'collectionId',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'c1a5e0d4-77b0-4f1a-9b3e-2a6a1d0f9c11',
+		description:
+			'The charge to read, as Get Many returns it. There is no get-by-ID route on this API — the record is fetched through the list filtered by this ID.',
+		displayOptions: {
+			show: {
+				resource: [COLLECTION],
+				operation: ['get'],
 			},
 		},
 	},

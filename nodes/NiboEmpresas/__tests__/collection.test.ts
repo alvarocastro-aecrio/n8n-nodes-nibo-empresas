@@ -207,6 +207,110 @@ describe('executeCollection — the assisted filter', () => {
 	});
 });
 
+/**
+ * There is no get-by-id: `GET /public/collections/{id}` is a 404, and so is
+ * `/collections/{id}`. The way to one record is the list filtered by its ID —
+ * the same door Category has used since 0.9.0.
+ */
+describe('executeCollection — Get', () => {
+	function getting(id: string = COLLECTION) {
+		return executeCollection.call(context({ collectionId: id }), 'collection', 'get');
+	}
+
+	it('reads the record through the list filtered by ID, never through a get-by-id', async () => {
+		listRequest.mockResolvedValue({ records: [A_COLLECTION], count: 1 });
+
+		await getting();
+
+		expect(listRequest.mock.calls[0][1]).toBe('/public/collections');
+		expect(optionsSentToTransport().filter).toBe(`id eq ${COLLECTION}`);
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+
+	it('hands back the one record, not a list of one', async () => {
+		listRequest.mockResolvedValue({ records: [A_COLLECTION], count: 1 });
+
+		const items = await getting();
+
+		expect(items).toHaveLength(1);
+		expect(items[0].json.id).toBe(COLLECTION);
+	});
+
+	/**
+	 * An empty envelope is not an error for the API — a filter matched nothing —
+	 * but for an operation that asked for one record by ID it is exactly what
+	 * "not found" means, and it is said here.
+	 */
+	it('says not found, with the ID, when the filter matches nothing', async () => {
+		listRequest.mockResolvedValue({ records: [], count: 0 });
+
+		const failure = getting();
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		await expect(failure).rejects.toThrow(new RegExp(COLLECTION));
+	});
+
+	it('refuses an empty ID before reading anything', async () => {
+		const failure = getting('   ');
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		expect(listRequest).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * The profiles, and the reason this operation exists at all: a profile is
+ * **obligatory** to issue a charge, it comes from nowhere else, and listing them
+ * is the only way to find out whether an organization can issue one. That is how
+ * the test company was found not to.
+ */
+describe('executeCollection — Get Many Profiles', () => {
+	function listingProfiles() {
+		return executeCollection.call(context({}), 'collection', 'listProfiles');
+	}
+
+	it('reads the profiles from their own route', async () => {
+		apiRequest.mockResolvedValue({ items: [{ id: 'p1', name: 'Perfil' }], count: 1 });
+
+		await listingProfiles();
+
+		const [, method, endpoint] = apiRequest.mock.calls[0];
+		expect(method).toBe('GET');
+		expect(endpoint).toBe('/public/collections-profiles');
+	});
+
+	it('unwraps the envelope into one item per profile', async () => {
+		apiRequest.mockResolvedValue({
+			items: [
+				{ id: 'p1', name: 'Perfil', paymentMethods: [{ paymentForm: 'BankSlip' }] },
+				{ id: 'p2', name: 'Outro' },
+			],
+			count: 2,
+		});
+
+		const items = await listingProfiles();
+
+		expect(items).toHaveLength(2);
+		expect(items[0].json).toMatchObject({ id: 'p1', paymentMethods: [{ paymentForm: 'BankSlip' }] });
+	});
+
+	/**
+	 * An empty list is a 200, and it means something specific and actionable:
+	 * this organization cannot issue charges at all. Handing back nothing would
+	 * leave somebody looking for a bug in their filter.
+	 */
+	it('says the organization does not issue charges when there is no profile', async () => {
+		apiRequest.mockResolvedValue({ items: [], count: 0 });
+
+		const failure = listingProfiles();
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/bank provider|provider/i),
+		});
+	});
+});
+
 describe('NiboEmpresas — what the Collection screen offers', () => {
 	const description = new NiboEmpresas().description;
 
