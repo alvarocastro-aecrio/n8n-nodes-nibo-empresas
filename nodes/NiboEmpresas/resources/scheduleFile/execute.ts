@@ -203,8 +203,28 @@ async function attachFile(
 	itemIndex: number,
 	scheduleId: string,
 ): Promise<IDataObject> {
-	const fileId = recordId.call(this, 'fileId', itemIndex);
+	return await attachStoredFile.call(
+		this,
+		itemIndex,
+		scheduleId,
+		recordId.call(this, 'fileId', itemIndex),
+	);
+}
 
+/**
+ * The attach and its read-back, with the file already named.
+ *
+ * Exported because File · Upload and Attach is the same second half: one
+ * operation, two calls, and the same 204 that means nothing on its own. A
+ * confirmation kept in two copies is a confirmation that will one day disagree
+ * with itself about what counts as attached.
+ */
+export async function attachStoredFile(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	scheduleId: string,
+	fileId: string,
+): Promise<IDataObject> {
 	await niboApiRequest.call(
 		this,
 		itemIndex,

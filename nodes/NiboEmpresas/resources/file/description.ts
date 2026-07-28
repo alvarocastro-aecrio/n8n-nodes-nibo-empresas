@@ -58,6 +58,13 @@ export const fileOperations: INodeProperties[] = [
 				description:
 					'Store a document in Nibo and get its ID back, without attaching it to anything yet',
 			},
+			{
+				name: 'Upload and Attach',
+				value: 'uploadAndAttach',
+				action: 'Upload a file and attach it to a schedule',
+				description:
+					'Store a document and put it on a schedule in one operation, confirming afterwards that it is there',
+			},
 		],
 		default: 'upload',
 	},
@@ -85,7 +92,7 @@ export const fileFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: [FILE],
-				operation: ['upload'],
+				operation: ['upload', 'uploadAndAttach'],
 			},
 		},
 	},
@@ -100,7 +107,23 @@ export const fileFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: [FILE],
-				operation: ['upload'],
+				operation: ['upload', 'uploadAndAttach'],
+			},
+		},
+	},
+	{
+		displayName: 'Schedule ID',
+		name: 'scheduleId',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'b4d0a1e7-08bd-4a44-9f1e-6c2f7d3e5a90',
+		description:
+			'The schedule the document goes onto, credit or debit alike — this API has one route for both, and it is the credit one. It is read first, so an empty ID never leaves a stored file behind with nothing attached to it.',
+		displayOptions: {
+			show: {
+				resource: [FILE],
+				operation: ['uploadAndAttach'],
 			},
 		},
 	},
@@ -145,7 +168,7 @@ export const fileFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: [FILE],
-				operation: ['download', 'upload'],
+				operation: ['download', 'upload', 'uploadAndAttach'],
 			},
 		},
 	},

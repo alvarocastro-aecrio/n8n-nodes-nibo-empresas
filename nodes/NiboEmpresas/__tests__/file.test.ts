@@ -2,7 +2,7 @@ import type { IBinaryData, IDataObject, IExecuteFunctions, INode } from 'n8n-wor
 import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { executeFile } from '../resources/file/execute';
-import { niboDownloadRequest, niboUploadRequest } from '../transport/request';
+import { niboApiRequest, niboDownloadRequest, niboUploadRequest } from '../transport/request';
 
 jest.mock('../transport/request');
 jest.mock('n8n-workflow', () => ({
@@ -12,6 +12,7 @@ jest.mock('n8n-workflow', () => ({
 
 const upload = niboUploadRequest as jest.MockedFunction<typeof niboUploadRequest>;
 const download = niboDownloadRequest as jest.MockedFunction<typeof niboDownloadRequest>;
+const apiRequest = niboApiRequest as jest.MockedFunction<typeof niboApiRequest>;
 
 const NODE: INode = {
 	id: 'test-node',
@@ -82,6 +83,8 @@ beforeEach(() => {
 		mimeType: 'application/pdf',
 		fileName: 'invoice.pdf',
 	});
+	apiRequest.mockReset();
+	apiRequest.mockResolvedValue(undefined);
 	(sleep as jest.MockedFunction<typeof sleep>).mockClear();
 });
 
@@ -222,6 +225,77 @@ describe('executeFile — Upload', () => {
 
 		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
 		await expect(failure).rejects.toThrow(/no file/i);
+	});
+});
+
+/**
+ * One operation, two calls — and the reason it is one operation is that nobody
+ * uploads a document in order to leave it lying in storage. The reason it is
+ * still two calls is the API: nothing attaches and stores in one request.
+ */
+describe('executeFile — Upload and Attach', () => {
+	const SCHEDULE = 'b4d0a1e7-08bd-4a44-9f1e-6c2f7d3e5a90';
+
+	function uploadingAndAttaching(parameters: IDataObject = {}) {
+		return executeFile.call(
+			context({ scheduleId: SCHEDULE, ...parameters }),
+			'file',
+			'uploadAndAttach',
+		);
+	}
+
+	beforeEach(() => {
+		apiRequest.mockReset();
+		apiRequest.mockImplementation(async (...args: unknown[]) =>
+			(args[1] as string) === 'POST'
+				? undefined
+				: { items: [{ fileId: FILE_ID, name: 'invoice.pdf' }], count: 1 },
+		);
+	});
+
+	it('stores the document first and attaches it second', async () => {
+		await uploadingAndAttaching();
+
+		expect(upload).toHaveBeenCalledTimes(1);
+		expect(apiRequest.mock.calls[0][2]).toBe(`/schedules/credit/${SCHEDULE}/files/attach`);
+		expect(apiRequest.mock.calls[0][4]).toEqual([FILE_ID]);
+	});
+
+	// The confirmation of Schedule - File applies here too: this API answers the
+	// attach with 204 whether the schedule exists or not, so the schedule is read
+	// back either way.
+	it('reads the schedule back, exactly as Attach does on its own', async () => {
+		const items = await uploadingAndAttaching();
+
+		expect(apiRequest.mock.calls[1][1]).toBe('GET');
+		expect(items[0].json).toMatchObject({ fileId: FILE_ID, scheduleId: SCHEDULE, attached: true });
+	});
+
+	it('refuses an empty schedule ID before the file is stored', async () => {
+		const failure = uploadingAndAttaching({ scheduleId: '  ' });
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		expect(upload).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * Decision 6 of the plan, and the lesson the 0.10.0 settlement paid for: the
+	 * sentence a half-done operation ends with decides whether the workflow runs
+	 * it again. The upload succeeded, so a retry would store the same document a
+	 * second time — and there is no route that lists the files of an organization
+	 * to find the first one afterwards.
+	 */
+	it('says the file did go up when it is the attaching that failed', async () => {
+		apiRequest.mockImplementation(async (...args: unknown[]) =>
+			(args[1] as string) === 'POST' ? undefined : { items: [], count: 0 },
+		);
+
+		const failure = uploadingAndAttaching();
+
+		await expect(failure).rejects.toThrow(new RegExp(FILE_ID));
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/do not send it again|stored/i),
+		});
 	});
 });
 
