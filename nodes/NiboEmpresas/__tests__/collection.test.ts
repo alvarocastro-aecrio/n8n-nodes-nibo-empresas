@@ -378,7 +378,7 @@ describe('executeCollection — Create', () => {
 	 * stops claiming, and by default it is **not sent at all**, which leaves Nibo
 	 * doing whatever it does on its own.
 	 */
-	it('does not send deliveryType at all unless one was chosen', async () => {
+	it('does not send deliveryType at all unless a channel was chosen', async () => {
 		scheduleIsFree();
 
 		await creating();
@@ -579,6 +579,7 @@ describe('NiboEmpresas — what the Collection screen offers', () => {
 	 */
 	it('offers only the paths the API was measured to filter on', () => {
 		expect(fieldMenu().map((one) => one.value)).toEqual([
+			'accountantIntegrationStatus/code',
 			'createDate',
 			'deliveryStatus/code',
 			'description',
@@ -670,39 +671,69 @@ describe('NiboEmpresas — what the Collection screen offers', () => {
 	});
 
 	/**
-	 * The field names the two raw values and nothing else, because nothing else
-	 * about them was ever established — see the correction on the handler test.
+	 * The two values are **two delivery channels**, and neither of them is a hold.
+	 * Nibo has a financial-management module and an accountant one:
+	 *
+	 * - `0` — the charge goes out by e-mail from the financial side;
+	 * - `1` — it is handed to the accountant module and reaches the payer through
+	 *   the client portal there, alongside the rest of that module's traffic.
+	 *
+	 * And it **is** observable, in the field this project spent a day not looking
+	 * at: `accountantIntegrationStatus` is *Não definida* for `0` and *Habilitada*
+	 * for `1`, one-to-one across every charge measured.
 	 */
-	it('offers the delivery type as the raw values, defaulting to not sending it', () => {
+	it('offers the two values as the two channels they are', () => {
 		const delivery = property('deliveryType');
 
 		expect(delivery?.default).toBe('default');
 		expect((delivery?.options as INodePropertyOptions[]).map((one) => one.value)).toEqual([
-			'default',
 			0,
+			'default',
 			1,
 		]);
 	});
 
-	it('never labels either value as sending or holding, which was never measured', () => {
+	it('never calls either of them a hold, because neither one is', () => {
 		const labels = (property('deliveryType')?.options as INodePropertyOptions[])
 			.map((one) => `${one.name} ${one.description ?? ''}`)
 			.join(' ');
 
-		expect(labels).not.toMatch(/hold for review|sends nothing|e-mails the boleto/i);
+		expect(labels).not.toMatch(/hold for review|sends nothing|keeps it/i);
+		expect(labels).toMatch(/e-mail/i);
+		expect(labels).toMatch(/accountant/i);
 	});
 
 	/**
-	 * The warning that replaced the wrong one. What is measured is that charges
-	 * do reach a Delivered state on their own — so the sentence that matters is
-	 * "do not count on any setting here to keep a boleto in".
+	 * The notice that replaced the wrong one. The question it has to answer is
+	 * not "does this send" — both do — but "which way out", and that the choice
+	 * hands the charge to a module this node cannot follow it into.
 	 */
-	it('warns that issuing can reach the payer, and that nothing here prevents it', () => {
+	it('warns that both channels deliver, so the choice is which one', () => {
 		const notice = property('createNotice');
 
 		expect(notice?.type).toBe('notice');
 		expect(notice?.displayName).toMatch(/deliver/i);
-		expect(notice?.displayName).toMatch(/not established|could not be|no setting/i);
+		expect(notice?.displayName).toMatch(/accountant/i);
+	});
+
+	/**
+	 * Worth filtering on precisely because the routing can fail on its own:
+	 * `-3` is *"Não foi possível criar o item de conferência no Nibo Obrigações"*.
+	 */
+	it('offers the accountant integration as a filter, failure code included', () => {
+		const value = ((property('filters')?.options ?? []) as Array<{ values?: INodeProperties[] }>)
+			.flatMap((one) => one.values ?? [])
+			.find(
+				(one) =>
+					one.name === 'optionsValue' &&
+					(one.displayOptions?.show?.field ?? []).includes('accountantIntegrationStatus/code'),
+			);
+
+		expect((value?.options as INodePropertyOptions[]).map((one) => one.value)).toEqual([
+			'-3',
+			'0',
+			'1',
+		]);
 	});
 
 	/**

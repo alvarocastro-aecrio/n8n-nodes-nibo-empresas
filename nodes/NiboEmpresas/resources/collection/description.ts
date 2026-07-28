@@ -116,6 +116,32 @@ const STATUS_CODES: INodePropertyOptions[] = [
 	},
 ];
 
+/**
+ * Which route the charge took out, and whether that route worked — the field
+ * that turned out to be the observable half of `deliveryType`.
+ *
+ * `-3` is worth filtering on by itself: it is the accountant module refusing to
+ * create the conference item, which is a delivery that quietly did not happen
+ * the way it was asked to.
+ */
+const ACCOUNTANT_CODES: INodePropertyOptions[] = [
+	{
+		name: 'Could Not Create the Item',
+		value: '-3',
+		description: 'Code -3 — "Não foi possível criar o item de conferência no Nibo Obrigações"',
+	},
+	{
+		name: 'Not Set',
+		value: '0',
+		description: 'Code 0 — how a charge sent By E-Mail stays',
+	},
+	{
+		name: 'Enabled',
+		value: '1',
+		description: 'Code 1 — what Through the Accountant writes; it records the request, not the outcome',
+	},
+];
+
 /** The delivery side of the same record, measured the same way and just as partial */
 const DELIVERY_CODES: INodePropertyOptions[] = [
 	{ name: 'Not Delivered', value: '0', description: 'Code 0' },
@@ -146,6 +172,13 @@ const PARTIAL_LIST_NOTE =
  * carries the same one.
  */
 const FILTER_FIELDS: IFilterField[] = [
+	{
+		label: 'Accountant Integration',
+		path: 'accountantIntegrationStatus/code',
+		type: 'code',
+		choices: ACCOUNTANT_CODES,
+		choicesNote: PARTIAL_LIST_NOTE,
+	},
 	{ label: 'Created At', path: 'createDate', type: 'date' },
 	{
 		label: 'Delivery Status',
@@ -186,21 +219,23 @@ const LIST_NOTICE =
 	'The url on each of these records is public: anyone holding it opens the payment page without a token. Treat it as the charge itself, not as a reference to it.';
 
 /**
- * The sentence that has to be read before the button — and it is the second one
- * written for this spot, because the first was wrong.
+ * The sentence that has to be read before the button — and it is the third one
+ * written for this spot.
  *
- * 0.13.0 said *Send It* e-mails the boleto and *Hold for Review* sends nothing.
- * Neither was measured: both came from this project's own `payloads.md`, which
- * Nibo documents nowhere, and the one measurement taken found the two values
- * indistinguishable. Saying "nothing is sent" about a setting nobody verified is
- * the worst of the available mistakes, so it is gone.
+ * 0.13.0 said *Send It* against *Hold for Review*, which came from this
+ * project's own notes and was wrong: **there is no hold**. Nibo has two modules,
+ * a financial-management one and an accountant one, and the two delivery types
+ * are two ways **out** — by e-mail from the financial side, or through the
+ * accountant module and its client portal, where the charge lands alongside the
+ * rest of that module's traffic.
  *
- * What **is** measured: a charge reaches `deliveryStatus` *Entregue* and then
- * *Visualizada* on its own. Delivery happens. What triggers it was not
- * established.
+ * Explained by the Alvaro on 2026-07-28 and then confirmed in the record:
+ * `accountantIntegrationStatus` is *Não definida* for `0` and *Habilitada* for
+ * `1`, one-to-one across every charge measured. It was observable all along, in
+ * the one field this project had not thought to read.
  */
 const CREATE_NOTICE =
-	'Issuing a charge can make Nibo deliver it to the payer: charges in this API do reach a Delivered state, and then a Viewed one, on their own. What controls that could not be established here — the delivery type below is undocumented, and the two values this project tried made no visible difference. Do not count on any setting on this screen to keep a boleto from going out.';
+	'Both delivery types send the charge — the choice is which way out, not whether. By E-Mail goes out from Nibo\'s financial side; Through the Accountant hands the charge to the accountant module, where it reaches the payer in the client portal along with the rest of that module\'s traffic. Nothing on this screen keeps a charge in, and the node cannot follow one into the accountant module to tell you what happened there.';
 
 /**
  * Three things nobody would guess, all three measured on 2026-07-28.
@@ -279,32 +314,31 @@ export const collectionFields: INodeProperties[] = [
 		},
 	},
 	{
-		// Named after the API's own field rather than after a meaning, because the
-		// meaning is what this project does not have. The two values are offered
-		// bare, and the default sends nothing at all.
 		displayName: 'Delivery Type',
 		name: 'deliveryType',
 		type: 'options',
 		options: [
 			{
+				name: 'By E-Mail',
+				value: 0,
+				description:
+					'Nibo sends the boleto to the payer from the financial-management side. Measured: accountantIntegrationStatus stays "Não definida".',
+			},
+			{
 				name: 'Leave It to Nibo',
 				value: 'default',
-				description: 'The field is not sent, so Nibo does whatever it does when nobody says',
+				description: 'The field is not sent at all, so Nibo routes it however it does by default',
 			},
 			{
-				name: 'Type 0',
-				value: 0,
-				description: 'The value every workflow written by hand until now has sent',
-			},
-			{
-				name: 'Type 1',
+				name: 'Through the Accountant',
 				value: 1,
-				description: 'The other value the API accepts without complaining',
+				description:
+					'The charge is handed to Nibo\'s accountant module and reaches the payer in the client portal there. Measured: accountantIntegrationStatus becomes "Habilitada" — which records the request, not the outcome.',
 			},
 		],
 		default: 'default',
 		description:
-			'An optional field of the API, undocumented by Nibo and write-only — it never comes back on the record. This project measured one charge of each value and found no difference between them, so the two are offered as the numbers they are rather than under names that would be a guess. Left alone it is not sent.',
+			'Which way the charge leaves: by e-mail from Nibo\'s financial module, or through its accountant module and the client portal. Both deliver. It is write-only — the value never comes back — but its effect does: read accountantIntegrationStatus to see which route a charge took. ⚠️ Through the Accountant only makes sense for an organization whose Nibo is integrated with the accountant module; without that, the routing has nowhere to land, and one charge in the sample sits at "Não foi possível criar o item de conferência no Nibo Obrigações".',
 		displayOptions: {
 			show: {
 				resource: [COLLECTION],

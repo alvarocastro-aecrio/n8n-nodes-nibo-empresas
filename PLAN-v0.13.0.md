@@ -554,10 +554,45 @@ inconclusivo, e inconclusivo é o que vai escrito.
 - O notice deixou de prometer e passou a avisar: emitir **pode** entregar ao pagador, isso é
   medido, e **nenhuma configuração desta tela foi provada capaz de impedir**.
 
-### 9.4 O que ainda não se sabe, e como se saberia
+### 9.4 ✅ Resolvido no mesmo dia — e o campo estava à vista
 
-A pergunta do Alvaro — *essa opção seria deliveryType 0 ou 1?* — continua sem resposta. O
-experimento que a responderia é direto e não foi feito: emitir duas cobranças, uma com cada
-valor, e **deixá-las de pé por alguns minutos** em vez de cancelar na hora, olhando o
-`deliveryStatus` de cada uma. Custa duas cobranças de verdade na empresa de produção, com envio
-possível ao contato de teste — decisão do Alvaro.
+O Alvaro explicou o que o campo é, e a explicação se confirmou no registro em uma leitura.
+
+**O Nibo tem dois módulos**: gestão financeira e contador. Os dois `deliveryType` são **duas
+saídas**, não uma saída e um freio:
+
+| Valor | O que faz | `accountantIntegrationStatus` medido |
+|---|---|---|
+| `0` | O envio sai pela **gestão financeira** — e-mail direto ao pagador | `{"code":0,"description":"Não definida"}` |
+| `1` | A cobrança vai para o **módulo do contador**, e chega ao pagador pelo **portal do cliente**, junto com o resto da comunicação daquele módulo | `{"code":1,"description":"Habilitada"}` |
+
+Correlação **um para um nas três cobranças** da sondagem. E o enum tem um terceiro valor que
+nomeia o módulo: **`-3` *"Não foi possível criar o item de conferência no Nibo Obrigações"***.
+
+🔴 **A 1.15 estava errada, e o erro foi de onde eu olhei.** Ela concluiu *"os dois nascem
+idênticos"* porque eu comparei `status` e `deliveryStatus`. A diferença estava em
+`accountantIntegrationStatus`, no mesmo registro que eu já havia impresso campo a campo na 1.3 —
+e que eu mesmo listei como um dos cinco campos *"que não havia como adivinhar"*. Estava à vista.
+
+⚠️ **E há um limite no que foi medido, apontado pelo Alvaro:** a empresa usada **não é integrada
+ao Nibo Contador**. Então o `Habilitada` que eu li registra o **pedido** de integração, não o
+resultado dele — o `-3` de uma cobrança antiga da mesma empresa mostra que o pedido pode falhar
+depois. Isso vai na descrição do campo, com todas as letras.
+
+### 9.5 O que ficou na tela
+
+- Os dois valores viraram **canais**: *By E-Mail* e *Through the Accountant*, com o que cada um
+  faz e o que cada um grava no `accountantIntegrationStatus`.
+- O notice diz que **os dois entregam** — a escolha é por onde, não se —, e que o node **não
+  consegue seguir** a cobrança para dentro do módulo do contador.
+- **`accountantIntegrationStatus/code` entrou no menu de filtro**, com o `-3` incluído: é a
+  única forma de achar as cobranças cuja rota pelo contador não deu certo.
+- O padrão continua sendo **não mandar o campo**, deixando o Nibo rotear como roteia sozinho.
+
+### 9.6 A lição, que é a mesma de sempre neste projeto
+
+Duas vezes no mesmo dia eu declarei uma ausência a partir de uma busca incompleta: o
+`status/code` (1.5), procurado em três caminhos e não no quarto; e agora o efeito do
+`deliveryType`, procurado em dois campos do registro e não no terceiro. O gotcha 14 do projeto
+está escrito para 404 de rota, e vale igual para campo: **não achar não é não existir** — e o
+custo de escrever "não dá" é maior do que o de escrever "não achei".
