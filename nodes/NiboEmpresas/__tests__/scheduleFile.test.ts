@@ -1,5 +1,5 @@
 import type { IDataObject, IExecuteFunctions, INode, INodeProperties } from 'n8n-workflow';
-import { NodeOperationError, sleep } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { NiboEmpresas } from '../NiboEmpresas.node';
 import { executeScheduleFile } from '../resources/scheduleFile/execute';
@@ -170,20 +170,77 @@ describe('executeScheduleFile — Attach', () => {
 		);
 	}
 
-	/** The attach answers 204, and then the list is asked whether it happened */
+	/**
+	 * The schedule is read, the attach answers 204, and the listing is asked
+	 * whether the file really landed.
+	 */
 	function attachThenList(items: IDataObject[]) {
 		apiRequest.mockImplementation(async (...args: unknown[]) => {
 			const method = args[1] as string;
-			return method === 'POST' ? undefined : { items, count: items.length };
+			const endpoint = args[2] as string;
+			if (method === 'POST') return undefined;
+			return endpoint.endsWith('/files')
+				? { items, count: items.length }
+				: { scheduleId: SCHEDULE, type: 'debit' };
 		});
 	}
+
+	/** The schedule is not there — which this API says with a 500, not a 404 */
+	function scheduleIsNotThere() {
+		apiRequest.mockImplementation(async (...args: unknown[]) => {
+			if ((args[1] as string) === 'GET' && !(args[2] as string).endsWith('/files')) {
+				throw new NodeApiError(
+					NODE,
+					{},
+					{ httpCode: '500', message: 'Nibo rejected the request: Agendamento não encontrado' },
+				);
+			}
+			return { items: [AN_ATTACHMENT], count: 1 };
+		});
+	}
+
+	/**
+	 * **The check comes first, and it took the acceptance to find out why.**
+	 *
+	 * The plan had this operation defended by the read-back alone: attach, then
+	 * look, and refuse if the file is not there. It does not work, and the reason
+	 * is the shape of the storage. `attach` does not add a row to a join table —
+	 * it **sets the one `referenceId` a file has**, and the listing is every file
+	 * whose `referenceId` is this schedule. So attaching to a schedule that does
+	 * not exist writes that GUID onto the file, and reading the same GUID back
+	 * hands it straight over. The read-back confirms itself.
+	 *
+	 * What does work is the door the annotation uses:
+	 * `GET /schedules/credit/{id}` on an invented ID answers HTTP 500
+	 * *"Agendamento não encontrado"*. Measured on the test organization on
+	 * 2026-07-28, during the acceptance of this very version.
+	 */
+	it('reads the schedule before attaching anything to it', async () => {
+		attachThenList([AN_ATTACHMENT]);
+
+		await attaching();
+
+		expect(callAt(0)).toMatchObject({
+			method: 'GET',
+			endpoint: `/schedules/credit/${SCHEDULE}`,
+		});
+	});
+
+	it('refuses a schedule that does not exist, with the attach never leaving', async () => {
+		scheduleIsNotThere();
+
+		const failure = attaching();
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		expect(apiRequest.mock.calls.every((call) => call[1] === 'GET')).toBe(true);
+	});
 
 	it('posts the file ID as an array, on the attach route of the schedule', async () => {
 		attachThenList([AN_ATTACHMENT]);
 
 		await attaching();
 
-		expect(callAt(0)).toMatchObject({
+		expect(callAt(1)).toMatchObject({
 			method: 'POST',
 			endpoint: `/schedules/credit/${SCHEDULE}/files/attach`,
 			body: [FILE_ID],
@@ -191,24 +248,23 @@ describe('executeScheduleFile — Attach', () => {
 	});
 
 	/**
-	 * The whole reason this operation costs two calls. A schedule ID that does
-	 * not exist is answered **204, with not one word** — the API checks the file
-	 * and never checks the schedule — so the only way to know whether anything
-	 * was attached is to go and look.
+	 * The read-back stays, with the job it can actually do: confirming that the
+	 * file landed, and handing back the record — name, size, both dates and the
+	 * url — that makes the operation worth anything downstream.
 	 */
-	it('reads the schedule back and confirms the file is on it', async () => {
+	it('reads the files back and confirms the one it sent is among them', async () => {
 		attachThenList([AN_ATTACHMENT]);
 
 		const items = await attaching();
 
-		expect(callAt(1)).toMatchObject({
+		expect(callAt(2)).toMatchObject({
 			method: 'GET',
 			endpoint: `/schedules/credit/${SCHEDULE}/files`,
 		});
-		expect(items[0].json).toMatchObject({ fileId: FILE_ID, attached: true });
+		expect(items[0].json).toMatchObject({ fileId: FILE_ID, attached: true, url: AN_ATTACHMENT.url });
 	});
 
-	it('fails when the file is not there afterwards, which is how a missing schedule shows', async () => {
+	it('fails when the file is not on the schedule afterwards', async () => {
 		attachThenList([]);
 
 		const failure = attaching();
@@ -217,18 +273,10 @@ describe('executeScheduleFile — Attach', () => {
 		await expect(failure).rejects.toThrow(new RegExp(SCHEDULE));
 	});
 
-	it('says in that failure that the schedule may not exist at all', async () => {
-		attachThenList([]);
-
-		await expect(attaching()).rejects.toMatchObject({
-			description: expect.stringMatching(/does not exist/i),
-		});
-	});
-
 	/**
-	 * Measured: attaching the same file twice leaves the listing at `count: 1`.
-	 * The API is idempotent here of its own accord, unlike the annotation next
-	 * door, so a workflow that re-runs an item does not have to guard against it.
+	 * Attaching the same file to the same schedule twice leaves the listing at
+	 * one entry — which is not idempotence so much as arithmetic, now that a file
+	 * has one `referenceId` and the attach writes it again.
 	 */
 	it('takes a file that is already attached as a success, not as an error', async () => {
 		attachThenList([AN_ATTACHMENT]);
@@ -329,21 +377,34 @@ describe('NiboEmpresas — what Schedule - File says before it is used', () => {
 	/**
 	 * `DELETE /schedules/credit/{scheduleId}/files/{fileId}` reads like a detach
 	 * and is not one: the `scheduleId` in the path is ignored — a GUID of zeros
-	 * works — and the file goes from every schedule it was ever on. Calling it
-	 * Detach on the screen would be a lie; leaving the notice off would be the
-	 * same lie in silence.
+	 * works — and what goes is the document itself, which can never be attached
+	 * anywhere again. Calling it Detach on the screen would be a lie; leaving the
+	 * notice off would be the same lie in silence.
 	 */
-	it('warns that the delete takes the file off every schedule, not just this one', () => {
+	it('warns that the delete takes the document itself, not the link to it', () => {
 		const notice = field('deleteNotice');
 
 		expect(notice?.type).toBe('notice');
-		expect(notice?.displayName).toMatch(/every schedule/i);
+		expect(notice?.displayName).toMatch(/cannot be attached again/i);
 	});
 
 	// And the other half of the same measurement: the stored object stays where
 	// it is, so a link handed out before the delete keeps serving the document.
 	it('warns that a link given out before still works afterwards', () => {
 		expect(field('deleteNotice')?.displayName).toMatch(/link/i);
+	});
+
+	/**
+	 * The footgun the acceptance found, and the one that costs a document rather
+	 * than an error message: a file has **one** schedule, and attaching it here
+	 * takes it off wherever it was. A workflow filing the same invoice against a
+	 * second schedule silently empties the first one.
+	 */
+	it('warns that attaching moves the file off whatever schedule it was on', () => {
+		const notice = field('attachNotice');
+
+		expect(notice?.type).toBe('notice');
+		expect(notice?.displayName).toMatch(/one schedule at a time|moves/i);
 	});
 
 	it('says on the listing that the url it returns needs no token', () => {

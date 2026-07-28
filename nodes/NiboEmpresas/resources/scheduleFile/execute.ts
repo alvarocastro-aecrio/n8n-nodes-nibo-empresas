@@ -3,6 +3,7 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboApiRequest } from '../../transport/request';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
+import { requireSchedule, schedulePath } from '../shared/schedule';
 
 /**
  * The one route family, and it is spelled "credit" for debit schedules too.
@@ -11,7 +12,7 @@ import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
  * contract.
  */
 function scheduleFiles(scheduleId: string): string {
-	return `/schedules/credit/${encodeURIComponent(scheduleId)}/files`;
+	return `${schedulePath(scheduleId)}/files`;
 }
 
 /**
@@ -40,13 +41,14 @@ interface IFileListEnvelope {
  * The documents of a schedule: reading them, putting one there, and deleting one
  * for good.
  *
- * Two of the three operations exist because of the same measurement, made on
- * 2026-07-28: **this API validates the file and never validates the schedule.**
- * An attach to a schedule ID that does not exist answers 204 and writes nothing,
- * and the listing of a schedule that does not exist answers 200 with an empty
- * collection — so "there are no files here" and "there is no such schedule" are
- * the same sentence. The node cannot ask the difference, so it attaches and then
- * goes to look.
+ * Two of the three operations are shaped by the same measurement: **this API
+ * validates the file and never validates the schedule.** An attach to a schedule
+ * ID that does not exist answers 204 without a word — and worse than saying
+ * nothing, it writes that GUID onto the file, so the listing of the invented
+ * schedule then hands the file back as if the attach had worked. That is why the
+ * guard is a `GET` of the schedule **before** the write rather than a reading
+ * afterwards: the reading cannot tell the two apart, and the acceptance of this
+ * version is where that was found out.
  */
 export async function executeScheduleFile(
 	this: IExecuteFunctions,
@@ -184,40 +186,48 @@ async function listFiles(
 }
 
 /**
- * Puts a stored document on a schedule, and then goes and checks.
+ * Puts a stored document on a schedule — after asking whether the schedule is
+ * there, and then asking whether the document arrived.
  *
- * The check is the operation. `POST …/files/attach` answers **204 for a schedule
- * that does not exist**, without a word — this API validates the `fileId` (an
- * unknown one is a 500 *"Arquivo não encontrado"*) and never validates the
- * schedule. It is the same family as the `200` that writes nothing, and the same
- * answer as the `POST /payments` without an account that 0.10.0 learned to
- * refuse before sending. Here it cannot be refused beforehand: nothing tells a
- * real schedule ID from an invented one until the schedule is read.
+ * **The check in front is what the acceptance of this version bought.** The plan
+ * had this operation defended by the read-back alone, and the read-back cannot
+ * do it: `attach` does not add a row to a join table, it **sets the one
+ * `referenceId` a file has**, and the listing of a schedule is every file
+ * carrying that `referenceId`. Attach to an invented GUID and the file carries
+ * the invented GUID; read the invented GUID back and there the file is. The
+ * confirmation confirms itself.
  *
- * Attaching twice is not a problem to defend against — the listing stays at one
- * entry, so the API is idempotent here of its own accord. That is worth knowing
- * next to the annotation, which duplicates on every single call.
+ * `POST …/files/attach` answers **204 for a schedule that does not exist**,
+ * without a word — this API validates the `fileId` (an unknown one is a 500
+ * *"Arquivo não encontrado"*) and never validates the schedule. What does tell
+ * the two apart is the door the annotation already used: `GET
+ * /schedules/credit/{id}` on an ID that is not a schedule answers 500
+ * *"Agendamento não encontrado"*.
  */
 async function attachFile(
 	this: IExecuteFunctions,
 	itemIndex: number,
 	scheduleId: string,
 ): Promise<IDataObject> {
-	return await attachStoredFile.call(
-		this,
-		itemIndex,
-		scheduleId,
-		recordId.call(this, 'fileId', itemIndex),
-	);
+	const fileId = recordId.call(this, 'fileId', itemIndex);
+
+	await requireSchedule.call(this, itemIndex, scheduleId, 'Nothing was attached.');
+
+	return await attachStoredFile.call(this, itemIndex, scheduleId, fileId);
 }
 
 /**
- * The attach and its read-back, with the file already named.
+ * The attach and its read-back, with the schedule already checked and the file
+ * already named.
  *
- * Exported because File · Upload and Attach is the same second half: one
- * operation, two calls, and the same 204 that means nothing on its own. A
- * confirmation kept in two copies is a confirmation that will one day disagree
- * with itself about what counts as attached.
+ * Exported because File · Upload and Attach is the same second half — and it
+ * deliberately does **not** check the schedule itself: that caller has to do it
+ * before the upload, or a refused schedule leaves a document in storage with
+ * nothing pointing at it and no route in this API to find it again.
+ *
+ * What the read-back is still for: the attach says 204 and nothing else, so this
+ * is what confirms the file landed, and the record it finds — name, size, both
+ * dates and the url — is what makes the operation worth anything downstream.
  */
 export async function attachStoredFile(
 	this: IExecuteFunctions,
@@ -262,7 +272,7 @@ export async function attachStoredFile(
 		{
 			itemIndex,
 			description:
-				'Almost certainly the schedule does not exist. This API answers the attach with HTTP 204 whether the schedule is real or not — it checks the file and never checks the schedule — and the listing of a schedule that does not exist answers 200 with nothing in it, so the two cannot be told apart except by looking, which is what just happened. Check the Schedule ID. The file itself is untouched and still stored.',
+				'The schedule was read before this and it does exist, so what did not happen is the attach itself. The API answers that call with HTTP 204 and says nothing about what it did, which is why this reading exists at all. The file is untouched and still stored — attach it again rather than uploading a second copy.',
 		},
 	);
 }

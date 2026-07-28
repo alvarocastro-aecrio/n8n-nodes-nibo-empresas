@@ -6,10 +6,14 @@ import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
  * **The split is the API's, not a taste of ours.** `POST /files` stores a
  * document and hands back a `fileId` that belongs to nothing yet; attaching it
  * is a second call, on a second route, that needs a schedule. And the two are
- * genuinely independent: the same `fileId` can be attached to several schedules,
- * attaching does not consume it, and the document outlives the schedule it was
- * attached to. So what is about the file lives here, and what needs a schedule
- * lives in Schedule - File.
+ * genuinely independent in the direction that matters: a stored file exists
+ * before any schedule points at it, and it outlives the schedule that did. So
+ * what is about the file lives here, and what needs a schedule lives in
+ * Schedule - File.
+ *
+ * What a file does **not** do is belong to two schedules. It carries one
+ * reference, and attaching it somewhere else moves it — measured in the
+ * acceptance of this version, and said out loud on the Attach screen.
  *
  * **What has no operation here, and why:** there is no Get and no Get Many.
  * `GET /files` and `GET /files/{id}` are both 404, measured on 2026-07-28 —
@@ -119,7 +123,7 @@ export const fileFields: INodeProperties[] = [
 		default: '',
 		placeholder: 'b4d0a1e7-08bd-4a44-9f1e-6c2f7d3e5a90',
 		description:
-			'The schedule the document goes onto, credit or debit alike — this API has one route for both, and it is the credit one. It is read first, so an empty ID never leaves a stored file behind with nothing attached to it.',
+			'The schedule the document goes onto, credit or debit alike — this API has one route for both, and it is the credit one. The node asks Nibo for this schedule before uploading anything: a schedule that does not exist is accepted by the attach without a word, and the document would be left in storage where no route of this API can find it again.',
 		displayOptions: {
 			show: {
 				resource: [FILE],

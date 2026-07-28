@@ -246,28 +246,49 @@ describe('executeFile — Upload and Attach', () => {
 
 	beforeEach(() => {
 		apiRequest.mockReset();
-		apiRequest.mockImplementation(async (...args: unknown[]) =>
-			(args[1] as string) === 'POST'
-				? undefined
-				: { items: [{ fileId: FILE_ID, name: 'invoice.pdf' }], count: 1 },
-		);
+		apiRequest.mockImplementation(async (...args: unknown[]) => {
+			if ((args[1] as string) === 'POST') return undefined;
+			return (args[2] as string).endsWith('/files')
+				? { items: [{ fileId: FILE_ID, name: 'invoice.pdf' }], count: 1 }
+				: { scheduleId: SCHEDULE, type: 'debit' };
+		});
 	});
 
-	it('stores the document first and attaches it second', async () => {
+	/**
+	 * The schedule is read **before the file is stored**, which is the order that
+	 * matters: a document uploaded against a schedule that does not exist would
+	 * be left in storage with nothing pointing at it, and no route lists the
+	 * files of an organization to find it again.
+	 */
+	it('checks the schedule before the document is stored at all', async () => {
 		await uploadingAndAttaching();
 
+		expect(apiRequest.mock.calls[0]).toMatchObject([0, 'GET', `/schedules/credit/${SCHEDULE}`]);
 		expect(upload).toHaveBeenCalledTimes(1);
-		expect(apiRequest.mock.calls[0][2]).toBe(`/schedules/credit/${SCHEDULE}/files/attach`);
-		expect(apiRequest.mock.calls[0][4]).toEqual([FILE_ID]);
 	});
 
-	// The confirmation of Schedule - File applies here too: this API answers the
-	// attach with 204 whether the schedule exists or not, so the schedule is read
-	// back either way.
-	it('reads the schedule back, exactly as Attach does on its own', async () => {
+	it('does not store the file when that check refuses the schedule', async () => {
+		apiRequest.mockImplementation(async () => {
+			throw new NodeApiError(NODE, {}, { httpCode: '500', message: 'Agendamento não encontrado' });
+		});
+
+		await expect(uploadingAndAttaching()).rejects.toBeInstanceOf(NodeOperationError);
+		expect(upload).not.toHaveBeenCalled();
+	});
+
+	it('stores the document and then attaches it', async () => {
+		await uploadingAndAttaching();
+
+		expect(apiRequest.mock.calls[1][2]).toBe(`/schedules/credit/${SCHEDULE}/files/attach`);
+		expect(apiRequest.mock.calls[1][4]).toEqual([FILE_ID]);
+	});
+
+	// The confirmation of Schedule - File applies here too: the attach answers 204
+	// and says nothing about what it did, so the files are read back.
+	it('reads the files back, exactly as Attach does on its own', async () => {
 		const items = await uploadingAndAttaching();
 
-		expect(apiRequest.mock.calls[1][1]).toBe('GET');
+		expect(apiRequest.mock.calls[2][2]).toBe(`/schedules/credit/${SCHEDULE}/files`);
 		expect(items[0].json).toMatchObject({ fileId: FILE_ID, scheduleId: SCHEDULE, attached: true });
 	});
 
@@ -286,9 +307,12 @@ describe('executeFile — Upload and Attach', () => {
 	 * to find the first one afterwards.
 	 */
 	it('says the file did go up when it is the attaching that failed', async () => {
-		apiRequest.mockImplementation(async (...args: unknown[]) =>
-			(args[1] as string) === 'POST' ? undefined : { items: [], count: 0 },
-		);
+		apiRequest.mockImplementation(async (...args: unknown[]) => {
+			if ((args[1] as string) === 'POST') return undefined;
+			return (args[2] as string).endsWith('/files')
+				? { items: [], count: 0 }
+				: { scheduleId: SCHEDULE, type: 'debit' };
+		});
 
 		const failure = uploadingAndAttaching();
 

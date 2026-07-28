@@ -5,6 +5,7 @@ import type { INiboUpload } from '../../transport/request';
 import { niboDownloadRequest, niboUploadRequest } from '../../transport/request';
 import { attachStoredFile } from '../scheduleFile/execute';
 import { recordId, requestInterval } from '../shared/options';
+import { requireSchedule } from '../shared/schedule';
 
 /** The one route that stores a document. There is no `GET` beside it — both `GET /files` and `GET /files/{id}` are 404. */
 const FILES = '/files';
@@ -112,18 +113,22 @@ async function uploadFile(this: IExecuteFunctions, itemIndex: number): Promise<I
  * route that lists the files of an organization, so it cannot even be found
  * again to be tidied away.
  *
- * **The order matters twice.** The schedule is read before the upload, so a
- * blank ID never strands a stored file. And if the attaching fails after the
- * upload succeeded, the failure says the file went up and names it — decision 6
- * of the plan, and the lesson the 0.10.0 settlement paid for: the sentence a
- * half-done operation ends with is what decides whether the workflow runs it
- * again. Here a second run would store the same document twice.
+ * **The order matters twice.** The schedule is checked before the upload — not
+ * merely read off the form, actually asked of the API — so a schedule that does
+ * not exist never strands a document in storage. And if the attaching fails
+ * after the upload succeeded, the failure says the file went up and names it:
+ * decision 6 of the plan, and the lesson the 0.10.0 settlement paid for, which
+ * is that the sentence a half-done operation ends with decides whether the
+ * workflow runs it again. Here a second run would store the same document
+ * twice.
  */
 async function uploadAndAttach(
 	this: IExecuteFunctions,
 	itemIndex: number,
 ): Promise<IDataObject> {
 	const scheduleId = recordId.call(this, 'scheduleId', itemIndex);
+	await requireSchedule.call(this, itemIndex, scheduleId, 'Nothing was uploaded.');
+
 	const stored = await uploadFile.call(this, itemIndex);
 	const fileId = String(stored.fileId ?? '');
 
@@ -135,7 +140,7 @@ async function uploadAndAttach(
 			`The file went up as ${fileId}, but attaching it to the schedule ${scheduleId} did not work`,
 			{
 				itemIndex,
-				description: `**Do not send it again**: the document is stored, and a second run would store a second copy of it. What failed is the second of the two calls, and the likeliest reason is that the schedule does not exist — this API answers the attach with 204 either way, so the node reads the schedule back rather than believing it. Attach ${fileId} with Schedule - File · Attach once the right Schedule ID is known, or delete it with Schedule - File · Delete. Nibo said: ${(error as Error).message}`,
+				description: `**Do not send it again**: the document is stored, and a second run would store a second copy of it. The schedule was checked before the upload and it does exist, so what failed is the attach itself or the reading that confirms it. Attach ${fileId} with Schedule - File · Attach, or delete it with Schedule - File · Delete — those are the only two ways back to it, because no route of this API lists the files of an organization. Nibo said: ${(error as Error).message}`,
 			},
 		);
 	}

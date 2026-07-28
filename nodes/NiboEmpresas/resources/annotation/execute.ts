@@ -3,23 +3,7 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboApiRequest } from '../../transport/request';
 import { recordId, requestInterval } from '../shared/options';
-
-/**
- * One route for both kinds of schedule, spelled "credit" — the same universality
- * as the get-by-id and as the attachments. `/schedules/debit/{id}/annotations`
- * is a 404 whatever the ID.
- */
-function schedulePath(scheduleId: string): string {
-	return `/schedules/credit/${encodeURIComponent(scheduleId)}`;
-}
-
-/**
- * The two answers on the check that are about the caller rather than about the
- * schedule. A rejected token and a rate limit have to keep their own sentence:
- * reading either as "there is no such schedule" would send somebody looking for
- * a record that is exactly where they left it.
- */
-const NOT_ABOUT_THE_SCHEDULE = ['401', '429'];
+import { requireSchedule, schedulePath } from '../shared/schedule';
 
 /**
  * Writing a note on a schedule.
@@ -99,7 +83,7 @@ async function createAnnotation(
 		});
 	}
 
-	await requireSchedule.call(this, itemIndex, scheduleId);
+	await requireSchedule.call(this, itemIndex, scheduleId, 'Nothing was written.');
 
 	const answer = await niboApiRequest.call(
 		this,
@@ -111,43 +95,6 @@ async function createAnnotation(
 	);
 
 	return { scheduleId, annotationId: annotationIdOf(answer), body };
-}
-
-/**
- * The check, and the one place in this node where a failed read is turned into a
- * refusal to write.
- *
- * A schedule that is not there answers **HTTP 500** rather than 404 — measured
- * on 2026-07-28, after deleting a probe schedule and reading it again — so the
- * status alone cannot be trusted to mean "missing". What can be trusted is the
- * other direction: a 401 and a 429 are about the caller, never about the
- * schedule, and they keep their own sentence.
- */
-async function requireSchedule(
-	this: IExecuteFunctions,
-	itemIndex: number,
-	scheduleId: string,
-): Promise<void> {
-	try {
-		await niboApiRequest.call(this, itemIndex, 'GET', schedulePath(scheduleId));
-	} catch (error) {
-		const httpCode = (error as NodeApiError).httpCode ?? '';
-
-		if (NOT_ABOUT_THE_SCHEDULE.includes(httpCode)) {
-			throw error instanceof NodeApiError
-				? error
-				: new NodeOperationError(this.getNode(), error as Error, { itemIndex });
-		}
-
-		throw new NodeOperationError(
-			this.getNode(),
-			`Nibo has no schedule with the ID ${scheduleId}`,
-			{
-				itemIndex,
-				description: `**Nothing was written.** The node reads the schedule before writing because an annotation cannot be checked afterwards: this API accepts one on a schedule that does not exist, answers 200 with an ID, and that note can never be read, edited or deleted by anybody. A schedule that is gone answers this read with HTTP 500 rather than 404, which is why the sentence below is a server one. Nibo said: ${(error as Error).message}`,
-			},
-		);
-	}
 }
 
 /**
