@@ -5,6 +5,7 @@ import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
+import { onlyTheDay } from '../schedule/normalize';
 import { collectionFilterFieldTypes } from './description';
 
 /**
@@ -91,6 +92,11 @@ export async function executeCollection(
 			} else if (operation === 'get') {
 				returnData.push({
 					json: await oneCollection.call(this, i),
+					pairedItem: { item: i },
+				});
+			} else if (operation === 'create') {
+				returnData.push({
+					json: await issueCollection.call(this, i),
 					pairedItem: { item: i },
 				});
 			} else if (operation === 'listProfiles') {
@@ -192,4 +198,109 @@ async function collectionProfiles(
 	}
 
 	return profiles;
+}
+
+/**
+ * The charge that stands on a schedule right now, if there is one.
+ *
+ * Cancelled ones do not count, and that is deliberate. Measured: a second charge
+ * on a schedule that already carries a live one is refused with HTTP 500 *"Não é
+ * possível criar mais de uma cobrança por agendamento"*. Whether the API allows
+ * one after the first was **cancelled** was never measured — so the node does
+ * not guess in either direction: it stays quiet and lets the API answer.
+ */
+const CANCELLED = -1;
+
+async function standingCharge(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	scheduleId: string,
+): Promise<IDataObject | undefined> {
+	const { records } = await niboListRequest.call(this, itemIndex, COLLECTIONS, COLLECTION_ORDER_BY, {
+		returnAll: true,
+		limit: 0,
+		filter: `scheduleId eq ${scheduleId}`,
+		// A schedule carries at most one charge, so there is nothing to page and
+		// nothing for the incomplete-scan check to compare against.
+		failOnIncomplete: false,
+	});
+
+	return records.find((record) => (record.status as IDataObject | undefined)?.code !== CANCELLED);
+}
+
+/**
+ * Issues a charge from a receivable.
+ *
+ * **What the node refuses first** is the one refusal the API already makes, said
+ * earlier and in English, naming the charge that is in the way — because the
+ * next decision is whether to cancel that one, and its ID is what that needs.
+ *
+ * **What the node does not promise** is that anything was sent. The two delivery
+ * choices produce an identical record — both born *Ativação pendente*, both *Não
+ * entregue*, measured immediately and four seconds later — so a re-read cannot
+ * tell them apart, and neither can this handler.
+ *
+ * **Why it reads back anyway:** the `url`. A charge nobody can link to is a
+ * charge nobody can send, and the creation answers a bare GUID and nothing else.
+ * That reading is enrichment rather than confirmation, so when it comes back
+ * empty the operation still succeeds — failing it would tell a workflow to try
+ * again, and trying again issues a second charge.
+ */
+async function issueCollection(
+	this: IExecuteFunctions,
+	itemIndex: number,
+): Promise<IDataObject> {
+	const scheduleId = recordId.call(this, 'scheduleId', itemIndex);
+	const existing = await standingCharge.call(this, itemIndex, scheduleId);
+
+	if (existing !== undefined) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`The schedule ${scheduleId} already carries the charge ${String(existing.id ?? '')}`,
+			{
+				itemIndex,
+				description:
+					'Nothing was sent. This API allows one charge per schedule and refuses the second with "Não é possível criar mais de uma cobrança por agendamento". Cancel the existing one with Collection - Cancel and issue again, or leave it as it is — its ID is in the message above, and Collection - Get reads it.',
+			},
+		);
+	}
+
+	const body: IDataObject = {
+		// Three keys in PascalCase and one not, which is the API's own spelling
+		// rather than a slip here: the creation of a charge is the one body of
+		// this API written that way.
+		ScheduleId: scheduleId,
+		DueDate: onlyTheDay(String(this.getNodeParameter('dueDate', itemIndex, '') ?? '')),
+		CollectionProfileId: String(
+			this.getNodeParameter('collectionProfileId', itemIndex, '') ?? '',
+		).trim(),
+		deliveryType: Number(this.getNodeParameter('deliveryType', itemIndex, 1)),
+	};
+
+	const answer = await niboApiRequest.call(this, itemIndex, 'POST', COLLECTIONS, {}, body);
+	const collectionId = createdId(answer);
+
+	const issued = await niboListRequest.call(this, itemIndex, COLLECTIONS, COLLECTION_ORDER_BY, {
+		returnAll: false,
+		limit: 1,
+		filter: `id eq ${collectionId}`,
+		failOnIncomplete: false,
+	});
+
+	return issued.records[0] ?? { collectionId, scheduleId, issued: true };
+}
+
+/**
+ * The ID out of a creation answer — a GUID that arrives as a JSON string, so it
+ * comes back from the helper already unquoted. The `{data: …}` shape is the
+ * rearguard, as everywhere else in this package.
+ */
+function createdId(answer: unknown): string {
+	if (typeof answer === 'string') {
+		return answer.trim();
+	}
+
+	const data = (answer as IDataObject)?.data;
+
+	return typeof data === 'string' ? data.trim() : '';
 }

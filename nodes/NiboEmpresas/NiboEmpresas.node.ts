@@ -50,6 +50,7 @@ import {
 	collectionResources,
 } from './resources/collection/description';
 import { executeCollection } from './resources/collection/execute';
+import { loadCollectionProfiles } from './resources/collection/load';
 import {
 	loadCategoryGroups,
 	loadCategorySubgroups,
@@ -360,6 +361,7 @@ export class NiboEmpresas implements INodeType {
 		loadOptions: {
 			loadBankAccounts,
 			loadCategoryGroups,
+			loadCollectionProfiles,
 			loadCategorySubgroups,
 			loadCostCenters,
 			loadScheduleCategories,

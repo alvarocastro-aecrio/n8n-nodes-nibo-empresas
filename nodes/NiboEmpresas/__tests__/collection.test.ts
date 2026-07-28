@@ -311,6 +311,159 @@ describe('executeCollection — Get Many Profiles', () => {
 	});
 });
 
+/**
+ * Issuing a charge — the one operation of this node whose mistake reaches a
+ * person who never touched n8n.
+ */
+describe('executeCollection — Create', () => {
+	const PROFILE = '62a99d20-3cfa-439f-ae33-e616f7429527';
+	const NEW_ID = '21873045-3c18-4b2e-b590-c64e1e8b88a2';
+
+	function creating(parameters: IDataObject = {}) {
+		return executeCollection.call(
+			context({
+				scheduleId: SCHEDULE,
+				dueDate: '2026-08-04',
+				collectionProfileId: PROFILE,
+				...parameters,
+			}),
+			'collection',
+			'create',
+		);
+	}
+
+	/** No charge on the schedule yet, the POST answers a quoted GUID */
+	function scheduleIsFree() {
+		listRequest.mockResolvedValue({ records: [], count: 0 });
+		apiRequest.mockResolvedValue(NEW_ID);
+	}
+
+	it('checks the schedule for a charge before issuing anything', async () => {
+		scheduleIsFree();
+
+		await creating();
+
+		expect(listRequest.mock.calls[0][1]).toBe('/public/collections');
+		expect(optionsSentToTransport().filter).toBe(`scheduleId eq ${SCHEDULE}`);
+	});
+
+	it('sends the body the API wants, three keys in PascalCase and one not', async () => {
+		scheduleIsFree();
+
+		await creating();
+
+		const [, method, endpoint, , body] = apiRequest.mock.calls[0];
+		expect(method).toBe('POST');
+		expect(endpoint).toBe('/public/collections');
+		expect(body).toEqual({
+			ScheduleId: SCHEDULE,
+			DueDate: '2026-08-04',
+			CollectionProfileId: PROFILE,
+			deliveryType: 1,
+		});
+	});
+
+	/**
+	 * The default is the one that sends nothing. `deliveryType: 0` makes Nibo
+	 * **e-mail the boleto to the payer** and start the reminder sequence — an
+	 * action that reaches the customer of the customer. Same rule as Fail on
+	 * Incomplete Results and Allow Moving the Lock Back: when one of the answers
+	 * goes outside, the defence is what happens when nobody chose anything.
+	 */
+	it('holds the charge by default instead of sending it', async () => {
+		scheduleIsFree();
+
+		await creating();
+
+		expect((apiRequest.mock.calls[0][4] as IDataObject).deliveryType).toBe(1);
+	});
+
+	it('sends it when that is what was chosen', async () => {
+		scheduleIsFree();
+
+		await creating({ deliveryType: 0 });
+
+		expect((apiRequest.mock.calls[0][4] as IDataObject).deliveryType).toBe(0);
+	});
+
+	/**
+	 * Measured: the second charge on the same schedule is refused with HTTP 500
+	 * *"Não é possível criar mais de uma cobrança por agendamento"*. The node says
+	 * it first, in English, and names the charge that is in the way — which is
+	 * what somebody needs to decide whether to cancel that one or drop this.
+	 */
+	it('refuses a schedule that already carries a charge, without sending anything', async () => {
+		listRequest.mockResolvedValue({ records: [A_COLLECTION], count: 1 });
+
+		const failure = creating();
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		await expect(failure).rejects.toThrow(new RegExp(COLLECTION));
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * And it only refuses on a charge that is still standing. Whether the API
+	 * allows a second one after the first was cancelled was never measured — so
+	 * the node does not guess: it sends, and lets the API answer.
+	 */
+	it('lets it through when the only charge there was cancelled', async () => {
+		listRequest.mockResolvedValue({
+			records: [{ ...A_COLLECTION, status: { code: -1, description: 'Cancelada' } }],
+			count: 1,
+		});
+		apiRequest.mockResolvedValue(NEW_ID);
+
+		await creating();
+
+		expect(apiRequest).toHaveBeenCalled();
+	});
+
+	it('reads the bare GUID out of the quoted string the API answers', async () => {
+		scheduleIsFree();
+
+		const items = await creating();
+
+		expect(items[0].json.id ?? items[0].json.collectionId).toBe(NEW_ID);
+	});
+
+	/**
+	 * The record comes back for one reason, and it is not confirmation — the two
+	 * delivery choices are indistinguishable on a re-read, so confirming proves
+	 * nothing. It is the **url**: a charge nobody can link to is a charge nobody
+	 * can send.
+	 */
+	it('reads the charge back so the caller gets the link', async () => {
+		listRequest
+			.mockResolvedValueOnce({ records: [], count: 0 })
+			.mockResolvedValueOnce({ records: [{ ...A_COLLECTION, id: NEW_ID }], count: 1 });
+		apiRequest.mockResolvedValue(NEW_ID);
+
+		const items = await creating();
+
+		expect(items[0].json.url).toBe(A_COLLECTION.url);
+	});
+
+	// And when that reading fails, the charge still went out. Failing the item
+	// would tell a workflow to try again, and trying again issues a second one.
+	it('still succeeds, naming the charge, when the read-back finds nothing', async () => {
+		listRequest.mockResolvedValue({ records: [], count: 0 });
+		apiRequest.mockResolvedValue(NEW_ID);
+
+		const items = await creating();
+
+		expect(items[0].json).toMatchObject({ collectionId: NEW_ID, issued: true });
+	});
+
+	it('refuses an empty schedule ID before anything is read or written', async () => {
+		const failure = creating({ scheduleId: '  ' });
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		expect(listRequest).not.toHaveBeenCalled();
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+});
+
 describe('NiboEmpresas — what the Collection screen offers', () => {
 	const description = new NiboEmpresas().description;
 
@@ -421,6 +574,28 @@ describe('NiboEmpresas — what the Collection screen offers', () => {
 
 		expect(notice?.type).toBe('notice');
 		expect(notice?.displayName).toMatch(/without a token|no token/i);
+	});
+
+	// The same guard every other loaded list has: a method named on a field and
+	// not declared on the node is an empty box with no way to tell why.
+	it('names a list the node actually declares', () => {
+		const method = property('collectionProfileId')?.typeOptions?.loadOptionsMethod as string;
+
+		expect(Object.keys(new NiboEmpresas().methods.loadOptions)).toContain(method);
+	});
+
+	it('offers Delivery with Hold for Review as the default', () => {
+		const delivery = property('deliveryType');
+
+		expect(delivery?.default).toBe(1);
+		expect((delivery?.options as INodePropertyOptions[]).map((one) => one.value)).toEqual([1, 0]);
+	});
+
+	it('warns before the button that one of the two answers e-mails the payer', () => {
+		const notice = property('createNotice');
+
+		expect(notice?.type).toBe('notice');
+		expect(notice?.displayName).toMatch(/e-mails? the boleto|reminder/i);
 	});
 
 	it('refuses nothing on this screen that the API accepts', () => {

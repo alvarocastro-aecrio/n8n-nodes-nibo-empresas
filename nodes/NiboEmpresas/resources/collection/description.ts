@@ -59,6 +59,13 @@ export const collectionOperations: INodeProperties[] = [
 				description: 'Retrieve the charges of the organization',
 			},
 			{
+				name: 'Create',
+				value: 'create',
+				action: 'Create a collection',
+				description:
+					'Issue a charge from a receivable, choosing whether Nibo sends it to the payer or holds it for review',
+			},
+			{
 				name: 'Get Many Profiles',
 				value: 'listProfiles',
 				action: 'Get many collection profiles',
@@ -160,7 +167,112 @@ export const collectionFilterFieldTypes = filterFieldTypes(FILTER_FIELDS);
 const LIST_NOTICE =
 	'The url on each of these records is public: anyone holding it opens the payment page without a token. Treat it as the charge itself, not as a reference to it.';
 
+/**
+ * The sentence that has to be read before the button, because one of the two
+ * answers below leaves the building. Measured on 2026-07-28: `deliveryType: 0`
+ * is the "régua de cobrança" — Nibo mails the boleto to the payer and starts the
+ * automatic reminders.
+ */
+const CREATE_NOTICE =
+	'Delivery decides whether this reaches the payer. Send It starts Nibo\'s reminder sequence and e-mails the boleto to them, which is an action you cannot take back; Hold for Review keeps it on the Nibo screen and sends nothing. The node cannot confirm which happened afterwards: both look identical when read back.';
+
 export const collectionFields: INodeProperties[] = [
+	{
+		displayName: CREATE_NOTICE,
+		name: 'createNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: [COLLECTION],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Schedule ID',
+		name: 'scheduleId',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: '04a6a2a9-ef71-4733-9ac7-33737ac4d40c',
+		description:
+			'The receivable to charge for. The amount and the description of the charge come from it — they are not asked here. A schedule carries at most one charge: the node checks before issuing and names the one already there.',
+		displayOptions: {
+			show: {
+				resource: [COLLECTION],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Due Date',
+		name: 'dueDate',
+		type: 'dateTime',
+		typeOptions: {
+			// A charge falls due on a day. The API takes YYYY-MM-DD and there is no
+			// hour in it, so a clock would offer a decision that does not exist — and
+			// one with a wrong answer, since midnight in Brasilia is the day before
+			// in UTC.
+			dateOnly: true,
+		},
+		required: true,
+		default: '',
+		description: 'The day the charge falls due, usually the same as the schedule it comes from',
+		displayOptions: {
+			show: {
+				resource: [COLLECTION],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Collection Profile Name or ID',
+		name: 'collectionProfileId',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'loadCollectionProfiles',
+			// The way back from the per-item mode, where the list refuses to load.
+			loadOptionsDependsOn: ['authMode'],
+		},
+		required: true,
+		default: '',
+		description:
+			'Which profile issues the charge — it is what ties the bank provider to it, and the API refuses a creation without one. An organization with no profile cannot issue charges at all. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: {
+			show: {
+				resource: [COLLECTION],
+				operation: ['create'],
+			},
+		},
+	},
+	{
+		displayName: 'Delivery',
+		name: 'deliveryType',
+		type: 'options',
+		options: [
+			{
+				name: 'Hold for Review',
+				value: 1,
+				description: 'The charge waits on the Nibo screen and nothing is sent to anyone',
+			},
+			{
+				name: 'Send It',
+				value: 0,
+				description:
+					'Nibo e-mails the boleto to the payer and starts the automatic reminder sequence',
+			},
+		],
+		default: 1,
+		description:
+			'Whether Nibo delivers the charge to the payer or keeps it for someone to release. It is write-only: the record reads the same either way, so nothing downstream can tell which was chosen.',
+		displayOptions: {
+			show: {
+				resource: [COLLECTION],
+				operation: ['create'],
+			},
+		},
+	},
 	{
 		displayName: LIST_NOTICE,
 		name: 'listNotice',
