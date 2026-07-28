@@ -347,7 +347,9 @@ describe('executeCollection — Create', () => {
 		expect(optionsSentToTransport().filter).toBe(`scheduleId eq ${SCHEDULE}`);
 	});
 
-	it('sends the body the API wants, three keys in PascalCase and one not', async () => {
+	// Three keys, all PascalCase — the fourth one the API accepts is optional and
+	// is only sent when somebody picks it (see the correction below).
+	it('sends the body the API wants, in the PascalCase it wants', async () => {
 		scheduleIsFree();
 
 		await creating();
@@ -359,31 +361,37 @@ describe('executeCollection — Create', () => {
 			ScheduleId: SCHEDULE,
 			DueDate: '2026-08-04',
 			CollectionProfileId: PROFILE,
-			deliveryType: 1,
 		});
 	});
 
 	/**
-	 * The default is the one that sends nothing. `deliveryType: 0` makes Nibo
-	 * **e-mail the boleto to the payer** and start the reminder sequence — an
-	 * action that reaches the customer of the customer. Same rule as Fail on
-	 * Incomplete Results and Allow Moving the Lock Back: when one of the answers
-	 * goes outside, the defence is what happens when nobody chose anything.
+	 * 🔴 **The correction of 0.13.1, and it was shipped wrong.**
+	 *
+	 * 0.13.0 offered this field as *Send It* against *Hold for Review* and stated
+	 * on screen what each one did. Neither label was measured: they were copied
+	 * from this project's own `payloads.md`, which Nibo documents nowhere. The
+	 * only measurement taken — two charges, one of each value — found **no
+	 * difference at all**, and that is written in the plan.
+	 *
+	 * A label that says "nothing is sent" is the dangerous half of the pair: it
+	 * invites somebody to issue a charge believing it stays put. So the field
+	 * stops claiming, and by default it is **not sent at all**, which leaves Nibo
+	 * doing whatever it does on its own.
 	 */
-	it('holds the charge by default instead of sending it', async () => {
+	it('does not send deliveryType at all unless one was chosen', async () => {
 		scheduleIsFree();
 
 		await creating();
 
-		expect((apiRequest.mock.calls[0][4] as IDataObject).deliveryType).toBe(1);
+		expect(apiRequest.mock.calls[0][4]).not.toHaveProperty('deliveryType');
 	});
 
-	it('sends it when that is what was chosen', async () => {
+	it.each([0, 1])('sends the raw value %s when that is what was chosen', async (chosen) => {
 		scheduleIsFree();
 
-		await creating({ deliveryType: 0 });
+		await creating({ deliveryType: chosen });
 
-		expect((apiRequest.mock.calls[0][4] as IDataObject).deliveryType).toBe(0);
+		expect((apiRequest.mock.calls[0][4] as IDataObject).deliveryType).toBe(chosen);
 	});
 
 	/**
@@ -661,18 +669,40 @@ describe('NiboEmpresas — what the Collection screen offers', () => {
 		expect(Object.keys(new NiboEmpresas().methods.loadOptions)).toContain(method);
 	});
 
-	it('offers Delivery with Hold for Review as the default', () => {
+	/**
+	 * The field names the two raw values and nothing else, because nothing else
+	 * about them was ever established — see the correction on the handler test.
+	 */
+	it('offers the delivery type as the raw values, defaulting to not sending it', () => {
 		const delivery = property('deliveryType');
 
-		expect(delivery?.default).toBe(1);
-		expect((delivery?.options as INodePropertyOptions[]).map((one) => one.value)).toEqual([1, 0]);
+		expect(delivery?.default).toBe('default');
+		expect((delivery?.options as INodePropertyOptions[]).map((one) => one.value)).toEqual([
+			'default',
+			0,
+			1,
+		]);
 	});
 
-	it('warns before the button that one of the two answers e-mails the payer', () => {
+	it('never labels either value as sending or holding, which was never measured', () => {
+		const labels = (property('deliveryType')?.options as INodePropertyOptions[])
+			.map((one) => `${one.name} ${one.description ?? ''}`)
+			.join(' ');
+
+		expect(labels).not.toMatch(/hold for review|sends nothing|e-mails the boleto/i);
+	});
+
+	/**
+	 * The warning that replaced the wrong one. What is measured is that charges
+	 * do reach a Delivered state on their own — so the sentence that matters is
+	 * "do not count on any setting here to keep a boleto in".
+	 */
+	it('warns that issuing can reach the payer, and that nothing here prevents it', () => {
 		const notice = property('createNotice');
 
 		expect(notice?.type).toBe('notice');
-		expect(notice?.displayName).toMatch(/e-mails? the boleto|reminder/i);
+		expect(notice?.displayName).toMatch(/deliver/i);
+		expect(notice?.displayName).toMatch(/not established|could not be|no setting/i);
 	});
 
 	/**

@@ -510,3 +510,54 @@ emitida com Delivery retido, cancelada, e o agendamento apagado — conferido.
 campo, os filtros — `status/code` incluído —, o erro de digitação, a criação, a regra de uma
 cobrança por agendamento e a rota de cancelar estão todos medidos. A fatia 1 pode começar com o
 OK do Alvaro.
+
+---
+
+## 9. O que a 0.13.1 corrigiu — 2026-07-28, depois de publicada
+
+O Alvaro leu a tela e reparou: *"Hold for Review não muda nada; acho que essa opção não existe,
+nunca vi"*. Estava certo, e o defeito é de origem.
+
+### 9.1 🔴 O significado do `deliveryType` nunca foi medido — por mim nem por ninguém
+
+A frase que foi para a tela — *0 envia por e-mail, 1 retém para conferência* — saiu do
+`payloads.md` **deste projeto**. Não do Nibo: os documentos raspados da API não citam o campo em
+lugar nenhum, e a documentação oficial também não. E a 1.15 deste mesmo plano registra que a
+**única medição feita não distinguiu os dois valores**.
+
+Ou seja: eu escrevi na tela uma afirmação que o meu próprio documento dizia não ter sido
+verificada. É exatamente o erro que a 1.1 avisa — *payload conhecido não é comportamento
+medido* — cometido três seções depois do aviso.
+
+### 9.2 O que a investigação achou, e o que ela não achou
+
+**Não existe, em lugar nenhum da API:** nada sobre reter para conferência, nada sobre enviar N
+dias antes do vencimento. Nem no perfil de cobrança (que carrega multa, juros, período de juros
+e forma de emissão), nem no agendamento (30 campos), nem no registro da cobrança (18 campos).
+`deliveryType`, `sendType`, `daysBeforeDueDate` e `deliveryDays` são todos *"Could not find a
+property"*.
+
+**A entrega acontece, isso é medido.** `deliveryStatus` chega a **`1` Entregue** e depois a
+**`2` Visualizada** — e o `1` é um terceiro código, que não estava na lista deste projeto.
+
+**As três cobranças que a sondagem criou ficaram todas `Não entregue`**, inclusive a de
+`deliveryType: 0`, que era a que supostamente envia. ⚠️ **Isso não prova que o campo é inerte**:
+as três foram canceladas em segundos, então a entrega pode nunca ter tido chance. Fica
+inconclusivo, e inconclusivo é o que vai escrito.
+
+### 9.3 O que mudou no node
+
+- O campo passa a se chamar **Delivery Type**, com os valores oferecidos **crus** — *Leave It to
+  Nibo*, *Type 0*, *Type 1* — e nenhum rótulo dizendo o que fazem.
+- O padrão é **não mandar o campo**, deixando o Nibo com o comportamento dele. A 0.13.0 mandava
+  `1` por padrão, sob um rótulo que prometia que nada seria entregue.
+- O notice deixou de prometer e passou a avisar: emitir **pode** entregar ao pagador, isso é
+  medido, e **nenhuma configuração desta tela foi provada capaz de impedir**.
+
+### 9.4 O que ainda não se sabe, e como se saberia
+
+A pergunta do Alvaro — *essa opção seria deliveryType 0 ou 1?* — continua sem resposta. O
+experimento que a responderia é direto e não foi feito: emitir duas cobranças, uma com cada
+valor, e **deixá-las de pé por alguns minutos** em vez de cancelar na hora, olhando o
+`deliveryStatus` de cada uma. Custa duas cobranças de verdade na empresa de produção, com envio
+possível ao contato de teste — decisão do Alvaro.

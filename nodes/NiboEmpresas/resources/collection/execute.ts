@@ -279,8 +279,17 @@ async function issueCollection(
 		CollectionProfileId: String(
 			this.getNodeParameter('collectionProfileId', itemIndex, '') ?? '',
 		).trim(),
-		deliveryType: Number(this.getNodeParameter('deliveryType', itemIndex, 1)),
 	};
+
+	// Sent only when somebody picked a number. The field is optional in the API,
+	// undocumented by Nibo, and the two values this project tried made no visible
+	// difference — so the default is to not touch it, and let Nibo do whatever it
+	// does when nobody says. 0.13.0 sent `1` by default under a label promising
+	// that nothing would be delivered, which was a promise nobody had checked.
+	const delivery = this.getNodeParameter('deliveryType', itemIndex, 'default');
+	if (delivery !== 'default' && delivery !== '' && delivery !== undefined) {
+		body.deliveryType = Number(delivery);
+	}
 
 	const answer = await niboApiRequest.call(this, itemIndex, 'POST', COLLECTIONS, {}, body);
 	const collectionId = createdId(answer);

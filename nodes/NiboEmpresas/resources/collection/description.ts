@@ -186,13 +186,21 @@ const LIST_NOTICE =
 	'The url on each of these records is public: anyone holding it opens the payment page without a token. Treat it as the charge itself, not as a reference to it.';
 
 /**
- * The sentence that has to be read before the button, because one of the two
- * answers below leaves the building. Measured on 2026-07-28: `deliveryType: 0`
- * is the "régua de cobrança" — Nibo mails the boleto to the payer and starts the
- * automatic reminders.
+ * The sentence that has to be read before the button — and it is the second one
+ * written for this spot, because the first was wrong.
+ *
+ * 0.13.0 said *Send It* e-mails the boleto and *Hold for Review* sends nothing.
+ * Neither was measured: both came from this project's own `payloads.md`, which
+ * Nibo documents nowhere, and the one measurement taken found the two values
+ * indistinguishable. Saying "nothing is sent" about a setting nobody verified is
+ * the worst of the available mistakes, so it is gone.
+ *
+ * What **is** measured: a charge reaches `deliveryStatus` *Entregue* and then
+ * *Visualizada* on its own. Delivery happens. What triggers it was not
+ * established.
  */
 const CREATE_NOTICE =
-	'Delivery decides whether this reaches the payer. Send It starts Nibo\'s reminder sequence and e-mails the boleto to them, which is an action you cannot take back; Hold for Review keeps it on the Nibo screen and sends nothing. The node cannot confirm which happened afterwards: both look identical when read back.';
+	'Issuing a charge can make Nibo deliver it to the payer: charges in this API do reach a Delivered state, and then a Viewed one, on their own. What controls that could not be established here — the delivery type below is undocumented, and the two values this project tried made no visible difference. Do not count on any setting on this screen to keep a boleto from going out.';
 
 /**
  * Three things nobody would guess, all three measured on 2026-07-28.
@@ -271,25 +279,32 @@ export const collectionFields: INodeProperties[] = [
 		},
 	},
 	{
-		displayName: 'Delivery',
+		// Named after the API's own field rather than after a meaning, because the
+		// meaning is what this project does not have. The two values are offered
+		// bare, and the default sends nothing at all.
+		displayName: 'Delivery Type',
 		name: 'deliveryType',
 		type: 'options',
 		options: [
 			{
-				name: 'Hold for Review',
-				value: 1,
-				description: 'The charge waits on the Nibo screen and nothing is sent to anyone',
+				name: 'Leave It to Nibo',
+				value: 'default',
+				description: 'The field is not sent, so Nibo does whatever it does when nobody says',
 			},
 			{
-				name: 'Send It',
+				name: 'Type 0',
 				value: 0,
-				description:
-					'Nibo e-mails the boleto to the payer and starts the automatic reminder sequence',
+				description: 'The value every workflow written by hand until now has sent',
+			},
+			{
+				name: 'Type 1',
+				value: 1,
+				description: 'The other value the API accepts without complaining',
 			},
 		],
-		default: 1,
+		default: 'default',
 		description:
-			'Whether Nibo delivers the charge to the payer or keeps it for someone to release. It is write-only: the record reads the same either way, so nothing downstream can tell which was chosen.',
+			'An optional field of the API, undocumented by Nibo and write-only — it never comes back on the record. This project measured one charge of each value and found no difference between them, so the two are offered as the numbers they are rather than under names that would be a guess. Left alone it is not sent.',
 		displayOptions: {
 			show: {
 				resource: [COLLECTION],
