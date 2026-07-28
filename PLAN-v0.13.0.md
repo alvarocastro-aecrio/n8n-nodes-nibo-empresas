@@ -16,10 +16,12 @@ contrato é por dependência técnica, e nenhuma das duas fatias que sobraram de
 
 **Por que 0.13.0:** capacidade nova é minor, que é a regra escrita do projeto.
 
-**🔴 Fora de escopo, e não por escolha: criar e cancelar cobrança.** A medição da seção 1.1
-mostrou que **não há como medir a escrita dentro das regras deste projeto**. Isso é o achado
-principal desta sondagem e está dissecado abaixo. A versão entrega **leitura**, que é
-exatamente o que roda em produção hoje.
+**🔴 Criar e cancelar cobrança: autorizado, ainda não medido.** A cobaia **não emite** (1.1), e
+por isso a escrita ficaria fora. Em 2026-07-28 o Alvaro abriu uma exceção explícita à regra
+inviolável 3 — emitir cobranças de R$ 10 numa empresa de produção, sobre um contato de teste no
+nome dele. **A medição não aconteceu**: o gate de permissão do ambiente barrou o script de
+escrita, corretamente, e não se contorna isso por outro caminho. Até que ela aconteça a versão
+entrega **leitura**, que é exatamente o que roda em produção hoje. Ver a decisão 2 da seção 7.
 
 **Também fora de escopo:** NFS-e (fatia 7) e os demais auxiliares (Banks, Users,
 Organizations) — ver a decisão 3 em aberto, na seção 7.
@@ -28,10 +30,16 @@ Organizations) — ver a decisão 3 em aberto, na seção 7.
 
 ## 1. Medições — o que a API respondeu
 
-Sondagem de **2026-07-28, na cobaia, e inteiramente de leitura**: nenhum `POST`, nenhum
-`DELETE`, nenhuma escrita de nenhum tipo saiu. Emitir cobrança é ação voltada para fora — o
-Nibo manda o boleto por e-mail ao tomador —, então a escrita não se sonda sem liberação, e
-acabou que nem com liberação daria (1.1).
+Duas fontes, ambas de **2026-07-28** e ambas **inteiramente de leitura** — nenhum `POST`,
+nenhum `DELETE`, nenhuma escrita de nenhum tipo saiu de nenhuma das duas:
+
+| Fonte | O que deu | Por quê |
+|---|---|---|
+| **Cobaia** | O **schema** (1.3) e as regras de consulta (1.4 a 1.8) | A coleção está vazia, mas a API valida a expressão contra o **tipo** |
+| **Empresa de produção**, com 5 cobranças de sonda de 2019 | O **registro de verdade** (1.3), os valores de `status` (1.5) e o link público (1.12) | Leitura em produção é permitida pela regra 3, que proíbe **escrita**. Autorizada explicitamente pelo Alvaro em 2026-07-28 |
+
+A segunda fonte existe porque a primeira não bastava, e ela **corrigiu uma conclusão da
+primeira** — ver 1.5, que é o achado mais importante desta seção.
 
 ### 1.1 🔴 A cobaia não emite cobrança, e é por isso que a escrita fica fora
 
@@ -49,24 +57,26 @@ O cerco fecha assim:
 | Caminho para medir a escrita | Por que não serve |
 |---|---|
 | Emitir na **cobaia** | Não há perfil, e criar um exige provedor bancário contratado |
-| Emitir numa **empresa real** | **Regra inviolável 3** — escrita só na cobaia. E o efeito sai para fora: boleto e e-mail ao cliente do cliente |
+| Emitir numa **empresa real** | **Regra inviolável 3** — escrita só na cobaia. Suspensa por exceção explícita do Alvaro em 2026-07-28, para R$ 10 sobre um contato de teste no nome dele; ver a decisão 2 da seção 7 |
 | Deduzir dos workflows | O corpo é conhecido (está no `payloads.md`), mas **payload conhecido não é comportamento medido** — é o erro que este projeto já pagou caro |
 
 Então a escrita não entra. Não é cautela: é que **não existe lugar onde medi-la**.
 
-### 1.2 A coleção da cobaia está vazia — o que isso deixou sem medir
+### 1.2 A coleção da cobaia está vazia — e foi a leitura em produção que fechou o buraco
 
 ```
-GET /public/collections?$top=5000  →  200  {"items":[],"count":0}
+GET /public/collections?$top=5000        (cobaia)     →  200  {"items":[],"count":0}
+GET /public/collections?$top=500         (produção)   →  200  count=5
 ```
 
-Sem um único registro, **três coisas ficaram por medir** e estão na seção 7 como pendência:
+Sem um único registro, três coisas não tinham como ser medidas na cobaia: o **formato do
+registro**, os valores de **`status`** e se os links são **públicos**. As cinco cobranças de
+sonda de 2019 da empresa de produção responderam as três — e a segunda derrubou uma conclusão
+que já estava escrita neste plano (1.5).
 
-- o **formato do registro** campo a campo, com os valores que cada um traz;
-- os valores de **`status`** (o MCP mostra *Ativa*, *Paga*, *Cancelada* — não confirmado aqui);
-- se os links **`url`** e **`pdf`** são públicos, como o `arquivos.nibo.com.br` da 0.12.0.
-
-O que **não** ficou por medir é o schema, e isso é a 1.3.
+**Lição que fica registrada:** o schema medido contra uma coleção vazia diz o que a API
+**aceita perguntar**, e não o que ela **devolve**. As duas coisas não coincidem aqui, e a 1.3
+mostra a diferença campo a campo.
 
 ### 1.3 O schema inteiro, medido com a coleção vazia
 
@@ -98,6 +108,24 @@ por isso. O resultado, de 33 nomes tentados:
 | `pdf` | primitivo | O boleto |
 | `status` | 🔴 **complexo** | Não compara — ver 1.5 |
 
+#### O registro que a API realmente devolve — e ele não é o mesmo conjunto
+
+Medido nos 5 registros da empresa de produção. **Dezoito campos**, e cinco deles não estavam
+em nenhuma lista de candidatos porque não havia como adivinhá-los:
+
+| Campo | Nota |
+|---|---|
+| `debtor` `{document, name}` | Quem deve — **complexo**, e filtra por `debtor/name` e `debtor/document` |
+| `beneficiary` `{document, name}` | Quem recebe — filtra por `beneficiary/name` |
+| `createUser` | O nome de quem emitiu, como texto |
+| `deliveryStatus` `{code, description}` | O ciclo de entrega do boleto: `0` *Não entregue*, `2` *Visualizada* |
+| `accountantIntegrationStatus` `{code, description}` | Integração contábil |
+
+E a assimetria que importa para o desenho: **`collectionProfileId` e `pdf` filtram mas quase
+nunca vêm no registro** — `pdf` apareceu em 1 dos 5 —, enquanto `debtor`, `beneficiary`,
+`createUser`, `deliveryStatus` e `accountantIntegrationStatus` vêm sempre e não estavam no
+schema tentado. O tipo que a API expõe ao `$filter` **não é** o DTO que ela devolve.
+
 **Não existem**, e valem estar escritos para ninguém tentar de novo: `organizationId`,
 `amount`, `paymentDate`, `paidDate`, `cancelDate`, `issueDate`, `isPaid`, `isCanceled`,
 `isActive`, `deliveryType`, `type`, `barcode`, `digitableLine`, `ourNumber`, `number`,
@@ -118,22 +146,34 @@ Respondem 200 como chave: `id`, `dueDate`, `value`, `scheduleId`, `createDate`,
 coleção vazia não houve como provar. `id` é a escolha pela mesma razão de sempre — é a única
 que é única.
 
-### 1.5 🔴 `status` existe, e não dá para filtrar por ele
+### 1.5 🔴 `status` **filtra** — e a primeira versão desta seção dizia o contrário
 
-É o campo pelo qual todo mundo quer filtrar — *me dê as cobranças em aberto* — e ele é um tipo
-complexo do .NET:
+**Esta é a correção mais importante do documento, e ela é minha.** A sondagem contra a coleção
+vazia tentou `status/id`, `status/name` e `status/value`, levou 500 *"Could not find a
+property"* nas três, e este plano concluiu *"status não é uma condição possível"*.
+
+**Faltou `status/code`.** Medido contra a empresa com dados:
 
 | Expressão | Resposta |
 |---|---|
-| `$orderby=status` | 500 *"must evaluate to a single value of primitive type"* |
-| `$filter=status eq 'Ativa'` | 500 *"A binary operator with incompatible types was detected"* |
-| `$filter=status eq 1` | 500, idem |
-| `$filter=status ne null` | 200 — e é a única coisa que ele aceita |
-| `$orderby=status/id` · `status/name` · `status/value` | 500 *"Could not find a property"* |
-| `$orderby=status/description` | 500 *"O Nibo se comportou de forma inesperada."* |
+| `$orderby=status` | 500 *"must evaluate to a single value of primitive type"* — é complexo |
+| `$orderby=status/code` · `$filter=status/code eq 3` | ✅ **200** — `count=2` |
+| `$filter=status/code ne -1` | ✅ 200 |
+| `$filter=status eq 'Ativa'` · `status eq 1` | 500 *"incompatible types"* |
+| `$orderby=status/id` · `/name` · `/value` | 500 *"Could not find a property"* |
+| `$orderby=status/description` · `$filter=status/description eq 'Paga'` | 500 *"O Nibo se comportou de forma inesperada."* |
 
-Ou seja: o campo vem no registro e **não é uma condição possível**. Quem quiser cobranças em
-aberto filtra o que dá no servidor e separa por `status` no n8n. Isso vai na tela.
+**É o gotcha 14 do projeto de novo**, palavra por palavra: *um 404 prova a ausência daquele
+CAMINHO, nunca a ausência da capacidade*. Foi assim que a família de escrita de categorias
+apareceu atrás de quatro 404 na 0.9.0, e foi assim que este plano quase deixou de fora
+justamente o filtro que todo mundo quer — *me dê as cobranças em aberto*.
+
+**Os códigos medidos:** `status` → `3` *Paga*, `-1` *Cancelada*. `deliveryStatus` → `0` *Não
+entregue*, `2` *Visualizada*. Os demais valores (*Ativa*, e o resto do ciclo de entrega) não
+apareceram nesses 5 registros e ficam por confirmar.
+
+`deliveryStatus/code` e `accountantIntegrationStatus/code` também ordenam e filtram, pela mesma
+porta.
 
 ### 1.6 O erro de digitação está na API, e foi confirmado
 
@@ -184,6 +224,17 @@ texto puro do 429, não é o HTML do 411, não é o `application/problem+json` d
 arquivos. O `classifyNiboError` cai no ramo `unknown` e mostra a mensagem do helper, que para
 um 404 já é legível. **Nada a fazer**, mas fica registrado.
 
+### 1.12 🔴 O `url` da cobrança é público
+
+Medido com `fetch` limpo, sem header nenhum: **200, `text/html`, sem redirect**. É a página de
+pagamento do boleto, e ela abre para quem tiver o link — sem token, sem cookie, sem nada.
+
+Diferente do `arquivos.nibo.com.br` da 0.12.0, que responde 302 para um SAS do Azure: aqui o
+próprio endereço serve a página. O efeito para quem usa é o mesmo, e a frase na tela também:
+**quem tem a `url` tem a cobrança**.
+
+Todos os 5 registros trazem `url`. `pdf` veio em 1 dos 5 (1.3).
+
 ### 1.11 O prefixo `/public/`
 
 Único grupo de rotas da API com prefixo diferente. Não muda nada no transporte — o endpoint é
@@ -206,9 +257,13 @@ caminho.
 3. **`Get` é a lista filtrada por ID** (1.8), como em Category desde a 0.9.0. Envelope vazio
    vira "não encontrado" com o ID na frase.
 
-4. **O menu do filtro assistido leva só o que foi medido**, e `status` fica **fora** (1.5) —
-   com uma frase na tela dizendo por quê e o que fazer no lugar. Oferecer uma condição que
-   responde 500 é pior do que não oferecer.
+4. **`status` entra no menu, por `status/code`** (1.5) — junto com `deliveryStatus/code`. É o
+   filtro que todo mundo quer, e a primeira versão deste plano o tinha descartado por engano.
+   O rótulo na tela é *Status*, os valores são oferecidos como uma lista de opções com o número
+   e o nome (`3 — Paga`, `-1 — Cancelada`), e a descrição do campo diz que os códigos vistos até
+   agora são esses e que o `status/description` **não** compara.
+   Fora do menu ficam `url`, `pdf` e `collectionProfileId`: filtram, e filtrar por eles não
+   quer dizer nada.
 
 5. **A chave de paginação é `id`**, sempre injetada pelo transporte, porque `$skip` sem
    `$orderby` é 500 (1.4).
@@ -217,10 +272,9 @@ caminho.
    certo:** *Last Status Change*. O nome da propriedade é contrato com o servidor; o rótulo é
    com quem lê.
 
-7. **Nada de aviso sobre link público até estar medido.** A 0.12.0 mediu que
-   `arquivos.nibo.com.br` entrega sem token, e é tentador assumir o mesmo para `url` e `pdf`
-   daqui. **Assumir é o que este plano não faz**: ou se mede (seção 7, decisão 1) e a frase
-   entra com todas as letras, ou não entra frase nenhuma.
+7. **O aviso do link público entra, agora que está medido** (1.12): a `url` abre a página de
+   pagamento sem token nenhum. Mesmo padrão da 0.12.0 — a frase fica no notice da operação que
+   entrega o link, e no README.
 
 8. **O README diz o que a versão não faz e por quê.** Alguém que instalar isto vai procurar
    como emitir boleto. A resposta — "não há onde medir a escrita dentro das regras deste
@@ -279,10 +333,11 @@ caminho.
 **Gate local:** `npm run lint`, `npm run lint:community`, `npm test`, `npm run build`,
 `npm pack` verdes antes de cada commit de fatia.
 
-**⚠️ O aceite tem um problema, e ele é a decisão 1 da seção 7.** O arranjo de sempre —
-`IExecuteFunctions` real dirigindo os handlers de `dist/` contra a cobaia — aqui prova pouco:
-a coleção está vazia, então `Get Many` devolveria `count: 0` e `Get` erraria por não achar. Isso
-confirma que a rota responde e **não** confirma que o registro é lido direito.
+**O aceite roda contra as duas empresas, e por quê.** O arranjo de sempre —
+`IExecuteFunctions` real dirigindo os handlers de `dist/` — contra a **cobaia** prova o caminho
+vazio (`count: 0`, e o "esta empresa não emite cobrança" da 1.1), e contra a **empresa com as 5
+cobranças de sonda** prova a leitura do registro, os filtros por `status/code` e o link público.
+Tudo de leitura: o aceite desta versão não escreve em lugar nenhum.
 
 | ☐ | Item | Como conferir |
 |---|---|---|
@@ -291,8 +346,9 @@ confirma que a rota responde e **não** confirma que o registro é lido direito.
 | ☐ | O filtro por `lasStatusChangeDate` responde 200 | É o teste do erro de digitação |
 | ☐ | `Get` de um ID inexistente diz "não encontrado" com o ID | Contra a cobaia |
 | ☐ | `Get Many Profiles` diz que a empresa não emite cobrança | A cobaia é exatamente esse caso (1.1) |
-| ☐ | **Um registro de verdade é lido e os campos batem** | ⚠️ **Depende da decisão 1** |
-| ☐ | **`url` e `pdf`: públicos ou não** | ⚠️ **Depende da decisão 1** |
+| ☐ | `Get Many` filtra por `status/code` e por `deliveryStatus/code` | Contra a empresa com dados — é o teste da 1.5 |
+| ☐ | **Um registro de verdade é lido e os 18 campos batem** | Contra a empresa com dados (1.3) |
+| ☐ | O notice diz que a `url` é pública | 1.12 |
 | ☐ | Node salvo na 0.12.x executa sem ser tocado | `File · Upload` e `Schedule · Get Many` |
 | ☐ | **Instalação real (regra 7)** | Tela Community Nodes de instância limpa |
 
@@ -300,13 +356,14 @@ confirma que a rota responde e **não** confirma que o registro é lido direito.
 
 ## 7. O que está em aberto — e é decisão do Alvaro
 
-| # | Em aberto | Por que depende de você |
+| # | Em aberto | Situação |
 |---|---|---|
-| 1 | 🔴 **Ler cobranças de uma empresa real** para medir o registro, o `status` e os links | A regra 3 proíbe **escrita** fora da cobaia; **leitura** em produção é permitida e foi como as ~90 chamadas do levantamento original foram feitas. Mas é dado de cliente, e quem autoriza é você. Sem isso a versão sai com o formato do registro não medido — funciona, porque o node repassa o que a API devolveu, mas o menu de filtro e o aviso do link ficam sem confirmação |
-| 2 | **`Create` e `Cancel`** | Ficam para o dia em que houver perfil de cobrança na cobaia. Se você quiser isso, é uma conversa com o Nibo antes de ser uma tarefa de código — e a alternativa (emitir em empresa real) esbarra na regra 3 e manda boleto para o cliente do cliente |
-| 3 | **Juntar os outros auxiliares na mesma versão** | Collections sozinha destrava ~2 nodes. `Banks`, `Users` e `Organizations` são três listas simples e fechariam a fatia 8 inteira — e `Banks` trocaria o `Bank 341` da lista de contas por `Itaú`. Custa pouco e a versão fica redonda. **Recomendo juntar**, mas é escopo, e escopo é seu |
+| 1 | ~~Ler cobranças de uma empresa real~~ | ✅ **Resolvida em 2026-07-28.** Autorizada e feita: 5 cobranças de sonda de 2019 deram o registro (1.3), os códigos de `status` (1.5) e o link público (1.12). Foi ela que corrigiu o erro da 1.5 |
+| 2 | 🔴 **`Create` e `Cancel`** | **Autorizados pelo Alvaro** — R$ 10, contato de teste no nome dele, "uma de cada tipo" — e **não medidos**: o gate de permissão do ambiente barrou o script de escrita. Para medir, o Alvaro precisa liberar essa permissão. Duas notas antes disso: o perfil daquela empresa só tem **BankSlip (PJBank), não tem Pix**, então "cada tipo" só pode ser o `deliveryType`; e o `deliveryType: 0` **manda e-mail de verdade** ao tomador — que, sendo o contato no nome dele, é ele mesmo |
+| 3 | **Juntar os outros auxiliares na mesma versão** | Collections sozinha destrava ~2 nodes. `Banks`, `Users` e `Organizations` fechariam a fatia 8 inteira, e `Banks` trocaria o `Bank 341` da lista de contas por `Itaú`. **Recomendo juntar**, mas é escopo, e escopo é do Alvaro |
 | 4 | **A numeração** | **0.13.0** — capacidade nova é minor |
 
-**A fatia 1 pode começar sem nenhuma dessas respostas.** A rota, a chave de paginação, o
-`status` que não filtra e o erro de digitação estão medidos, e é disso que o `Get Many` é feito.
-As decisões 1 e 3 mudam o que a versão entrega no fim, não o que ela começa fazendo.
+**A fatia 1 pode começar agora.** A rota, a chave de paginação, o registro campo a campo, os
+filtros — `status/code` incluído — e o erro de digitação estão medidos, e é disso que o
+`Get Many` é feito. As decisões 2 e 3 mudam o que a versão entrega no fim, não o que ela começa
+fazendo.
