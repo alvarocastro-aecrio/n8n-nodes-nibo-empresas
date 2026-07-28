@@ -20,6 +20,12 @@ const MAIN_CONNECTION: MainConnection = NodeConnectionTypes
 import type { INodePropertyOptions } from 'n8n-workflow';
 
 import {
+	annotationFields,
+	annotationOperations,
+	annotationResources,
+} from './resources/annotation/description';
+import { executeAnnotation } from './resources/annotation/execute';
+import {
 	bankAccountFields,
 	bankAccountOperations,
 	bankAccountResources,
@@ -103,6 +109,7 @@ const RESOURCES: INodePropertyOptions[] = [
 	...bankTransferResources,
 	...fileResources,
 	...scheduleFileResources,
+	...annotationResources,
 ].sort((one, other) => one.name.localeCompare(other.name));
 
 /** Which handler each resource belongs to — the whole of what the node knows about them */
@@ -137,6 +144,9 @@ const HANDLERS: Record<string, Handler> = {
 	...Object.fromEntries(fileResources.map((resource) => [resource.value as string, executeFile])),
 	...Object.fromEntries(
 		scheduleFileResources.map((resource) => [resource.value as string, executeScheduleFile]),
+	),
+	...Object.fromEntries(
+		annotationResources.map((resource) => [resource.value as string, executeAnnotation]),
 	),
 };
 
@@ -243,6 +253,7 @@ export class NiboEmpresas implements INodeType {
 			...bankTransferOperations,
 			...fileOperations,
 			...scheduleFileOperations,
+			...annotationOperations,
 			...stakeholderFields,
 			...scheduleFields,
 			...categoryFields,
@@ -252,6 +263,7 @@ export class NiboEmpresas implements INodeType {
 			...bankTransferFields,
 			...fileFields,
 			...scheduleFileFields,
+			...annotationFields,
 			{
 				displayName: 'Options',
 				name: 'options',

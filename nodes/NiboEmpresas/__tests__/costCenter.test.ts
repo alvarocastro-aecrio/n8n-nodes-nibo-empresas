@@ -471,6 +471,7 @@ describe('NiboEmpresas — Cost Center on the screen', () => {
 			'Contact - Supplier',
 			'Cost Center',
 			'File',
+			'Schedule - Annotation',
 			'Schedule - Credit',
 			'Schedule - Debit',
 			'Schedule - File',

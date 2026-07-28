@@ -651,10 +651,11 @@ describe('NiboEmpresas — the two schedule resources', () => {
 		);
 
 		expect(names).toEqual([...names].sort());
-		// Three of them since 0.12.0: the attachments of a schedule took the family
-		// word for the same reason the other two carry it, and the sort put it
-		// where somebody looking for it would look.
+		// Four of them since 0.12.0: the attachments and the annotations of a
+		// schedule took the family word for the same reason the other two carry it,
+		// and the sort put them where somebody looking would look.
 		expect(names.filter((name) => name.startsWith('Schedule - '))).toEqual([
+			'Schedule - Annotation',
 			'Schedule - Credit',
 			'Schedule - Debit',
 			'Schedule - File',
