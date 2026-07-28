@@ -16,12 +16,13 @@ contrato é por dependência técnica, e nenhuma das duas fatias que sobraram de
 
 **Por que 0.13.0:** capacidade nova é minor, que é a regra escrita do projeto.
 
-**🔴 Criar e cancelar cobrança: autorizado, ainda não medido.** A cobaia **não emite** (1.1), e
-por isso a escrita ficaria fora. Em 2026-07-28 o Alvaro abriu uma exceção explícita à regra
-inviolável 3 — emitir cobranças de R$ 10 numa empresa de produção, sobre um contato de teste no
-nome dele. **A medição não aconteceu**: o gate de permissão do ambiente barrou o script de
-escrita, corretamente, e não se contorna isso por outro caminho. Até que ela aconteça a versão
-entrega **leitura**, que é exatamente o que roda em produção hoje. Ver a decisão 2 da seção 7.
+**Criar e cancelar cobrança entram**, e isso mudou duas vezes no mesmo dia. A cobaia **não
+emite** (1.1), então a escrita ficaria fora; em 2026-07-28 o Alvaro abriu uma **exceção
+explícita à regra inviolável 3** — emitir cobranças de R$ 10 numa empresa de produção, sobre um
+contato de teste no nome dele, uma de cada `deliveryType`. Medido em 1.13 a 1.17, **com resíduo
+zero**: as duas cobranças canceladas e os dois agendamentos apagados.
+
+**Cinco operações, então:** `Get Many`, `Get`, `Get Many Profiles`, `Create` e `Cancel`.
 
 **Também fora de escopo:** NFS-e (fatia 7) e os demais auxiliares (Banks, Users,
 Organizations) — ver a decisão 3 em aberto, na seção 7.
@@ -41,7 +42,7 @@ nenhum `DELETE`, nenhuma escrita de nenhum tipo saiu de nenhuma das duas:
 A segunda fonte existe porque a primeira não bastava, e ela **corrigiu uma conclusão da
 primeira** — ver 1.5, que é o achado mais importante desta seção.
 
-### 1.1 🔴 A cobaia não emite cobrança, e é por isso que a escrita fica fora
+### 1.1 🔴 A cobaia não emite cobrança — e foi por isso que a medição saiu dela
 
 ```
 GET /public/collections-profiles  →  200  {"items":[],"count":0}
@@ -239,6 +240,12 @@ texto puro do 429, não é o HTML do 411, não é o `application/problem+json` d
 arquivos. O `classifyNiboError` cai no ramo `unknown` e mostra a mensagem do helper, que para
 um 404 já é legível. **Nada a fazer**, mas fica registrado.
 
+### 1.11 O prefixo `/public/`
+
+Único grupo de rotas da API com prefixo diferente. Não muda nada no transporte — o endpoint é
+uma string que o recurso monta —, mas é a primeira coisa que faz alguém achar que errou o
+caminho.
+
 ### 1.12 🔴 O `url` da cobrança é público
 
 Medido com `fetch` limpo, sem header nenhum: **200, `text/html`, sem redirect**. É a página de
@@ -250,24 +257,98 @@ próprio endereço serve a página. O efeito para quem usa é o mesmo, e a frase
 
 Todos os 5 registros trazem `url`. `pdf` veio em 1 dos 5 (1.3).
 
-### 1.11 O prefixo `/public/`
+### 1.13 A criação: 200 com o ID entre aspas
 
-Único grupo de rotas da API com prefixo diferente. Não muda nada no transporte — o endpoint é
-uma string que o recurso monta —, mas é a primeira coisa que faz alguém achar que errou o
-caminho.
+`POST /public/collections`, corpo `{ScheduleId, DueDate, CollectionProfileId, deliveryType}` →
+**200 com o GUID entre aspas**, como string JSON. É a mesma forma do `POST /schedules/credit` e
+do `POST /accounts`: GUID nu, sem envelope.
+
+### 1.14 🔴 Um agendamento tem no máximo UMA cobrança
+
+A segunda emissão sobre o mesmo agendamento é recusada:
+
+```
+POST /public/collections   →  500  validation_error
+                               "Não é possível criar mais de uma cobrança por agendamento"
+```
+
+**Isso fecha a ponta solta 2.6 do contrato por outro lado.** A pergunta era como listar os
+boletos de um agendamento; a resposta é que **nunca há mais de um**. O filtro por `scheduleId`
+(1.9) devolve 0 ou 1, sempre.
+
+### 1.15 O `deliveryType` não aparece na leitura, e os dois nascem iguais
+
+As duas cobranças — uma com `deliveryType: 1` (retida) e outra com `0` (régua) — nasceram
+**idênticas** aos olhos da API:
+
+```
+status  {"code":1,"description":"Ativação pendente"}
+entrega {"code":0,"description":"Não entregue"}
+```
+
+Igual logo depois e igual 4 segundos depois. O campo é **só de escrita** (1.3 já mostrava que
+ele não volta no registro) e o efeito dele — o e-mail e a régua — acontece fora do que a
+leitura enxerga. **Consequência para o node:** não há como confirmar, relendo, se o boleto foi
+enviado ou retido. Quem escolhe o `deliveryType` está tomando uma decisão que a API não devolve.
+
+Com isso, o terceiro código de `status` fica conhecido: **`1` Ativação pendente**, além do `3`
+Paga e do `-1` Cancelada da 1.5.
+
+### 1.16 🔴 A rota de cancelar existe, e **não é** o `DELETE` do catálogo
+
+```
+DELETE /public/collections/{id}       →  404  {"statusCode":404,"message":"Resource not found"}
+POST   /public/collections/{id}/cancel →  204
+```
+
+O catálogo deste projeto listava `DELETE /public/collections/{id}` como o cancelamento, marcado
+como não validado. **Ele não existe.** A rota real foi achada do mesmo jeito que a coleção de
+transferência na 0.11.0: entre dez tentativas que responderam 404 *"Resource not found"* — que
+fala da **rota** —, uma respondeu **500 *"A cobrança não pode ser cancelada"***, que fala do
+**recurso**. Um erro de negócio só existe onde existe rota para produzi-lo.
+
+Cancelar **não remove** o registro: ele fica na coleção com `status` `-1` *Cancelada*. E o
+`url` continua respondendo depois (1.12).
+
+### 1.17 Apagar o agendamento cancela a cobrança dele
+
+Medido sem querer, e por isso registrado: a primeira sonda leu a cobrança como *Ativação
+pendente*, apagou o agendamento, e a leitura seguinte trouxe ***Cancelada***. Nada mais tinha
+acontecido no meio.
+
+Ou seja, há **dois caminhos** para cancelar, e o segundo é um efeito colateral de outra
+operação. Vale para quem apaga agendamento a receber achando que a cobrança fica de pé — e para
+a limpeza de qualquer sonda futura.
+
 
 ---
 
 ## 2. Decisões de recorte
 
-1. **Somente leitura, e a razão está na 1.1.** `Create` e `Cancel` não entram porque não há
-   onde medi-los: a cobaia não tem perfil de cobrança e a regra 3 proíbe escrever em qualquer
-   outro lugar. Um payload copiado de workflow **não é comportamento medido**, e este projeto
-   já pagou por essa diferença mais de uma vez.
+1. **Cinco operações:** `Get Many`, `Get`, `Get Many Profiles`, `Create` e `Cancel`. As duas
+   últimas entram porque foram **medidas** (1.13 a 1.17), na exceção que o Alvaro abriu à regra
+   3. Um payload copiado de workflow não teria bastado: foi a medição que mostrou que o
+   `DELETE` do catálogo não existe (1.16) e que um agendamento só aceita uma cobrança (1.14).
 
-2. **Três operações:** `Get Many`, `Get` e `Get Many Profiles`. A terceira existe porque o
-   perfil é o que a criação vai exigir no dia em que ela entrar, e porque listar os perfis é a
-   única forma de descobrir se uma empresa emite cobrança — que foi a pergunta desta sondagem.
+2. **`Get Many Profiles` existe por duas razões.** O perfil é obrigatório na criação, e listar
+   os perfis é a **única** forma de descobrir se uma empresa emite cobrança — foi assim que a
+   1.1 descobriu que a cobaia não emite.
+
+2b. **`Create` recusa antes de mandar quando o agendamento já tem cobrança** (1.14). Custa um
+   `GET` e troca o *"Não é possível criar mais de uma cobrança por agendamento"* por uma frase
+   em inglês que **nomeia a cobrança que já existe** — que é o que a pessoa precisa para decidir
+   se cancela aquela ou desiste desta.
+
+2c. **`Delivery` é uma escolha de duas opções, e o padrão é o que não manda nada.** O
+   `deliveryType` decide se o Nibo **envia o boleto por e-mail ao tomador** e dispara a régua de
+   lembretes (`0`) ou se o retém na tela de conferência (`1`). O padrão do node é **`1`**, pela
+   mesma regra do `Fail on Incomplete Results` e do `Allow Moving the Lock Back`: quando uma das
+   opções sai para fora, a defesa é o que acontece quando ninguém escolheu nada. E o notice diz,
+   com todas as letras, o que o `0` faz.
+
+2d. **O node não promete o que não pode confirmar.** A 1.15 mediu que os dois `deliveryType`
+   nascem idênticos na leitura — não há como reler e saber se o boleto foi enviado. A resposta
+   do `Create` devolve o registro como a API o entrega e **não** afirma que algo foi enviado.
 
 3. **`Get` é a lista filtrada por ID** (1.8), como em Category desde a 0.9.0. Envelope vazio
    vira "não encontrado" com o ID na frase.
@@ -291,6 +372,16 @@ caminho.
    pagamento sem token nenhum. Mesmo padrão da 0.12.0 — a frase fica no notice da operação que
    entrega o link, e no README.
 
+8. **`Cancel` usa a rota que existe, e o notice diz o que ela deixa para trás** (1.16): o
+   registro **não some**, fica com `status` `-1` *Cancelada*, e o `url` continua respondendo
+   depois. O notice diz também o segundo caminho, que ninguém adivinha: **apagar o agendamento
+   cancela a cobrança dele** (1.17).
+
+9. **`Create` e `Cancel` não têm read-back de confirmação, e é decisão medida.** O `Create`
+   devolve o GUID e a releitura mostra `Ativação pendente` — que é o mesmo estado para os dois
+   `deliveryType`, então reler não confirma nada que a resposta já não diga. O `Cancel` responde
+   204 e a releitura mostra `-1`, essa sim uma confirmação barata e real: fica.
+
 8. **O README diz o que a versão não faz e por quê.** Alguém que instalar isto vai procurar
    como emitir boleto. A resposta — "não há onde medir a escrita dentro das regras deste
    projeto" — é mais útil do que a ausência silenciosa.
@@ -301,7 +392,7 @@ caminho.
 
 | Camada | O que ganha na 0.13.0 |
 |---|---|
-| `resources/collection/description.ts` · `execute.ts` | **Novo.** As três operações, o menu de filtro medido e a frase sobre `status` |
+| `resources/collection/description.ts` · `execute.ts` | **Novo.** As cinco operações, o menu de filtro medido, a guarda de uma-cobrança-por-agendamento e os notices do link público e do cancelamento |
 | `transport/paginate.ts` | **Nada** — a chave `id` é parâmetro, e o envelope é o de sempre |
 | `transport/request.ts` · `errors.ts` | **Nada** — o `/public/` é só uma string, e o 404 da 1.10 já sai legível |
 | `resources/shared/filter.ts` | **Nada** — os tipos `date`, `number`, `text` e `guid` já existem |
@@ -322,10 +413,22 @@ caminho.
    erro com o ID na frase; os perfis vêm da rota `-profiles` e uma lista vazia é dita como "esta
    empresa não emite cobrança", que é o que ela significa.
 
-3. **README, catálogo e bump 0.13.0** *(commit próprio)*. `endpoints.md`/`payloads.md`: o schema
-   da 1.3, o `status` que não filtra, a ausência de get-by-id, a confirmação do erro de
-   digitação, e a **resolução da ponta solta 2.6 do contrato**. `SKILL.md`: gotcha novo +
-   triagem. A nota de ressincronização do `CLAUDE.md`.
+3. **`Collection · Create`** *(commit próprio)*. Testes: o corpo leva as quatro chaves em
+   PascalCase menos o `deliveryType`, como a API quer; **o padrão do Delivery é reter, não
+   enviar**; a guarda lê as cobranças do agendamento antes e **recusa sem mandar nada** quando já
+   há uma, nomeando a que existe (1.14); o GUID entre aspas vira `collectionId` na saída (1.13);
+   a resposta não afirma que algo foi enviado (1.15); o notice do envio existe e fala do e-mail.
+
+4. **`Collection · Cancel`** *(commit próprio)*. Testes: chama `POST …/{id}/cancel` e **não** o
+   `DELETE`, que é 404 (1.16); o 204 vira confirmação lida de volta; o notice diz que o registro
+   fica com `Cancelada` em vez de sumir, que o link segue respondendo, e que apagar o agendamento
+   cancela a cobrança junto (1.17).
+
+5. **README, catálogo e bump 0.13.0** *(commit próprio)*. `endpoints.md`/`payloads.md`: o schema
+   da 1.3 contra o registro real, o `status` que **filtra por `status/code`**, a ausência de
+   get-by-id, o erro de digitação, **a rota de cancelar que substitui o `DELETE` errado do
+   catálogo**, a regra de uma-cobrança-por-agendamento, e a **resolução da ponta solta 2.6**.
+   `SKILL.md`: gotchas novos + triagem. A nota de ressincronização do `CLAUDE.md`.
 
 ---
 
@@ -333,7 +436,7 @@ caminho.
 
 | Regra | Na v0.13.0 |
 |---|---|
-| 3 — escrita só na cobaia | **Nenhuma escrita, em lugar nenhum.** É o que define o recorte (1.1) |
+| 3 — escrita só na cobaia | ⚠️ **Exceção explícita do Alvaro em 2026-07-28**, registrada como tal: R$ 10, contato de teste no nome dele, numa empresa de produção, porque a cobaia não emite (1.1). Resíduo **zero** — as duas cobranças canceladas e os dois agendamentos apagados. É a segunda exceção declarada do projeto, depois do rótulo 0.11.x |
 | 4 — nenhum token em código ou commit | Sondas leram de variável de ambiente |
 | 5 — zero dep de runtime | `dependencies` segue `{}` |
 | 6 — nada de caminho absoluto | Sondas descartáveis no scratchpad |
@@ -348,7 +451,11 @@ caminho.
 **Gate local:** `npm run lint`, `npm run lint:community`, `npm test`, `npm run build`,
 `npm pack` verdes antes de cada commit de fatia.
 
-**O aceite roda contra as duas empresas, e por quê.** O arranjo de sempre —
+⚠️ **O aceite das duas operações de escrita roda na empresa de produção**, pela mesma razão e
+sob a mesma exceção da seção 1: a cobaia não emite. Vale R$ 10, o contato de teste, e a mesma
+limpeza que a sondagem fez — cancelar a cobrança e apagar o agendamento, conferindo os dois.
+
+**O resto do aceite roda contra as duas empresas, e por quê.** O arranjo de sempre —
 `IExecuteFunctions` real dirigindo os handlers de `dist/` — contra a **cobaia** prova o caminho
 vazio (`count: 0`, e o "esta empresa não emite cobrança" da 1.1), e contra a **empresa com as 5
 cobranças de sonda** prova a leitura do registro, os filtros por `status/code` e o link público.
@@ -364,6 +471,10 @@ Tudo de leitura: o aceite desta versão não escreve em lugar nenhum.
 | ☐ | `Get Many` filtra por `status/code` e por `deliveryStatus/code` | Contra a empresa com dados — é o teste da 1.5 |
 | ☐ | **Um registro de verdade é lido e os 18 campos batem** | Contra a empresa com dados (1.3) |
 | ☐ | O notice diz que a `url` é pública | 1.12 |
+| ☐ | `Create` emite, e o Delivery vem **retido** por padrão | Decisão 2c |
+| ☐ | `Create` **recusa sem mandar nada** num agendamento que já tem cobrança | É o teste da 1.14, e a frase nomeia a que existe |
+| ☐ | `Cancel` chama `POST …/cancel` e a releitura mostra `Cancelada` | 1.16 |
+| ☐ | Resíduo conferido: cobranças canceladas, agendamentos apagados | Toda sonda de escrita fecha assim |
 | ☐ | Node salvo na 0.12.x executa sem ser tocado | `File · Upload` e `Schedule · Get Many` |
 | ☐ | **Instalação real (regra 7)** | Tela Community Nodes de instância limpa |
 
@@ -373,12 +484,12 @@ Tudo de leitura: o aceite desta versão não escreve em lugar nenhum.
 
 | # | Em aberto | Situação |
 |---|---|---|
-| 1 | ~~Ler cobranças de uma empresa real~~ | ✅ **Resolvida em 2026-07-28.** Autorizada e feita: 5 cobranças de sonda de 2019 deram o registro (1.3), os códigos de `status` (1.5) e o link público (1.12). Foi ela que corrigiu o erro da 1.5 |
-| 2 | 🔴 **`Create` e `Cancel`** | **Autorizados pelo Alvaro** — R$ 10, contato de teste no nome dele, "uma de cada tipo" — e **não medidos**: o gate de permissão do ambiente barrou o script de escrita. Para medir, o Alvaro precisa liberar essa permissão. O que "cada tipo" quer dizer ficou resolvido: **não é boleto contra Pix**, porque todo boleto já sai com o QR de Pix junto (1.1) — é o `deliveryType`, um retido e um pela régua. A nota que fica: o `deliveryType: 0` **manda e-mail de verdade** ao tomador, que sendo o contato no nome dele é ele mesmo |
-| 3 | **Juntar os outros auxiliares na mesma versão** | Collections sozinha destrava ~2 nodes. `Banks`, `Users` e `Organizations` fechariam a fatia 8 inteira, e `Banks` trocaria o `Bank 341` da lista de contas por `Itaú`. **Recomendo juntar**, mas é escopo, e escopo é do Alvaro |
+| 1 | ~~Ler cobranças de uma empresa real~~ | ✅ **Resolvida em 2026-07-28.** As 5 cobranças de sonda de 2019 deram o registro (1.3), os códigos de `status` (1.5) e o link público (1.12) — e corrigiram o erro da 1.5 |
+| 2 | ~~`Create` e `Cancel`~~ | ✅ **Resolvida em 2026-07-28**, com a exceção à regra 3 autorizada pelo Alvaro. Medidas em 1.13 a 1.17, com resíduo zero. Entram na versão |
+| 3 | **Juntar os outros auxiliares na mesma versão** | Com `Create` e `Cancel` dentro, Collections já é uma versão inteira — cinco operações. `Banks`, `Users` e `Organizations` fechariam a fatia 8 e trocariam o `Bank 341` da lista de contas por `Itaú`, mas **não são mais necessários para a 0.13.0 ficar redonda**. Continua sendo escopo do Alvaro; minha recomendação agora é **deixar para uma 0.14.0** |
 | 4 | **A numeração** | **0.13.0** — capacidade nova é minor |
 
-**A fatia 1 pode começar agora.** A rota, a chave de paginação, o registro campo a campo, os
-filtros — `status/code` incluído — e o erro de digitação estão medidos, e é disso que o
-`Get Many` é feito. As decisões 2 e 3 mudam o que a versão entrega no fim, não o que ela começa
-fazendo.
+**Nada mais depende de decisão para começar.** A rota, a chave de paginação, o registro campo a
+campo, os filtros — `status/code` incluído —, o erro de digitação, a criação, a regra de uma
+cobrança por agendamento e a rota de cancelar estão todos medidos. A fatia 1 pode começar com o
+OK do Alvaro.
