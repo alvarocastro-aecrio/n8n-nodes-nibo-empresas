@@ -99,6 +99,11 @@ export async function executeCollection(
 					json: await issueCollection.call(this, i),
 					pairedItem: { item: i },
 				});
+			} else if (operation === 'cancel') {
+				returnData.push({
+					json: await cancelCollection.call(this, i),
+					pairedItem: { item: i },
+				});
 			} else if (operation === 'listProfiles') {
 				for (const profile of await collectionProfiles.call(this, i)) {
 					returnData.push({ json: profile, pairedItem: { item: i } });
@@ -303,4 +308,65 @@ function createdId(answer: unknown): string {
 	const data = (answer as IDataObject)?.data;
 
 	return typeof data === 'string' ? data.trim() : '';
+}
+
+/**
+ * Cancels a charge, through the route that had to be hunted for.
+ *
+ * This project's catalogue listed `DELETE /public/collections/{id}` and had
+ * never validated it. **It does not exist** — 404 *"Resource not found"*. The
+ * real one turned up on 2026-07-28 among ten attempts: nine answered 404, which
+ * talks about the route, and one answered 500 *"A cobrança não pode ser
+ * cancelada"*, which talks about the charge. A business error only exists where
+ * there is a route to produce it — the same reasoning that found the transfer
+ * collection in 0.11.0.
+ *
+ * The read-back stays here, unlike on the creation, because here it confirms
+ * something that really changes: the status goes to `-1`. Cancelling does **not**
+ * remove the record.
+ */
+async function cancelCollection(
+	this: IExecuteFunctions,
+	itemIndex: number,
+): Promise<IDataObject> {
+	const id = recordId.call(this, 'collectionId', itemIndex);
+
+	await niboApiRequest.call(
+		this,
+		itemIndex,
+		'POST',
+		`${COLLECTIONS}/${encodeURIComponent(id)}/cancel`,
+		{},
+		{},
+	);
+
+	const { records } = await niboListRequest.call(this, itemIndex, COLLECTIONS, COLLECTION_ORDER_BY, {
+		returnAll: false,
+		limit: 1,
+		filter: `id eq ${id}`,
+		failOnIncomplete: false,
+	});
+
+	const after = records[0];
+	if (after === undefined) {
+		// Measured: cancelling leaves the record in place. A charge that is gone is
+		// something this project has not seen, and saying so beats inventing a
+		// confirmation of a state nobody read.
+		return { collectionId: id, cancelled: true };
+	}
+
+	const code = (after.status as IDataObject | undefined)?.code;
+	if (code !== CANCELLED) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Nibo accepted the cancellation, but the charge ${id} is still ${String((after.status as IDataObject | undefined)?.description ?? code)}`,
+			{
+				itemIndex,
+				description:
+					'The API answered the cancellation with HTTP 204 and the charge did not change, which is not something this project has measured. Read it with Collection - Get before trying again — a charge that was already paid, for one, is not something a cancellation takes back.',
+			},
+		);
+	}
+
+	return after;
 }

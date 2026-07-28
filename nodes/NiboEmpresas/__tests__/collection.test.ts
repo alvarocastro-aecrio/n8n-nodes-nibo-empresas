@@ -464,6 +464,79 @@ describe('executeCollection — Create', () => {
 	});
 });
 
+/**
+ * Cancelling, and the route that had to be hunted for.
+ *
+ * This project's catalogue listed `DELETE /public/collections/{id}`, never
+ * validated. It does not exist — 404 *"Resource not found"*. The real one turned
+ * up among ten attempts on 2026-07-28: nine answered 404, which talks about the
+ * **route**, and one answered 500 *"A cobrança não pode ser cancelada"*, which
+ * talks about the **charge**. A business error only exists where there is a
+ * route to produce it. Same way the transfer collection was found in 0.11.0.
+ */
+describe('executeCollection — Cancel', () => {
+	const CANCELLED = { ...A_COLLECTION, status: { code: -1, description: 'Cancelada' } };
+
+	function cancelling(id: string = COLLECTION) {
+		return executeCollection.call(context({ collectionId: id }), 'collection', 'cancel');
+	}
+
+	it('posts to the cancel route, and never to the DELETE that is a 404', async () => {
+		apiRequest.mockResolvedValue(undefined);
+		listRequest.mockResolvedValue({ records: [CANCELLED], count: 1 });
+
+		await cancelling();
+
+		const [, method, endpoint] = apiRequest.mock.calls[0];
+		expect(method).toBe('POST');
+		expect(endpoint).toBe(`/public/collections/${COLLECTION}/cancel`);
+		expect(apiRequest.mock.calls.every((call) => call[1] !== 'DELETE')).toBe(true);
+	});
+
+	/**
+	 * The API answers 204 and says nothing, so the reading is what turns it into
+	 * an answer. Cheap and real here, unlike on the creation: the record does
+	 * change, from whatever it was to `-1`.
+	 */
+	it('reads the charge back and hands it over showing Cancelled', async () => {
+		apiRequest.mockResolvedValue(undefined);
+		listRequest.mockResolvedValue({ records: [CANCELLED], count: 1 });
+
+		const items = await cancelling();
+
+		expect(items[0].json).toMatchObject({ id: COLLECTION, status: { code: -1 } });
+	});
+
+	it('fails when the 204 left the charge standing', async () => {
+		apiRequest.mockResolvedValue(undefined);
+		listRequest.mockResolvedValue({ records: [A_COLLECTION], count: 1 });
+
+		const failure = cancelling();
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		await expect(failure).rejects.toThrow(/still/i);
+	});
+
+	// Measured: cancelling does not remove the record. If it is gone, something
+	// happened that this project has not seen, and saying so beats inventing a
+	// confirmation.
+	it('says it cancelled but could not read it back when the record is gone', async () => {
+		apiRequest.mockResolvedValue(undefined);
+		listRequest.mockResolvedValue({ records: [], count: 0 });
+
+		const items = await cancelling();
+
+		expect(items[0].json).toMatchObject({ collectionId: COLLECTION, cancelled: true });
+	});
+
+	it('refuses an empty ID rather than posting to the collection endpoint', async () => {
+		const failure = cancelling('   ');
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+});
+
 describe('NiboEmpresas — what the Collection screen offers', () => {
 	const description = new NiboEmpresas().description;
 
@@ -596,6 +669,19 @@ describe('NiboEmpresas — what the Collection screen offers', () => {
 
 		expect(notice?.type).toBe('notice');
 		expect(notice?.displayName).toMatch(/e-mails? the boleto|reminder/i);
+	});
+
+	/**
+	 * Three things nobody would guess, and all three measured: the record stays
+	 * where it is with its status set to Cancelled, the public link keeps
+	 * answering afterwards, and **deleting the schedule cancels the charge too**.
+	 */
+	it('warns what cancelling leaves behind, and the other way it happens', () => {
+		const notice = property('cancelNotice');
+
+		expect(notice?.type).toBe('notice');
+		expect(notice?.displayName).toMatch(/still|remains/i);
+		expect(notice?.displayName).toMatch(/schedule/i);
 	});
 
 	it('refuses nothing on this screen that the API accepts', () => {

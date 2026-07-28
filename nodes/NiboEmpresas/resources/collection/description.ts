@@ -46,6 +46,20 @@ export const collectionOperations: INodeProperties[] = [
 		},
 		options: [
 			{
+				name: 'Cancel',
+				value: 'cancel',
+				action: 'Cancel a collection',
+				description:
+					'Cancel a charge, which leaves the record in place with its status set to Cancelled',
+			},
+			{
+				name: 'Create',
+				value: 'create',
+				action: 'Create a collection',
+				description:
+					'Issue a charge from a receivable, choosing whether Nibo sends it to the payer or holds it for review',
+			},
+			{
 				name: 'Get',
 				value: 'get',
 				action: 'Get a collection',
@@ -57,13 +71,6 @@ export const collectionOperations: INodeProperties[] = [
 				value: 'list',
 				action: 'Get many collections',
 				description: 'Retrieve the charges of the organization',
-			},
-			{
-				name: 'Create',
-				value: 'create',
-				action: 'Create a collection',
-				description:
-					'Issue a charge from a receivable, choosing whether Nibo sends it to the payer or holds it for review',
 			},
 			{
 				name: 'Get Many Profiles',
@@ -176,6 +183,12 @@ const LIST_NOTICE =
 const CREATE_NOTICE =
 	'Delivery decides whether this reaches the payer. Send It starts Nibo\'s reminder sequence and e-mails the boleto to them, which is an action you cannot take back; Hold for Review keeps it on the Nibo screen and sends nothing. The node cannot confirm which happened afterwards: both look identical when read back.';
 
+/**
+ * Three things nobody would guess, all three measured on 2026-07-28.
+ */
+const CANCEL_NOTICE =
+	'Cancelling does not remove the charge: the record stays where it is with its status set to Cancelled, and the public link still answers afterwards. There is a second way it happens that nobody expects — deleting the schedule cancels the charge that hangs off it. And a charge can only be cancelled once: asking twice is refused by the API.';
+
 export const collectionFields: INodeProperties[] = [
 	{
 		displayName: CREATE_NOTICE,
@@ -286,6 +299,18 @@ export const collectionFields: INodeProperties[] = [
 		},
 	},
 	{
+		displayName: CANCEL_NOTICE,
+		name: 'cancelNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: [COLLECTION],
+				operation: ['cancel'],
+			},
+		},
+	},
+	{
 		displayName: 'Collection ID',
 		name: 'collectionId',
 		type: 'string',
@@ -293,11 +318,11 @@ export const collectionFields: INodeProperties[] = [
 		default: '',
 		placeholder: 'c1a5e0d4-77b0-4f1a-9b3e-2a6a1d0f9c11',
 		description:
-			'The charge to read, as Get Many returns it. There is no get-by-ID route on this API — the record is fetched through the list filtered by this ID.',
+			'The charge, as Get Many returns it. There is no get-by-ID route on this API — the record is fetched through the list filtered by this ID.',
 		displayOptions: {
 			show: {
 				resource: [COLLECTION],
-				operation: ['get'],
+				operation: ['cancel', 'get'],
 			},
 		},
 	},
