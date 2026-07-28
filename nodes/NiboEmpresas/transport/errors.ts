@@ -17,7 +17,13 @@
  * tested in isolation and used from a single place in the transport.
  */
 
-export type NiboErrorKind = 'auth' | 'validation' | 'server' | 'rateLimit' | 'unknown';
+export type NiboErrorKind =
+	| 'auth'
+	| 'validation'
+	| 'server'
+	| 'rateLimit'
+	| 'tooLarge'
+	| 'unknown';
 
 export interface INiboErrorInfo {
 	kind: NiboErrorKind;
@@ -66,6 +72,18 @@ const AUTH_HINT =
  */
 const RATE_LIMIT_HINT =
 	'Nibo allows at most 14 calls per second per organization. The default Interval Between Requests (1000 ms, under Options) stays well clear of it — this usually means the interval was set to 0 on a large batch, or several executions hit the same organization at once. Waiting and retrying works: the request itself is fine.';
+
+/**
+ * The upload ceiling, measured on 2026-07-28: the classic ASP.NET
+ * `maxRequestLength`, counted over the **whole request** rather than over the
+ * file. It is the second body of this API that is not JSON — HTML at 411, plain
+ * text at 413 — and the third shape is worse than either, because at exactly
+ * 10 MB the answer is a perfectly well-formed JSON 500 whose sentence, *"O Nibo
+ * se comportou de forma inesperada."*, is the one every internal failure
+ * carries. Nothing in any of the three mentions size.
+ */
+const TOO_LARGE_HINT =
+	'The whole request may not reach 10,485,760 bytes, and the multipart envelope — the field name, the file name and its content type — is counted inside it, so the file itself has to stay a little under that. Retrying does not help: send a smaller file, or split the document. The node refuses anything from 10,484,736 bytes upwards before any call is made, so reaching this answer means the envelope carried a file just below that line over the edge.';
 
 function asRecord(value: unknown): UnknownRecord | undefined {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -139,10 +157,42 @@ function describedBy(body: UnknownRecord | undefined, fallback: string): string 
 	return fallback;
 }
 
-export function classifyNiboError(error: unknown): INiboErrorInfo {
+export interface INiboErrorContext {
+	/** The call that failed was carrying a file up */
+	upload?: boolean;
+}
+
+/**
+ * Whether a failed upload is the size ceiling wearing the internal-failure
+ * sentence. Only the status and the discriminator are asked: the text itself
+ * says nothing about size, and matching on Portuguese prose would break the day
+ * Nibo rewords it.
+ */
+function isUploadCeiling(httpCode: string | undefined, body: UnknownRecord | undefined): boolean {
+	return httpCode === '500' && body?.error === 'internal_server_error';
+}
+
+export function classifyNiboError(
+	error: unknown,
+	context: INiboErrorContext = {},
+): INiboErrorInfo {
 	const body = findBody(error);
 	const httpCode = findStatus(error);
 	const fallback = originalMessage(error);
+
+	// Read before the 500 below, and only for a call that was carrying a file:
+	// the body of that 500 is indistinguishable from any other internal failure,
+	// so what tells them apart is what the caller was doing. Anywhere else the
+	// same body keeps the meaning it always had.
+	if (httpCode === '413' || (context.upload === true && isUploadCeiling(httpCode, body))) {
+		return {
+			kind: 'tooLarge',
+			message: `Nibo refused the file: a request to this API may not reach 10 MB (HTTP ${httpCode ?? '413'})`,
+			description: TOO_LARGE_HINT,
+			httpCode,
+			body,
+		};
+	}
 
 	if (httpCode === '401') {
 		return {

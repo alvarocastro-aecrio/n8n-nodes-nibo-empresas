@@ -155,6 +155,61 @@ describe('classifyNiboError', () => {
 		expect(info.message).toContain('Invalid filter');
 	});
 
+	/**
+	 * The upload ceiling, measured on 2026-07-28: a request of **10 485 760
+	 * bytes** is refused, and the same endpoint refuses it in three different
+	 * shapes, none of which is JSON — HTML at 411, plain text at 413, and a
+	 * JSON `internal_server_error` at 10 MB whose sentence is the same one any
+	 * internal failure gets.
+	 *
+	 * Left alone, the first two fall through to "Request failed with status code
+	 * 413" and the third asks the reader to retry a call that can only ever fail
+	 * the same way.
+	 */
+	it('classifies HTTP 413 as the upload ceiling, naming the measured limit', () => {
+		const info = classifyNiboError(
+			httpError(413, 'The page was not displayed because the request entity is too large.'),
+		);
+
+		expect(info.kind).toBe('tooLarge');
+		expect(info.httpCode).toBe('413');
+		expect(info.message).toMatch(/10 MB/);
+		expect(info.description).toMatch(/10,485,760 bytes/);
+	});
+
+	/**
+	 * At exactly 10 MB the answer is not a 413 at all: it is a 500 carrying *"O
+	 * Nibo se comportou de forma inesperada."* — the sentence every internal
+	 * failure of this API carries. Nothing in it mentions size, so only the
+	 * caller knows a file was on its way.
+	 */
+	it('reads a 500 on an upload as the ceiling rather than a server failure', () => {
+		const info = classifyNiboError(
+			httpError(500, {
+				error: 'internal_server_error',
+				error_description: 'O Nibo se comportou de forma inesperada.',
+			}),
+			{ upload: true },
+		);
+
+		expect(info.kind).toBe('tooLarge');
+		expect(info.message).toMatch(/10 MB/);
+	});
+
+	// And the same body on any other call keeps the answer it always had: this
+	// reading is the caller's context, not a new meaning for the body.
+	it('leaves that same 500 a server failure when no file was going up', () => {
+		const info = classifyNiboError(
+			httpError(500, {
+				error: 'internal_server_error',
+				error_description: 'O Nibo se comportou de forma inesperada.',
+			}),
+		);
+
+		expect(info.kind).toBe('server');
+		expect(info.description).toMatch(/retrying can help/i);
+	});
+
 	it('tells validation and server failures apart in the retry hint', () => {
 		const validation = classifyNiboError(
 			httpError(500, { error: 'validation_error', error_description: 'nope' }),
