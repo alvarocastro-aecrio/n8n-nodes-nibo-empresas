@@ -82,7 +82,8 @@ no 411, texto puro no 413, JSON no 500).
 - **Funciona com ID de débito** — e `/schedules/debit/{id}/files` é **404**. É a mesma
   universalidade do `GET /schedules/credit/{id}` (assimetria 11 do contrato): existe uma
   rota só, e ela se chama "credit".
-- **O mesmo arquivo pode estar em mais de um agendamento.** Anexar não consome o `fileId`.
+- ~~**O mesmo arquivo pode estar em mais de um agendamento.** Anexar não consome o `fileId`.~~
+  🔴 **ERRADO — corrigido na seção 8.** Anexar **move**: o arquivo tem um `referenceId` só.
 
 `GET /schedules/credit/{id}/files` responde o **envelope de sempre** (`{items, count}`),
 com `fileId`, `name`, `size` em bytes, `createDate` (a hora do upload), `referenceDate`
@@ -244,8 +245,10 @@ inventado. Não há rota de apagar (1.8).
 
 5. **Toda escrita confere o agendamento — cada uma do jeito que dá.** É a defesa contra a
    1.4 e a 1.8, e são dois remédios porque são dois problemas:
-   - **`Attach` releia depois:** anexa e relê a lista, e só diz que deu certo se o
-     `fileId` estiver lá. É o padrão de read-back da 0.10.0.
+   - ~~**`Attach` releia depois:** anexa e relê a lista, e só diz que deu certo se o
+     `fileId` estiver lá. É o padrão de read-back da 0.10.0.~~
+     🔴 **NÃO FUNCIONA — corrigido na seção 8.** A releitura confirma a si mesma. O `Attach`
+     confere antes, igual à anotação, e relê depois só para confirmar que o arquivo chegou.
    - **`Annotation · Create` confere antes:** um `GET /schedules/credit/{id}` antes de
      escrever, porque **depois não existe conferência possível** (1.8). Uma chamada a mais
      por item é o preço de não escrever no vazio para sempre.
@@ -392,3 +395,78 @@ arquivo apagado pelo `fileId` **capturado na hora** (foi o que faltou na 1.10).
 | 4 | A numeração | **0.12.0** — capacidade nova é minor; a exceção da 0.11.2 não se repete |
 
 Nada mais depende de decisão. A fatia 1 pode começar com o OK do Alvaro.
+
+---
+
+## 8. O que o aceite corrigiu — 2026-07-28
+
+O aceite contra a cobaia reprovou dois itens, e os dois eram o mesmo defeito. Fica aqui porque
+uma medição errada corrigida em silêncio volta como surpresa, e porque a decisão 5 dependia dela
+inteira.
+
+### 8.1 🔴 O attach **move** o arquivo — a 1.3 estava errada
+
+Um arquivo carrega **um** `referenceId`, e a lista de um agendamento são os arquivos com aquele
+`referenceId`. Sonda dirigida, com dois agendamentos e um arquivo:
+
+| Passo | S1 | S2 |
+|---|---|---|
+| anexar F em S1 | `count: 1` | `count: 0` |
+| anexar **o mesmo** F em S2 | 🔴 `count: 0` | `count: 1` |
+
+A 1.3 afirmava o contrário. O que a sondagem original provavelmente viu foram dois arquivos
+diferentes, ou a lista do agendamento errado.
+
+Consequência para quem usa: **anexar um documento num segundo lançamento tira do primeiro, em
+silêncio.** Para o mesmo documento em dois lugares, subir duas vezes. Virou notice na tela do
+`Attach`.
+
+### 8.2 🔴 O read-back da decisão 5 confirmava a si mesmo
+
+Daí sai o defeito de desenho. Anexar num GUID inventado **grava o GUID inventado no arquivo**, e
+reler esse mesmo GUID devolve o arquivo:
+
+```
+POST /schedules/credit/{inventado}/files/attach  ["<fileId>"]   →  204
+GET  /schedules/credit/{inventado}/files                        →  200  {"count":1,…}
+```
+
+A defesa da decisão 5 nunca ia pegar a 1.4. O que pega é a porta que a anotação já usava:
+
+```
+GET /schedules/credit/{inventado}   →  500  validation_error  "Agendamento não encontrado"
+```
+
+**O que mudou no código:** `requireSchedule` virou `resources/shared/schedule.ts` e é chamado
+antes de toda escrita desta versão — `Attach`, `Upload and Attach` (antes do upload, para não
+deixar documento órfão) e `Annotation · Create`. O read-back ficou, com o serviço que de fato
+presta: confirmar que o arquivo chegou e trazer o registro com `url`, `size` e as duas datas.
+
+**A lição, que é maior que a fatia:** um read-back só confirma quando a leitura tem uma fonte
+independente da escrita. Aqui a leitura era a própria escrita, relida.
+
+### 8.3 O aceite
+
+18/18 itens verdes, 41 chamadas, `IExecuteFunctions` real dirigindo os handlers de `dist/` contra
+a cobaia. Inclui um item novo que prova o movimento da 8.1. A regressão da 0.11.x
+(`Get Balances`, `Schedule - Debit · Get Many`) passou sem tocar em nada.
+
+**Resíduo declarado, e desta vez todo `fileId` foi capturado na hora.** Os dois agendamentos de
+sonda descartáveis foram apagados e todos os arquivos deles também (as listas terminaram em
+`count: 0`). Ficou de pé, **de propósito**, um agendamento de sonda com **um anexo** e **uma
+anotação**, porque as duas conferências que faltam são de tela e precisam de algo para olhar:
+
+| O que | ID |
+|---|---|
+| Agendamento de sonda (débito), descrição `SONDA 0.12.0 B — conferir na tela e apagar` | `64147d97-c640-4da5-9bfb-879ce3f4f8f3` |
+| Arquivo anexado nele | `02c7de5d-809b-41df-ba42-feb4bbaba834` |
+| Anotação | uma, sem rota de apagar (1.8) |
+
+Apagar o agendamento pela tela depois de olhar. A anotação é permanente de qualquer jeito.
+
+### 8.4 O que continua faltando, e é do Alvaro
+
+| ☐ | Item |
+|---|---|
+| ☐ | Olhar o anexo e a anotação **na tela do Nibo**, no agendamento acima — regra irmã da 7 |
+| ☐ | **Instalação real (regra 7)**: tela Community Nodes de instância limpa, pacote vindo do npm |

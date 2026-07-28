@@ -22,17 +22,18 @@ n8n-nodes-nibo-empresas
 
 ## Operations
 
-Twelve resources in seven families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
+Fifteen resources in eight families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
 
 | Family | Resources, as the menu names them | What they are |
 |---|---|---|
 | **Contacts** | Contact - Customer · Contact - Employee · Contact - Partner · Contact - Supplier | Who you buy from, sell to, employ or share the company with |
-| **Schedules** | Schedule - Credit · Schedule - Debit | Accounts receivable and accounts payable — an amount **due** on a date |
+| **Schedules** | Schedule - Credit · Schedule - Debit · Schedule - File · Schedule - Annotation | Accounts receivable and accounts payable — an amount **due** on a date — plus the **documents** and the **notes** that hang off one, see [Files and annotations](#files-and-annotations) |
 | **Transactions** | Transaction - Payment · Transaction - Receipt | The same entries once the money has **actually moved** — see [Settling a schedule](#settling-a-schedule) |
 | **Category** | Category | The chart of accounts a schedule is filed under. Everything but **Update** and **Delete**, which this API does not have |
 | **Cost Center** | Cost Center | The part of the company an amount belongs to. All five operations |
 | **Bank Account** | Bank Account | The accounts, their **balances** and the **import of a bank statement** — see [Bank accounts](#bank-accounts) |
 | **Bank Transfer** | Bank Transfer | Money moved **between two accounts** of the organization — see [Bank transfers](#bank-transfers) |
+| **File** | File | A stored document, on its own: **upload**, **upload and attach**, **download** — see [Files and annotations](#files-and-annotations) |
 
 The family word is part of each name on purpose: the editor builds its **Actions** tab from the Resource menu in the order it is declared, so the names are what put a family together there instead of scattering it alphabetically between the others. It is a label and nothing else — the value the workflow stores (`customer`, `creditSchedule`, …) has never changed.
 
@@ -46,7 +47,7 @@ Contacts, schedules and cost centers have the same five operations each. **Categ
 | Get Many | Returns the collection, paging through it when needed. A stable sort is always applied, and the key differs per collection — `$orderby=id` for a contact, a category, an account or a transfer, `$orderby=scheduleId` for a schedule, `$orderby=costCenterId` for a cost center, `$orderby=entryId` for a settled entry, `$orderby=accountId` for a balance. |
 | Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
 
-Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show. Transactions add **Settle**, which is what marks a schedule that already exists as paid or received. Bank Account adds **Get Balances** and **Import Bank Statement**.
+Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show. Transactions add **Settle**, which is what marks a schedule that already exists as paid or received. Bank Account adds **Get Balances** and **Import Bank Statement**. File has **Upload**, **Upload and Attach** and **Download**; Schedule - File has **Get Many**, **Attach** and **Delete**; Schedule - Annotation has **Create** and nothing else, because nothing else exists.
 
 Every resource that works on a single record has its own ID field (**Customer ID**, **Supplier ID**, **Credit Schedule ID**, …), so a workflow that already names one keeps working when others are added.
 
@@ -296,6 +297,36 @@ Two more things measured against the API:
 
 > ⚠️ **The same entry has two signs.** A transfer of 123.45 lists `originEntry.value` as **−123.45** and `destinyEntry.value` as **+123.45** — while `/payments`, showing that very same origin entry, lists it as **+123.45**. The node forwards whatever the route answered: inventing a rule of its own would be a fourth convention to keep track of.
 
+### Files and annotations
+
+The documents that hang off a schedule, and the notes written on one. Three resources, seven operations, and almost every line of them is a defence against something this API does quietly.
+
+| Resource | Operation | What it does |
+|---|---|---|
+| **File** | **Upload** | Stores a document from the item's binary field and returns its `fileId`, attached to nothing yet |
+| **File** | **Upload and Attach** | The same, and puts it on a schedule in one operation |
+| **File** | **Download** | Fetches a stored document back into the item's binary field |
+| **Schedule - File** | **Get Many** | The documents on one schedule, with `name`, `size`, both dates and the `url` |
+| **Schedule - File** | **Attach** | Puts a document that is already stored onto a schedule |
+| **Schedule - File** | **Delete** | Deletes the document itself — see the warning below |
+| **Schedule - Annotation** | **Create** | Writes a note on a schedule |
+
+The file always comes from the **binary field of the item**, never from disk, and Download puts it back the same way. That is a rule of the n8n verification programme and it is also the only thing that makes the operations work inside a workflow.
+
+> 🔴 **The download link is public.** Every attachment carries a `url`, and that address answers a redirect to signed storage and hands the document over **with no token, no cookie and no header of any kind** — measured with a bare `curl`. Whoever holds a `fileId` holds the document. This is a fact about the service, not something this node can fix; it is said here, and on the screen, because hiding a public link does not make it private.
+
+> ⚠️ **A document belongs to one schedule at a time.** `attach` does not add a row to a list — it sets the single reference a file carries. Attaching a file that is already on another schedule **moves** it, and the first schedule silently loses it. To have the same document on two schedules, upload it twice.
+
+> 🔴 **Attaching to a schedule that does not exist is answered with HTTP 204 and no complaint** — this API checks the file and never checks the schedule. Worse, it writes that invented ID onto the file, so reading the invented schedule back hands the file over as though all were well. The node therefore **asks Nibo for the schedule before writing anything**, on Attach, on Upload and Attach and on Create Annotation alike, and then reads the files back to confirm the document really landed.
+
+> ⚠️ **Delete is not a detach.** `DELETE /schedules/credit/{scheduleId}/files/{fileId}` is in no documentation, and the schedule in its path is ignored — a GUID of zeros deletes just as well. What goes is **the document**: it can never be attached anywhere again. And the stored object is not removed, so a download link handed out beforehand keeps serving the file afterwards.
+
+> 🔴 **An annotation can be written and never read.** The API answers Create with an `annotationId`, and that ID opens no door: reading, editing and deleting it are 404 on every path, and the schedule record carries no annotation on it. It does not deduplicate either — the same text twice is two notes, and neither can be removed. Whether an item is processed twice is entirely up to the workflow around the node.
+
+**The upload ceiling is 10 MB of request**, not of file: the multipart envelope counts inside it. The node refuses anything from **10,484,736 bytes** upwards before any call is made, because the API's own answer at that size is HTTP 500 *"O Nibo se comportou de forma inesperada."* — a sentence that names neither the size nor the file nor a limit. Above that the same endpoint fails in two more shapes, neither of them JSON, and the node names the ceiling for all three.
+
+**What this API has no route for**, and therefore what the node does not offer: listing the files of an organization (`GET /files` and `GET /files/{id}` are both 404, so a document uploaded and never attached cannot be found again), attaching anything to a payment or a receipt, and reading, editing or deleting an annotation.
+
 ### Filtering
 
 The filter is narrowed **on the server**, so what does not match is never paged through in the first place. There are two ways to write it, and you never choose between them in a menu: the second one takes over the moment you use it.
@@ -506,6 +537,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.11.0 | **The bank accounts, for real.** 0.10.0 opened the resource with one operation and opened it out of obligation — a settlement is refused without an account — leaving a resource whose name promised money and which could only hand out identifiers. **Get Balances** and **Import Bank Statement** join it, and the new **Bank Transfer** resource arrives with **Create**, **Get Many** and **Delete**. Half of the transfer is in no documentation at all: `GET /accounts/transfer` and `DELETE /accounts/transfer/{id}` were found through a 500 that said *"Transferência não encontrada"* where a 404 was expected. The import is the reason for the version: this API takes a bank statement **half way, in silence** — a line dated before the account was opened is swallowed with a 204 — and **nothing can read the reconciliation queue back**, so every check happens before the request and each refusal names the item and the opening date the API omits. It is also the node's first **aggregating** operation: one input item is one line, and the run is one call. Three more measurements shape the release: the balance view is a **collection of its own**, keyed by `accountId` where the accounts are keyed by `id`; a transfer's **`description` comes back as `identifier`**, and the origin entry carries the amount **negative** where `/payments` carries the same entry positive; and a transfer **dated before the account was opened is accepted**, where the same date on a settlement is a 500 — so the node does not refuse it |
 | 0.11.1 | **The apportionment comes back.** 0.9.1 made **Apportion By** wait for a cost center line, and that quietly took the field out of use: pick a centre and it sat there empty, with `The value "" is not supported!` underneath and the node refusing to run. The condition was sound and the reading of it was not — the editor asks two functions, not one. `getNodeParameters` resolves the values it checks visibility against with `onlySimpleTypes`, an object that holds **no collection of any kind**, so a path into one is `undefined` there however the form is filled in; the field counts as hidden and **its value is dropped from what the node saves**, while the editor draws it anyway from the full parameters. No wording survives that: "there is no line yet" and "the check cannot see collections" arrive as the same `undefined`. So the field is unconditional again, still drawn under the lines, and a new sweep over the whole node forbids any `show` rule from reading a path into a collection. Nothing changes on the wire — with no line, neither key is sent — but a node saved while 0.9.1 to 0.11.0 was installed may have lost the choice, and a value apportionment has to be told so again |
 | 0.11.2 | **The account writes**, wanted for closing automations: **Bank Account · Create** and **Update**, with `balanceLockDate` as a first-class field. Everything defensive in it is a measurement. Create is **permanent** — no delete, and `isArchived` on a PUT is ignored with a 204 — so the form warns before the button; the API stores the opening date **one day early** on creation and the node repairs it with a corrective update, so the day you pick is the day that stays; `bankNumber` is ignored in silence and therefore not offered. Update merges over the record it just read, which is what keeps the **balance lock** alive through an update that does not mention it — a body without the field clears the lock, 204, not a word. Moving the lock **back** is refused unless the *Allow Moving the Lock Back* option says a person decided it; past the account's opening date the API refuses it itself, and the node adds the one thing the message omits — which date that is. Also new: **HTTP 429 speaks** — this API allows 14 calls per second, answers the excess in plain text, and the node now names the limit instead of showing the generic failure |
+| 0.12.0 | **Files and annotations**, which is what every workflow that files a document has been writing by hand. **File** arrives with **Upload**, **Upload and Attach** and **Download**; **Schedule - File** with **Get Many**, **Attach** and **Delete**; **Schedule - Annotation** with **Create**, the only operation this API has for a note. The document always comes from the item's binary field and never from disk. Four measurements shape it, and three of them are warnings the API never gives. **The download link Nibo publishes is public** — it serves the document with no token at all, so whoever holds a `fileId` holds the file. **A document belongs to one schedule at a time**: attaching it elsewhere moves it, and the first schedule silently loses it. **Attaching to a schedule that does not exist is answered 204** and writes the invented ID onto the file, so reading it back confirms a write that went nowhere — which is why every write here asks Nibo for the schedule *first*, the annotation included, since an annotation can never be read, edited or deleted afterwards by anybody. And **Delete is not a detach**: it destroys the document, which can then be attached nowhere, while the stored object keeps serving any link handed out before. The **10 MB ceiling** is a ceiling on the whole request, so the node refuses from 10,484,736 bytes upwards before calling — the API's own answer at that size is *"O Nibo se comportou de forma inesperada."*, which names neither size nor file nor limit |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
