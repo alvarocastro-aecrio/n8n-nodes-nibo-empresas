@@ -50,6 +50,8 @@ import {
 } from './resources/costCenter/description';
 import { executeCostCenter } from './resources/costCenter/execute';
 import { loadCostCenters } from './resources/costCenter/load';
+import { fileFields, fileOperations, fileResources } from './resources/file/description';
+import { executeFile } from './resources/file/execute';
 import {
 	scheduleFields,
 	scheduleOperations,
@@ -93,6 +95,7 @@ const RESOURCES: INodePropertyOptions[] = [
 	...transactionResources,
 	...bankAccountResources,
 	...bankTransferResources,
+	...fileResources,
 ].sort((one, other) => one.name.localeCompare(other.name));
 
 /** Which handler each resource belongs to — the whole of what the node knows about them */
@@ -124,6 +127,7 @@ const HANDLERS: Record<string, Handler> = {
 	...Object.fromEntries(
 		bankTransferResources.map((resource) => [resource.value as string, executeBankTransfer]),
 	),
+	...Object.fromEntries(fileResources.map((resource) => [resource.value as string, executeFile])),
 };
 
 // Thin description + router. No HTTP call and no API rule lives here: the
@@ -227,6 +231,7 @@ export class NiboEmpresas implements INodeType {
 			...transactionOperations,
 			...bankAccountOperations,
 			...bankTransferOperations,
+			...fileOperations,
 			...stakeholderFields,
 			...scheduleFields,
 			...categoryFields,
@@ -234,6 +239,7 @@ export class NiboEmpresas implements INodeType {
 			...transactionFields,
 			...bankAccountFields,
 			...bankTransferFields,
+			...fileFields,
 			{
 				displayName: 'Options',
 				name: 'options',
