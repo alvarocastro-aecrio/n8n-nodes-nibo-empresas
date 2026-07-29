@@ -6,7 +6,7 @@ This is an [n8n](https://n8n.io/) community node. It lets you use the **Nibo Emp
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-> **Status: early development (v0.11.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
+> **Status: early development (v0.14.x).** Use **0.4.1 or later**: in 0.4.0 the Update operation could not write at all — it failed loudly rather than silently, but it failed. The package is published thin on purpose, growing one proven slice at a time. See [Version history](#version-history) for what works today.
 
 ## Installation
 
@@ -22,7 +22,7 @@ n8n-nodes-nibo-empresas
 
 ## Operations
 
-Sixteen resources in nine families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
+Seventeen resources in ten families. Within a family the API gives every resource an identical contract, so the node treats the family as one:
 
 | Family | Resources, as the menu names them | What they are |
 |---|---|---|
@@ -35,6 +35,7 @@ Sixteen resources in nine families. Within a family the API gives every resource
 | **Bank Transfer** | Bank Transfer | Money moved **between two accounts** of the organization — see [Bank transfers](#bank-transfers) |
 | **File** | File | A stored document, on its own: **upload**, **upload and attach**, **download** — see [Files and annotations](#files-and-annotations) |
 | **Collection** | Collection | The **charges** — boleto, with the Pix QR printed on it — issued from a receivable, see [Collections](#collections) |
+| **Service Invoice** | Service Invoice | The **NFS-e** — the Brazilian service invoice — issued from a receivable, see [Service invoices](#service-invoices) |
 
 The family word is part of each name on purpose: the editor builds its **Actions** tab from the Resource menu in the order it is declared, so the names are what put a family together there instead of scattering it alphabetically between the others. It is a label and nothing else — the value the workflow stores (`customer`, `creditSchedule`, …) has never changed.
 
@@ -45,10 +46,10 @@ Contacts, schedules and cost centers have the same five operations each. **Categ
 | Create | Adds a record and returns it as Nibo stored it |
 | Delete | Removes it and returns `{ id, deleted: true }` |
 | Get | Returns one record by ID |
-| Get Many | Returns the collection, paging through it when needed. A stable sort is always applied, and the key differs per collection — `$orderby=id` for a contact, a category, an account or a transfer, `$orderby=scheduleId` for a schedule, `$orderby=costCenterId` for a cost center, `$orderby=entryId` for a settled entry, `$orderby=accountId` for a balance. |
+| Get Many | Returns the collection, paging through it when needed. A stable sort is always applied, and the key differs per collection — `$orderby=id` for a contact, a category, an account or a transfer, `$orderby=scheduleId` for a schedule, `$orderby=costCenterId` for a cost center, `$orderby=entryId` for a settled entry, `$orderby=accountId` for a balance, `$orderby=id` again for a service invoice. |
 | Update | Changes the fields you list and **leaves every other field as it is** — see [Update](#update) |
 
-Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show. Transactions add **Settle**, which is what marks a schedule that already exists as paid or received. Bank Account adds **Get Balances** and **Import Bank Statement**. File has **Upload**, **Upload and Attach** and **Download**; Schedule - File has **Get Many**, **Attach** and **Delete**; Schedule - Annotation has **Create** and nothing else, because nothing else exists. Collection has **Get Many**, **Get**, **Create**, **Cancel** and **Get Many Profiles**.
+Category adds two of its own, **Get Many Groups** and **Get Tree**, for the two levels `Get Many` cannot show. Transactions add **Settle**, which is what marks a schedule that already exists as paid or received. Bank Account adds **Get Balances** and **Import Bank Statement**. File has **Upload**, **Upload and Attach** and **Download**; Schedule - File has **Get Many**, **Attach** and **Delete**; Schedule - Annotation has **Create** and nothing else, because nothing else exists. Collection has **Get Many**, **Get**, **Create**, **Cancel** and **Get Many Profiles**. Service Invoice has **Get Many**, **Get**, **Get Many Service Profiles**, **Issue** and **Cancel**.
 
 Every resource that works on a single record has its own ID field (**Customer ID**, **Supplier ID**, **Credit Schedule ID**, …), so a workflow that already names one keeps working when others are added.
 
@@ -356,6 +357,40 @@ The charges Nibo issues from a receivable — a boleto, with the Pix QR code pri
 
 **A profile cannot be created through this API.** It ties a contracted bank provider to the organization and is set up in Nibo. An organization without one cannot issue charges, and the node says exactly that instead of showing an empty box.
 
+### Service invoices
+
+The **NFS-e** of the organization — the Brazilian service invoice. Like a charge, a note is not created from nothing: it is issued from a receivable that already exists, and the **amount comes from that schedule**, which is why there is no amount on the screen.
+
+The resource is called **Service Invoice** rather than NFS-e because the editor puts every label in title case, and title case turns `NFS-e` into `NFS-E`.
+
+| Operation | What it does |
+|---|---|
+| **Get Many** | The notes of the organization, with the assisted filter |
+| **Get** | One note by ID — read through the list, because this API has no get-by-ID route for a note |
+| **Get Many Service Profiles** | The service profiles — what a note is declared under, and the only way to know whether an organization issues one at all |
+| **Issue** | Sends an RPS to the city hall and, unless you switch the wait off, follows the note until it answers |
+| **Cancel** | Cancels it at the city hall, which leaves the record in place marked Cancelled |
+
+**Issuing is the one operation of this node that reaches a city hall.** There is no undo: a note can only be cancelled afterwards, and cancelling does not remove it.
+
+#### The wait
+
+**Wait for Authorization** is on by default and **Authorization Timeout** is **300 seconds**; both live under *Options*, at the end of the node. The node returns the moment the note reaches a final state, so the timeout is a **ceiling, not a delay** — a generous one costs nothing on a note that authorizes in five seconds. Notes measured on 2026-07-29 took from **1.3 s to 123.1 s**, and up to five minutes has been reported in practice.
+
+> 🔴 **The wait never reports a failure.** When the ceiling is reached, the item comes out with the record as it stands and a `_niboAuthorizationPending` sentence saying the note **was issued and is not authorized yet** — because a workflow told "failed" issues again, and the second RPS has already left. A note the city hall **denied** is an item too, carrying its `status.code` of `-1` and the city hall's own text in `lastMessage`; the call worked, the city hall said no. Both are data: read `status.code`.
+
+To issue in a loop without waiting for any of them, switch **Wait for Authorization** off and read the notes later with **Get**.
+
+**The status codes**, measured: **1** queued for processing, **2** waiting for authorization, **3** authorized, **-1** denied, **-4** cancelled. Only at **3** does a note gain its `number`, its `verificationCode`, its PDF and its XML — those four are `undefined` until then, and a denied note never gets them. Three of the five codes only appeared because a note was watched going through them, and this API has no route that lists the whole set, so for a state that is not there write the condition in **Filter (OData)**.
+
+> 🔴 **The PDF and the XML links are public, and cancelling does not take them down.** Measured on an already-cancelled note, with no header of any kind: `pdfFileUrl` answered 200 `application/pdf` and `xmlFileUrl` 200 `text/xml`. Cancelling removes the fiscal validity, not the document — whoever received a link before still downloads the note afterwards, with nothing in the file saying it was cancelled.
+
+**A service profile cannot be created through this API**, and it is what decides the service the note declares, the tax it charges and the remarks printed on it — where bank details and a Pix key usually go. It needs a valid digital certificate and a profile approved by the city hall, both set up in Nibo. An organization without one answers the profile route with an **empty list**, not an error, and the node says *this organization does not issue NFS-e* instead of showing an empty box.
+
+**Two oddities of this collection, both the API's own.** The route to cancel is `POST /nfse/{id}/cancel` — the `DELETE` that looks obvious answers 404. And the filter menu holds three numeric-looking fields whose literals disagree: the **invoice number is text** (`number eq '35'`; `number eq 35` is a 500), the **RPS number is a number**, and the **RPS series is text** again. The node sends each one as the API wants it. `status/description` and `isDeleted` are not on the menu because both answer HTTP 500.
+
+**One schedule can carry several notes** — three were measured on one — so the node puts no guard there, unlike the one-charge-per-schedule rule of a collection. Whether the API accepts a second note on a schedule that already has a live authorized one was not measured, and the node neither promises nor prevents it.
+
 ### Filtering
 
 The filter is narrowed **on the server**, so what does not match is never paged through in the first place. There are two ways to write it, and you never choose between them in a menu: the second one takes over the moment you use it.
@@ -569,6 +604,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.12.0 | **Files and annotations**, which is what every workflow that files a document has been writing by hand. **File** arrives with **Upload**, **Upload and Attach** and **Download**; **Schedule - File** with **Get Many**, **Attach** and **Delete**; **Schedule - Annotation** with **Create**, the only operation this API has for a note. The document always comes from the item's binary field and never from disk. Four measurements shape it, and three of them are warnings the API never gives. **The download link Nibo publishes is public** — it serves the document with no token at all, so whoever holds a `fileId` holds the file. **A document belongs to one schedule at a time**: attaching it elsewhere moves it, and the first schedule silently loses it. **Attaching to a schedule that does not exist is answered 204** and writes the invented ID onto the file, so reading it back confirms a write that went nowhere — which is why every write here asks Nibo for the schedule *first*, the annotation included, since an annotation can never be read, edited or deleted afterwards by anybody. And **Delete is not a detach**: it destroys the document, which can then be attached nowhere, while the stored object keeps serving any link handed out before. The **10 MB ceiling** is a ceiling on the whole request, so the node refuses from 10,484,736 bytes upwards before calling — the API's own answer at that size is *"O Nibo se comportou de forma inesperada."*, which names neither size nor file nor limit |
 | 0.13.0 | **Collections** — the charges issued from a receivable, with **Get Many**, **Get**, **Create**, **Cancel** and **Get Many Profiles**. The version cost an exception to this project's own rule that writes only happen against a test organization: that organization **cannot issue charges at all**, because a collection profile ties a contracted bank provider to the company, so the write side was measured against a production one with charges of R$ 10 on a test contact, and cleaned up. What it bought could not have been read: **the cancel route in this project's catalogue does not exist** — `DELETE` answers 404, and the real one is `POST …/{id}/cancel`, found because it answered a *business* error where the others answered a *route* one. **One charge per schedule**, so the node checks before issuing and names the one in the way. And **the delivery choice is write-only**: sending the boleto by e-mail and holding it for review produce an identical record, so the node defaults to holding and never claims anything was sent. Reading was measured against two organizations, and the second corrected the first: **status filters through `status/code`**, which a probe against an empty collection had wrongly reported as impossible |
 | 0.13.1 | Fix, and the fault was in the labels rather than the code: **Delivery** offered *Send It* against *Hold for Review*, from a claim in this project's own notes that nobody had verified. **There is no hold.** Nibo has a financial-management module and an accountant one, and the two values are two ways out — by e-mail from the financial side, or through the accountant module and its client portal. The field is now **Delivery Type**, labelled by channel, not sent unless you choose one, and the notice says both of them deliver. The effect is readable in **`accountantIntegrationStatus`**, which is also new on the filter menu — including its failure code, the only way to find charges whose route through the accountant did not work |
+| 0.14.0 | **Service invoices — the NFS-e**, with **Get Many**, **Get**, **Get Many Service Profiles**, **Issue** and **Cancel**. It is what the two invoice workflows needed to leave HTTP Request behind entirely: 0.12.0 had migrated their file half, and this is the other one — issuing the note and following it. The write side cost the same exception as 0.13.0, and for the same kind of reason: the test organization **does not issue NFS-e at all**, since a note needs a digital certificate and a service profile approved by the city hall, so a note of R$ 5 was issued, watched, cancelled and its schedule deleted on a production organization. ⚠️ **That exception does not clean up to zero** — cancelling a note does not remove it, and it should not: it is a fiscal document. What it bought could not have been read anywhere. **The cancel route of this project's catalogue does not exist**, for the second time in two versions and in the same way: the `DELETE` is a 404 and the real one is `POST …/{id}/cancel`. **There is no get-by-ID**, so a note is read through the list. The **wait** for the authorization is an option with a **300 s ceiling**, and it never reports a failure — a timeout says the note *was issued and is not authorized yet*, and a denial comes out as an item with the city hall's own words, because the alternative sentence makes a workflow issue a second note. And the filter menu carries three numeric-looking fields with disagreeing literals: the invoice **number is text**, the RPS number is a number, the RPS series is text |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
