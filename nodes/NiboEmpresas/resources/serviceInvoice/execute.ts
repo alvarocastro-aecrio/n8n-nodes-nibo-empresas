@@ -5,6 +5,7 @@ import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
+import { readSchedule } from '../shared/schedule';
 import { onlyTheDay } from '../schedule/normalize';
 import { serviceInvoiceFilterFieldTypes } from './description';
 
@@ -260,12 +261,48 @@ async function issueInvoice(
 	interval: number,
 ): Promise<IDataObject> {
 	const extras = this.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
+	const scheduleId = recordId.call(this, 'scheduleId', itemIndex);
+
+	// 🔴 **The taker comes from the schedule, and the screen does not ask for
+	// it** — the Alvaro's decision on 2026-07-29, in 0.14.1: the API wants
+	// `StakeholderId` as a separate key, but a receivable already names its
+	// contact, so asking twice was asking for a chance to disagree.
+	//
+	// This reading is also the guard the issuing never had. This API validates
+	// what is written and not what it is written onto, so a schedule is read
+	// first — a wrong ID stops here, with nothing sent to a city hall.
+	const schedule = await readSchedule.call(
+		this,
+		itemIndex,
+		scheduleId,
+		'No note was issued and no RPS left.',
+	);
+
+	// From `stakeholder.id`, never from the root `stakeholderId`: on the listing
+	// of schedules that root field answers a GUID of noughts. Here, on the
+	// get-by-id, it was measured filled — the two disagree by route, and the
+	// nested one is right on both.
+	const stakeholderId = String(
+		(schedule.stakeholder as IDataObject | undefined)?.id ?? '',
+	).trim();
+
+	if (stakeholderId === '') {
+		throw new NodeOperationError(
+			this.getNode(),
+			`The schedule ${scheduleId} names no contact, so there is nobody to issue the note to`,
+			{
+				itemIndex,
+				description:
+					'Nothing was sent. The taker is obligatory in the body of an issuing and this node takes it from the schedule, which is where a receivable keeps it. Open the schedule in Nibo, give it a contact, and run this again.',
+			},
+		);
+	}
 
 	// PascalCase, which is the exception in this API rather than the rule — the
 	// same spelling `POST /schedules/credit` and `POST /public/collections` take,
 	// and nothing else does.
 	const body: IDataObject = {
-		ScheduleId: recordId.call(this, 'scheduleId', itemIndex),
+		ScheduleId: scheduleId,
 		ServiceProfileId: requiredValue.call(
 			this,
 			itemIndex,
@@ -273,13 +310,7 @@ async function issueInvoice(
 			'This item names no service profile',
 			'A note is issued through a service profile, and the API refuses a body without one. Pick it from the list, or put an expression here reading the ID — Service Invoice - Get Many Service Profiles is where the IDs come from.',
 		),
-		StakeholderId: requiredValue.call(
-			this,
-			itemIndex,
-			'stakeholderId',
-			'This item names no taker',
-			'The taker of the service is obligatory in the body of an issuing. Choose the contact in the picker, or switch it to By ID and put an expression there.',
-		),
+		StakeholderId: stakeholderId,
 		AccrualRpsDate: onlyTheDay(String(this.getNodeParameter('accrualDate', itemIndex, '') ?? '')),
 	};
 
@@ -414,9 +445,9 @@ async function readInvoice(
  * refuse — an issuing that is rejected downstream has already cost a call, and
  * this one is the call that cannot be taken back.
  *
- * The taker arrives either as a `resourceLocator` — `{mode, value}` — or as the
- * plain string a node saved by hand carries, and both are read, exactly as the
- * schedules read theirs.
+ * A value stored as `{mode, value}` is read too: a field drawn as a picker
+ * today may be drawn as a `resourceLocator` tomorrow, and this is the one place
+ * that would have to notice.
  */
 function requiredValue(
 	this: IExecuteFunctions,

@@ -446,12 +446,25 @@ describe('executeServiceInvoice — Issue', () => {
 			'NFSe negada. \r\nCódigo: _Cert002\r\nDescrição: O certificado digital da empresa está vencido, será necessário a atualização do mesmo antes de continuar as emissões de nota fiscal.',
 	};
 
+	/** The schedule the note is issued from, as `GET /schedules/credit/{id}` answers it */
+	const A_SCHEDULE = {
+		scheduleId: SCHEDULE,
+		value: 5,
+		description: 'Teste',
+		// The root `stakeholderId` is a GUID of noughts on the listing of schedules
+		// and filled in on this get-by-id — the two disagree by route, so the
+		// contact is read from the nested object, which is right on both. The
+		// fixture carries the bad one on purpose: if the handler ever reaches for
+		// the root, this test says so.
+		stakeholderId: '00000000-0000-0000-0000-000000000000',
+		stakeholder: { id: CONTACT, name: 'Fulano de Tal', type: 'Customer' },
+	};
+
 	function issuing(parameters: IDataObject = {}) {
 		return executeServiceInvoice.call(
 			context({
 				scheduleId: SCHEDULE,
 				serviceProfileId: PROFILE,
-				stakeholderId: CONTACT,
 				accrualDate: '2026-07-29',
 				...parameters,
 			}),
@@ -460,12 +473,22 @@ describe('executeServiceInvoice — Issue', () => {
 		);
 	}
 
-	/** The POST answers a quoted GUID, and the note is read back from the list */
+	/**
+	 * The schedule is read first, the POST answers a quoted GUID, and the note is
+	 * read back from the list.
+	 */
 	function answersWith(...records: IDataObject[]) {
-		apiRequest.mockResolvedValue(NEW_ID);
+		apiRequest.mockImplementation(async (_index: unknown, method: unknown, endpoint: unknown) =>
+			method === 'GET' && String(endpoint).startsWith('/schedules/') ? A_SCHEDULE : NEW_ID,
+		);
 		for (const record of records) {
 			listRequest.mockResolvedValueOnce({ records: [record], count: 1 });
 		}
+	}
+
+	/** The POST, wherever it landed among the calls */
+	function postCall() {
+		return apiRequest.mock.calls.find((call) => call[1] === 'POST');
 	}
 
 	it('posts to /nfse with the body in the PascalCase this API asks for here', async () => {
@@ -479,7 +502,7 @@ describe('executeServiceInvoice — Issue', () => {
 			},
 		});
 
-		const [, method, endpoint, , body] = apiRequest.mock.calls[0];
+		const [, method, endpoint, , body] = postCall() ?? [];
 		expect(method).toBe('POST');
 		expect(endpoint).toBe('/nfse');
 		expect(body).toEqual({
@@ -504,7 +527,7 @@ describe('executeServiceInvoice — Issue', () => {
 
 		await issuing();
 
-		const body = apiRequest.mock.calls[0][4] as IDataObject;
+		const body = (postCall() ?? [])[4] as IDataObject;
 		expect(Object.keys(body)).toEqual([
 			'ScheduleId',
 			'ServiceProfileId',
@@ -636,34 +659,84 @@ describe('executeServiceInvoice — Issue', () => {
 		expect(items[0].json.status).toMatchObject({ code: 3 });
 	});
 
-	it('refuses an empty schedule ID before anything is written', async () => {
+	it('refuses an empty schedule ID before anything is read or written', async () => {
 		const failure = issuing({ scheduleId: '   ' });
 
 		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
 		expect(apiRequest).not.toHaveBeenCalled();
 	});
 
+	// "Before anything is written" is the claim, and reading the schedule is not
+	// writing: since 0.14.1 that read is the first thing an issuing does.
 	it('refuses an empty service profile before anything is written', async () => {
+		answersWith();
+
 		const failure = issuing({ serviceProfileId: '' });
 
 		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
-		expect(apiRequest).not.toHaveBeenCalled();
+		expect(postCall()).toBeUndefined();
 	});
 
-	// The taker travels as a resourceLocator on a screen and as a plain string in
-	// a node saved by hand — the handler reads both, as the schedules do.
-	it('reads the taker out of the picker as well as out of a bare ID', async () => {
+	/**
+	 * 🔴 **The taker is not on the screen — it comes off the schedule.** The
+	 * Alvaro's decision on 2026-07-29, and the question behind it was the right
+	 * one: a receivable already names its contact, so asking for it twice was
+	 * asking for a chance for the two to disagree.
+	 *
+	 * And it is read from `stakeholder.id`, never from the root `stakeholderId`,
+	 * which a GET answers as a GUID of noughts.
+	 */
+	it('takes the taker off the schedule, from the nested contact', async () => {
 		answersWith(AUTHORIZED);
 
-		await issuing({ stakeholderId: { mode: 'list', value: CONTACT } });
+		await issuing();
 
-		expect((apiRequest.mock.calls[0][4] as IDataObject).StakeholderId).toBe(CONTACT);
+		const [, method, endpoint] = apiRequest.mock.calls[0];
+		expect(method).toBe('GET');
+		expect(endpoint).toBe(`/schedules/credit/${SCHEDULE}`);
+		expect(((postCall() ?? [])[4] as IDataObject).StakeholderId).toBe(CONTACT);
+	});
+
+	it('never asks for a taker on the screen', () => {
+		const asked = new NiboEmpresas().description.properties.filter(
+			(one) =>
+				one.name === 'stakeholderId' &&
+				((one.displayOptions?.show?.resource ?? []) as string[]).includes('serviceInvoice'),
+		);
+
+		expect(asked).toEqual([]);
+	});
+
+	/**
+	 * The reading is also the guard the issuing never had: this API validates
+	 * what is written and not what it is written onto, so an invented schedule
+	 * has to stop **before** the POST. Nothing reaches a city hall.
+	 */
+	it('stops on a schedule that does not exist, with nothing sent', async () => {
+		apiRequest.mockRejectedValue(new Error('Agendamento não encontrado'));
+
+		const failure = issuing();
+
+		await expect(failure).rejects.toThrow(new RegExp(SCHEDULE));
+		expect(apiRequest.mock.calls.every((call) => call[1] === 'GET')).toBe(true);
+	});
+
+	it('refuses a schedule with no contact rather than issuing to nobody', async () => {
+		apiRequest.mockImplementation(async (_index: unknown, method: unknown) =>
+			method === 'GET' ? { ...A_SCHEDULE, stakeholder: undefined } : NEW_ID,
+		);
+
+		const failure = issuing();
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		await expect(failure).rejects.toThrow(/names no contact/i);
+		expect(postCall()).toBeUndefined();
 	});
 
 	// A note nobody can read back is still a note that was issued. Failing here
 	// would send a workflow to issue a second one.
 	it('still succeeds, naming the note, when the read-back finds nothing', async () => {
-		apiRequest.mockResolvedValue(NEW_ID);
+		answersWith();
 		listRequest.mockResolvedValue({ records: [], count: 0 });
 
 		const items = await issuing({ options: { waitForAuthorization: false } });
@@ -979,9 +1052,11 @@ describe('NiboEmpresas — what the Service Invoice screen offers', () => {
 	 * as forgetfulness: the note takes it from the schedule, measured — a
 	 * receivable of R$ 5 produced a note of R$ 5.
 	 */
-	it('asks for no amount and says where the amount comes from', () => {
+	it('asks for neither the amount nor the taker, and says where both come from', () => {
 		expect(property('value')).toBeUndefined();
+		expect(property('stakeholderId')).toBeUndefined();
 		expect(property('issueNotice')?.type).toBe('notice');
+		expect(property('issueNotice')?.displayName).toMatch(/taker/i);
 		expect(property('issueNotice')?.displayName).toMatch(/schedule/i);
 	});
 
@@ -989,15 +1064,6 @@ describe('NiboEmpresas — what the Service Invoice screen offers', () => {
 		const method = property('serviceProfileId')?.typeOptions?.loadOptionsMethod as string;
 
 		expect(Object.keys(new NiboEmpresas().methods.loadOptions)).toContain(method);
-	});
-
-	it('names a contact search the node actually declares', () => {
-		const modes = property('stakeholderId')?.modes ?? [];
-		const method = modes
-			.map((mode) => mode.typeOptions?.searchListMethod)
-			.find((named) => named !== undefined) as string;
-
-		expect(Object.keys(new NiboEmpresas().methods.listSearch)).toContain(method);
 	});
 
 	/**

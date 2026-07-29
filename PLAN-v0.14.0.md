@@ -523,7 +523,7 @@ com R$ 5 — uma emissão, a espera, o cancelamento e a limpeza do agendamento.
 | 2 | ~~O padrão do teto de espera~~ | ✅ **Resolvida em 2026-07-29: `Wait for Authorization` ligada, `Authorization Timeout` de 300 s** (2c). Uma recomendação anterior de 120 s foi retirada por ficar **abaixo** da amostra mais lenta medida, 123,1 s — o Alvaro apontou a incoerência. Para quem emite em laço e não quer esperar por nenhuma, o caminho é a espera **desligada** + `Get` depois, e o README documenta isso |
 | 3 | ~~Como a cobaia nova recusa a NFS-e~~ | ✅ **Resolvida em 2026-07-29.** Por **lista vazia**, não por erro: `GET /nfse/serviceprofiles` responde **200 `count: 0`** (1.1). É o mesmo formato da cobrança na 0.13.0, e a fatia 2 fica como estava desenhada |
 | 4 | **Segunda nota num agendamento com uma Autorizada viva** | Não medido (1.11). Enquanto não for, o node não promete nem impede |
-| 5 | **Se o tomador precisa ser o do agendamento** | Não medido. Muda a tela: se a API recusar, o campo pode nascer preenchido e a validação acontece antes da chamada (2h) |
+| 5 | ~~Se o tomador precisa ser o do agendamento~~ | ✅ **Encerrada em 2026-07-29, e por outro caminho** (9.1/9.2). A comparação das 7 notas da empresa com o dono de cada agendamento indica que a API **não** exige que coincidam — uma nota de 2019 tem tomador diferente e foi negada por certificado, não por isso. E a pergunta deixou de decidir a tela: o campo **saiu**, e o tomador é lido do agendamento. Não é prova, é indício, e a mudança não depende dela |
 | 6 | **A numeração** | **0.14.0** — capacidade nova é minor |
 
 **O que está medido:** a rota, a chave de paginação, o registro campo a campo, os cinco códigos
@@ -633,3 +633,60 @@ fica para o Alvaro decidir, numa 0.14.1 se ele quiser.
 **O resíduo desta versão na empresa de produção:** duas notas de sonda, ambas `Cancelada` — a de
 1.16 (nº 2841) e a do aceite (nº 2842). Nenhum agendamento. Fica escrito porque escrita em produção
 não se declara limpa sem dizer onde.
+
+---
+
+## 9. O que a 0.14.1 mudou — 2026-07-29, horas depois de publicada
+
+O Alvaro olhou a tela e perguntou: *"por que tem a opção Taker no Issue, se o `scheduleId` já tem
+o cliente?"*. A pergunta está certa, e a resposta da 2h — *se a API exige a coisa, a tela pergunta
+a coisa* — envelheceu mal: ela protege contra o node **adivinhar**, e ler o contato do próprio
+agendamento não é adivinhar, é copiar.
+
+### 9.1 A pergunta tinha uma medição de graça, e ela estava na empresa
+
+O item 5 da seção 7 (*"o tomador precisa ser o do agendamento?"*) estava aberto como **não medido**,
+e a suposição era que medir custaria uma nota. Custava zero: bastou comparar, nas 7 notas da
+empresa, o tomador de cada uma com o dono do agendamento dela.
+
+**Seis batem. Uma não** — uma nota de 2019 tem tomador `dbb2e20a…` e agendamento do `29d71426…`
+(dois cadastros da mesma pessoa, duplicada no Nibo). A API **aceitou**, e a nota foi até a
+prefeitura, que a negou por **certificado vencido** — nada a ver com o tomador.
+
+⚠️ **Não é prova, e o plano não a chama de prova**: alguém pode ter trocado o contato daquele
+agendamento depois de 2019. É indício forte de que a API **não** exige que os dois coincidam, e é
+tudo que se pode ter sem emitir uma nota de propósito com tomador diferente — o que deixaria mais
+um documento fiscal permanente. Não vale o preço, e **a mudança abaixo não depende dessa resposta.**
+
+### 9.2 A decisão: herda sempre, sem opção
+
+Decisão do Alvaro em **2026-07-29**: *"sempre herda do agendamento, sem opção ao usuário. mais
+simples."* O campo **sai da tela**. O `StakeholderId` continua indo no corpo, porque a API o exige —
+ele passa a vir de `stakeholder.id` do agendamento.
+
+⚠️ **`stakeholder.id`, nunca o `stakeholderId` da raiz.** Na **listagem** de agendamentos essa
+raiz vem como GUID de zeros — é o gotcha 10 deste projeto —, e copiá-la mandaria zeros para a
+prefeitura. No **get-by-id** ela veio preenchida, medido no aceite da 0.14.1: os dois discordam por
+rota, e o aninhado é o que está certo nas duas.
+
+**E a leitura paga por si mesma**, porque vira a guarda que a emissão não tinha: esta API **confere
+o que é escrito e não confere o alvo em que se escreve** (gotcha 19), então agendamento inventado
+agora para **antes** do `POST`. Nada chega a prefeitura nenhuma.
+
+### 9.3 O que isso custa em compatibilidade — e por que não custa
+
+É a exceção à regra de UI de 2026-07-25, item 3: *campo já publicado nunca some da tela*. Vale aqui
+porque a 0.14.0 tem **horas**, não foi instalada por ninguém, e o próprio dono da regra pediu. Um
+node salvo na 0.14.0 continua rodando: o tomador que ele guardou é ignorado e o contato do
+agendamento é usado — que, no caso normal, é o mesmo.
+
+**O que sai junto:** a busca de contatos deixou de ter entrada para `serviceInvoice`, porque não há
+mais campo que a desenhe.
+
+### 9.4 Aceite da 0.14.1 — sem gastar nota
+
+O caminho novo tem dois lados, e **um deles se aceita com resíduo zero**: agendamento inventado
+tem que parar antes do `POST`. Isso foi rodado contra produção. O outro lado — a nota que sai com o
+tomador do agendamento — está coberto por teste unitário, e o valor herdado é exatamente o que a
+sonda de 8.2 mandou à mão. Emitir outra nota só para reconfirmar custaria mais um documento
+permanente, e isso é decisão do Alvaro, não minha.

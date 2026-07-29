@@ -53,13 +53,10 @@ const STAKEHOLDERS_OF: Record<string, Array<{ endpoint: string; kind: string }>>
 	// underneath — but "stands to reason" is not how this project decides.
 	payment: DEBIT_SIDE,
 	receipt: CREDIT_SIDE,
-	// A service invoice is issued from a **receivable**, so the same side of the
-	// matrix is what its taker can be. ⚠️ Unlike the four above, this one is not
-	// measured: the API was never asked whether it refuses a taker who is not the
-	// contact of the schedule (item 5 of section 7 of PLAN-v0.14.0.md). It offers
-	// the contacts that side of the books holds, which is a list, not a promise —
-	// the field also takes an ID by hand.
-	serviceInvoice: CREDIT_SIDE,
+	// A service invoice had an entry here for the length of 0.14.0 and does not
+	// any more: its screen stopped asking for a taker in 0.14.1, because a note
+	// is issued from a receivable and a receivable already names its contact.
+	// A search nothing draws is a search that goes.
 };
 
 /**

@@ -238,7 +238,7 @@ const CANCEL_NOTICE =
 	'Cancelling is done at the city hall and it does not remove anything: the note stays in the company\'s history for good, marked Cancelled — it is a fiscal document. Its PDF and XML keep answering afterwards, and they are public, so whoever received a link before still downloads the note after it is cancelled, with nothing in the document saying so.';
 
 const ISSUE_NOTICE =
-	'Issuing sends an RPS to the city hall, and there is no undo: the note can only be cancelled afterwards, which leaves the record in place and keeps its PDF and XML answering. The amount is not asked for here because it comes from the schedule. If the city hall denies the note, that is not a failure of this node — the item comes out with the denial and the city hall\'s own text in lastMessage.';
+	'Issuing sends an RPS to the city hall, and there is no undo: the note can only be cancelled afterwards, which leaves the record in place and keeps its PDF and XML answering. The amount and the taker are not asked for here because both come from the schedule. If the city hall denies the note, that is not a failure of this node — the item comes out with the denial and the city hall\'s own text in lastMessage.';
 
 export const serviceInvoiceFields: INodeProperties[] = [
 	{
@@ -285,7 +285,7 @@ export const serviceInvoiceFields: INodeProperties[] = [
 		default: '',
 		placeholder: 'a01f0058-d321-4805-bd73-810e88b98557',
 		description:
-			'The receivable the note is issued from. The amount of the note comes from it and is not asked for here. One schedule was measured carrying three notes, so this API has no one-note-per-schedule rule and the node puts no guard of its own here.',
+			'The receivable the note is issued from. Both the amount and the taker come from it and are not asked for here — the API wants the taker as a separate key, and this node reads it off the schedule so the two can never disagree. The schedule is read before anything is sent, so a wrong ID stops here rather than at a city hall. One schedule was measured carrying three notes, so this API has no one-note-per-schedule rule and the node puts no guard of its own there.',
 		displayOptions: {
 			show: {
 				resource: [SERVICE_INVOICE],
@@ -306,44 +306,6 @@ export const serviceInvoiceFields: INodeProperties[] = [
 		default: '',
 		description:
 			'Which profile the note is declared under. It decides the service, the tax and the remarks printed on the note, and the API refuses an issuing without one. ⚠️ A wrong profile is not something fixed afterwards: undoing it is a cancellation at the city hall. The list shows the service code and the ISS rate next to each name, which is what tells two similar profiles apart. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-		displayOptions: {
-			show: {
-				resource: [SERVICE_INVOICE],
-				operation: ['issue'],
-			},
-		},
-	},
-	{
-		displayName: 'Taker',
-		name: 'stakeholderId',
-		type: 'resourceLocator',
-		default: { mode: 'list', value: '' },
-		required: true,
-		description:
-			'The contact the note is issued to. It is obligatory in the body, so it is asked for here rather than taken from the schedule — and whether this API demands the same contact the schedule carries was not measured, so the node neither promises nor prevents it.',
-		modes: [
-			{
-				displayName: 'From List',
-				name: 'list',
-				type: 'list',
-				placeholder: 'Search for a contact…',
-				typeOptions: {
-					searchListMethod: 'searchScheduleStakeholders',
-					// Searched on the server: an organization can have thousands of
-					// customers, and filtering a page of them in the browser would
-					// only ever find what happened to be on that page.
-					searchable: true,
-					searchFilterRequired: false,
-				},
-			},
-			{
-				displayName: 'By ID',
-				name: 'id',
-				type: 'string',
-				placeholder: '2efffcd0-8730-4348-86da-6d9a95be6149',
-				hint: 'The ID as Nibo returns it, or an expression reading it from the incoming item',
-			},
-		],
 		displayOptions: {
 			show: {
 				resource: [SERVICE_INVOICE],

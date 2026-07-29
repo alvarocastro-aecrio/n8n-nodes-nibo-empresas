@@ -1,4 +1,4 @@
-import type { IExecuteFunctions } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 import { niboApiRequest } from '../../transport/request';
@@ -49,8 +49,36 @@ export async function requireSchedule(
 	scheduleId: string,
 	whatWasNotDone: string,
 ): Promise<void> {
+	await readSchedule.call(this, itemIndex, scheduleId, whatWasNotDone);
+}
+
+/**
+ * The same guard, handing the record over.
+ *
+ * The check and the reading are one call, so an operation that needs something
+ * *out* of the schedule — the contact a note is issued to, since 0.14.1 — pays
+ * for the guard rather than for a second round trip. `requireSchedule` is this
+ * with the answer thrown away, which is what its two callers want.
+ *
+ * ⚠️ Read the contact from **`stakeholder.id`**, never from the `stakeholderId`
+ * at the root: on the **listing** of schedules that root field comes back as a
+ * GUID of noughts, which is the tenth gotcha of this project. On this get-by-id
+ * it was measured filled in — so the two disagree by route, and the nested one
+ * is the one that is right on both.
+ */
+export async function readSchedule(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	scheduleId: string,
+	whatWasNotDone: string,
+): Promise<IDataObject> {
 	try {
-		await niboApiRequest.call(this, itemIndex, 'GET', schedulePath(scheduleId));
+		return (await niboApiRequest.call(
+			this,
+			itemIndex,
+			'GET',
+			schedulePath(scheduleId),
+		)) as IDataObject;
 	} catch (error) {
 		const httpCode = (error as NodeApiError).httpCode ?? '';
 
