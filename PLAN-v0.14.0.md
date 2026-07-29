@@ -19,7 +19,9 @@ que é o propósito escrito deste pacote.
 **Cinco operações:** `Get Many`, `Get`, `Get Many Service Profiles`, `Issue` e `Cancel`.
 
 **A escrita foi medida em produção, de novo, e de novo com exceção declarada.** A cobaia está
-fora por dois motivos independentes (1.1). O Alvaro autorizou explicitamente em **2026-07-29**:
+fora por dois motivos independentes: a empresa foi **trocada no meio desta versão** e o token
+novo ainda não chegou às sondas, e a empresa nova **não emite NFS-e** (1.1). O Alvaro autorizou
+explicitamente em **2026-07-29**:
 empresa de produção, contato de teste no nome dele, **valores abaixo de R$ 10**. A sonda usou
 R$ 5. É a **terceira** exceção declarada do projeto.
 
@@ -42,26 +44,42 @@ A empresa já tinha **4 notas** antes de qualquer coisa que este projeto fizesse
 uma cancelada, sendo três delas da madrugada do próprio dia 29, emitidas pelo Alvaro. Elas
 deram, de graça, os estados terminais que a sonda não precisaria mais produzir.
 
-### 1.1 🔴 A cobaia está fora — por dois motivos, e um deles bloqueia outras versões
+### 1.1 🔴 A cobaia mudou no meio desta versão — e é por isso que a medição saiu de produção
 
-| O que se tentou | Resposta |
+**A cobaia usada desde 2026-07-25 acabou.** O período de experiência dela expirou, e em
+**2026-07-29** o Alvaro **excluiu a empresa e criou outra** no lugar. Foi essa troca que a
+medição encontrou:
+
+| O que se tentou, com o token que estava gravado | Resposta |
 |---|---|
-| `GET /nfse` com o token da cobaia | **401** `"Api token expirado"` |
+| `GET /nfse` | **401** `"Api token expirado"` |
 | `GET /nfse/serviceprofiles` | **401**, a mesma |
-| `GET /categories` · `/accounts` · `/public/collections` | **401**, a mesma |
+| `GET /categories` · `/accounts` · `/customers` · `/schedules/credit` · `/public/collections` | **401**, a mesma |
 
 **O 401 não é da NFS-e: é do token.** Toda rota responde igual, inclusive as que a cobaia atende
-desde a 0.4.0. **O token da cobaia expirou** e precisa ser renovado no painel do Nibo.
+desde a 0.4.0 — que é como se sabe que o impedimento é de credencial e não de recurso.
 
-🔴 **Isso é maior que esta versão.** A regra de aceite deste projeto é dirigir os handlers de
-`dist/` contra a cobaia; enquanto o token estiver expirado, **nenhuma versão consegue fechar o
-aceite** — nem esta, nem uma correção de qualquer outra. É o primeiro item da seção 7.
+**A cobaia nova está de pé e vazia**, e o token dela foi trocado na credencial do n8n. O que
+ainda **não** aconteceu é a troca no arquivo de ambiente que as sondas leem — enquanto ela não
+acontecer, medição e aceite contra a cobaia continuam parados. É o item 1 da seção 7, e é o
+único bloqueio que resta nesta versão.
 
-**E mesmo com o token renovado, a NFS-e provavelmente continua fora da cobaia:** emitir depende
-de certificado digital válido e de um perfil de serviço homologado no município (1.10, 1.16), que
-é a mesma classe de impedimento que tirou a cobrança da cobaia na 0.13.0 — lá era o provedor
-bancário contratado. Isso **não foi medido** e não deve ser afirmado: é uma expectativa, e vira
-medição assim que o token voltar.
+⚠️ **A empresa nova não serve para NFS-e** — informado pelo Alvaro em 2026-07-29. Fica
+registrado como **informação dele, não como medição**, e a distinção tem consequência prática:
+
+| Se a lista de perfis responder | O que significa para o node |
+|---|---|
+| **200 com `count: 0`** | É o caso de teste perfeito do `Get Many Service Profiles` — a frase *"esta empresa não emite NFS-e"* (1.10) tem onde ser provada |
+| **403 ou 404** | É outra coisa, e o recurso precisa de tratamento próprio para ela |
+
+São telas diferentes, e escrever uma sem medir é exatamente o erro que a 0.13.1 corrigiu. É a
+**primeira** medição a fazer quando o token entrar.
+
+**Por que isso não é surpresa:** emitir NFS-e depende de certificado digital válido e de perfil
+de serviço homologado no município (1.10, 1.15) — a mesma classe de impedimento que tirou a
+cobrança da cobaia na 0.13.0, onde era o provedor bancário contratado. Uma empresa recém-criada
+não tem nenhum dos dois. **Foi por isso que a medição desta versão saiu inteira de produção**, e
+não por escolha.
 
 ### 1.2 A rota, o envelope e a contagem
 
@@ -435,14 +453,20 @@ protocolo. O transporte não sabe o que é uma nota autorizada, e não deve sabe
 **Gate local:** `npm run lint`, `npm run lint:community`, `npm test`, `npm run build`,
 `npm pack` verdes antes de cada commit de fatia.
 
-🔴 **O aceite está bloqueado até o token da cobaia ser renovado** (1.1). Não é uma ressalva desta
-versão: é a regra 3 e o arranjo de aceite do projeto inteiro. O plano fica pronto; a fatia de
-aceite espera.
+🔴 **O aceite espera o token da cobaia nova chegar ao arquivo de ambiente** (1.1). Não é uma
+ressalva desta versão: é a regra 3 e o arranjo de aceite do projeto inteiro — vale igual para
+uma correção de qualquer outra versão. **As fatias 1 a 5 podem ser escritas, testadas e
+commitadas antes disso**; só o aceite espera.
 
 **Como será, quando destravar:** o arranjo de sempre — `IExecuteFunctions` real dirigindo os
-handlers de `dist/`, nunca `curl`. Contra a **cobaia**, o caminho vazio e o "esta empresa não
-emite NFS-e". Contra a **empresa de produção**, a leitura do registro, os filtros e — sob a mesma
+handlers de `dist/`, nunca `curl`. Contra a **cobaia**, o caminho vazio — e ela serve melhor
+para isso do que a anterior, porque foi criada do zero em 2026-07-29 e **não tem registro
+nenhum**. Contra a **empresa de produção**, a leitura do registro, os filtros e — sob a mesma
 exceção da seção 5, com R$ 5 — uma emissão, a espera, o cancelamento e a limpeza do agendamento.
+
+⚠️ **Um item do aceite depende de uma medição que ainda não pôde ser feita:** o
+`Get Many Service Profiles` contra a cobaia só é conferível depois de saber se ela responde
+`count: 0` ou um erro (1.1). Se for erro, esse item do aceite muda, e a fatia 2 muda com ele.
 
 | ☐ | Item | Como conferir |
 |---|---|---|
@@ -451,7 +475,7 @@ exceção da seção 5, com R$ 5 — uma emissão, a espera, o cancelamento e a 
 | ☐ | O filtro por `schedule/id` monta o GUID **sem aspas** | Produção — 500 se errar |
 | ☐ | `Get` de um ID inexistente diz "não encontrado" com o ID | Produção |
 | ☐ | `Get Many Service Profiles` mostra código de serviço e ISS | Produção |
-| ☐ | Lista de perfis vazia vira "esta empresa não emite NFS-e" | Cobaia, quando o token voltar |
+| ☐ | Lista de perfis vazia vira "esta empresa não emite NFS-e" | Cobaia — **depende da medição de 1.1**: só vale assim se ela responder `count: 0` |
 | ☐ | **Os 41 campos de um registro real batem** | Produção (1.3) |
 | ☐ | `Issue` monta o corpo em PascalCase e sem valor | Unitário + produção |
 | ☐ | A espera atravessa `1` → `2` → `3` e devolve o `number` | Produção, R$ 5 |
@@ -469,9 +493,9 @@ exceção da seção 5, com R$ 5 — uma emissão, a espera, o cancelamento e a 
 
 | # | Em aberto | Situação |
 |---|---|---|
-| 1 | 🔴 **O token da cobaia expirou** | Toda rota responde 401 (1.1). **Bloqueia o aceite desta versão e de qualquer outra.** Precisa ser renovado no painel do Nibo. É a única pendência que impede a versão de fechar |
+| 1 | 🔴 **O token da cobaia nova não está no arquivo de ambiente** | A empresa antiga expirou e foi excluída; a nova foi criada em 2026-07-29 e o token dela entrou na credencial do n8n, mas **não** em `/root/.config/nibo/cobaia.env`, que é de onde as sondas leem (regra 4). Até lá, toda rota responde 401 (1.1). **Bloqueia o aceite desta versão e de qualquer outra** — não bloqueia escrever o código. É a única pendência que impede a versão de fechar |
 | 2 | **O padrão do teto de espera** | Medido: 1,3 s a 123 s em quatro amostras, e o Alvaro relata até 5 min (1.7). Minha recomendação: **120 s ligado por padrão** — cobre o que foi medido com folga, e quem trabalha com município lento sobe o número. O contra é um laço de 50 notas segurando o worker; para esse caso o README documenta emitir com a espera **desligada** e conferir depois com `Get`. **Não é medição: é escolha, e é sua** |
-| 3 | **Se a NFS-e existe na cobaia** | Não medido — o token caiu antes. Expectativa registrada em 1.1, sem virar afirmação. Vira medição junto com o item 1 |
+| 3 | **Como a cobaia nova recusa a NFS-e** | O Alvaro informou que ela **não serve** para NFS-e, e a razão é plausível (certificado e perfil homologado — 1.1). O que falta não é *se*, é **como**: `count: 0` e `403`/`404` pedem telas diferentes, e a fatia 2 depende disso. **Primeira medição assim que o item 1 destravar** |
 | 4 | **Segunda nota num agendamento com uma Autorizada viva** | Não medido (1.11). Enquanto não for, o node não promete nem impede |
 | 5 | **Se o tomador precisa ser o do agendamento** | Não medido. Muda a tela: se a API recusar, o campo pode nascer preenchido e a validação acontece antes da chamada (2h) |
 | 6 | **A numeração** | **0.14.0** — capacidade nova é minor |
