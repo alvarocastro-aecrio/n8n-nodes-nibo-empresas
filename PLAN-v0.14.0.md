@@ -191,17 +191,28 @@ A sonda de R$ 5, lida a cada 400 ms:
 
 E as outras notas da empresa, pela diferença entre `createDate` e o desfecho:
 
-| Nota | Desfecho | Tempo |
-|---|---|---|
-| Sonda de hoje (R$ 5) | Autorizada | **22,8 s** |
-| Nota do Alvaro, 03:02 | Autorizada | **4,6 s** |
-| Negada por certificado vencido | Negada | 1,3 s |
-| Negada pelo município (E0312) | Negada | 7,9 s |
-| Nota de 2019 | Negada | 123 s |
+| Nota | Provedor | Desfecho | Tempo |
+|---|---|---|---|
+| Sonda de hoje (R$ 5) | ENotas | **Autorizada** | **22,8 s** |
+| Nota do Alvaro, 03:02 | ENotas | **Autorizada** | **4,6 s** |
+| Negada por certificado vencido | ENotas | Negada | 1,3 s |
+| Negada pelo município (E0312) | ENotas | Negada | 7,9 s |
+| Nota de 2019 | **DF-e** | Negada | **123,1 s** |
 
-**Quatro amostras, de 1,3 s a 123 s.** O Alvaro relata que pode chegar a **5 minutos**. Isso é
-o suficiente para uma conclusão e não mais que isso: **o teto não pode ser fixo no código**, e o
-padrão dele é decisão, não medição (seção 7, item 2).
+**Cinco amostras, de 1,3 s a 123,1 s**, e o Alvaro relata que pode chegar a **5 minutos**.
+
+⚠️ **A mais lenta é uma negação, não uma autorização** — e isso não a torna irrelevante:
+**negar também é estado terminal**, é nele que a espera para (2d), e é ele que o teto precisa
+cobrir. Ela também é de outro provedor (`DF-e`, e não `ENotas`) e de 2019, o que sugere que a
+variação não é só do município: é do caminho inteiro.
+
+**A conclusão é uma só: o teto não pode ser fixo no código**, e o padrão dele é decisão, não
+medição (seção 7, item 2).
+
+🔴 **E o teto não é o tempo de espera.** O node devolve no instante em que a nota chega a um
+estado terminal — um teto de 5 minutos **não** faz uma nota de 5 segundos demorar 5 minutos. Um
+teto generoso não custa nada no caso comum, e um teto curto não resolve o caso lento: ele só
+devolve *"ainda não autorizada"* e empurra a consulta para o workflow.
 
 **A nota entra na lista em menos de 0,4 s.** Não há a consistência eventual de `/payments` — a
 releitura não precisa de tolerância.
@@ -498,7 +509,7 @@ com R$ 5 — uma emissão, a espera, o cancelamento e a limpeza do agendamento.
 | # | Em aberto | Situação |
 |---|---|---|
 | 1 | ~~O token da cobaia nova~~ | ✅ **Resolvida em 2026-07-29.** A empresa antiga expirou e foi excluída; a nova foi criada no mesmo dia e o token dela está no arquivo de ambiente. As duas empresas respondem (1.1). **Nada bloqueia o aceite** |
-| 2 | **O padrão do teto de espera** | Medido: 1,3 s a 123 s em quatro amostras, e o Alvaro relata até 5 min (1.7). Minha recomendação: **120 s ligado por padrão** — cobre o que foi medido com folga, e quem trabalha com município lento sobe o número. O contra é um laço de 50 notas segurando o worker; para esse caso o README documenta emitir com a espera **desligada** e conferir depois com `Get`. **Não é medição: é escolha, e é sua** |
+| 2 | **O padrão do teto de espera** | Medido: 1,3 s a **123,1 s** em cinco amostras, e o Alvaro relata até 5 min (1.7). Minha recomendação: **300 s (5 min) ligado por padrão** — acima de toda amostra medida e igual ao relato da prática. **Uma recomendação anterior de 120 s foi retirada por ser incoerente com a própria medição**: ficava abaixo da amostra de 123,1 s. E o argumento que a sustentava também não se sustenta — o teto **não** é o tempo de espera (1.7), então um teto alto não custa nada no caso comum. Para quem emite em laço e não quer esperar por nenhuma, o caminho é a espera **desligada** + `Get` depois, e o README documenta isso. **Não é medição: é escolha, e é sua** |
 | 3 | ~~Como a cobaia nova recusa a NFS-e~~ | ✅ **Resolvida em 2026-07-29.** Por **lista vazia**, não por erro: `GET /nfse/serviceprofiles` responde **200 `count: 0`** (1.1). É o mesmo formato da cobrança na 0.13.0, e a fatia 2 fica como estava desenhada |
 | 4 | **Segunda nota num agendamento com uma Autorizada viva** | Não medido (1.11). Enquanto não for, o node não promete nem impede |
 | 5 | **Se o tomador precisa ser o do agendamento** | Não medido. Muda a tela: se a API recusar, o campo pode nascer preenchido e a validação acontece antes da chamada (2h) |
