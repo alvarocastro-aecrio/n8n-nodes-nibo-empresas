@@ -417,6 +417,232 @@ describe('loadServiceProfiles — the list behind the field', () => {
 	});
 });
 
+/**
+ * Issuing a note — the one operation of this node whose mistake lands at a city
+ * hall, and the only one this project has that cannot be undone by deleting
+ * something.
+ *
+ * The measurements behind it were taken on a **production** organization on
+ * 2026-07-29, under the exception in section 5 of the plan: a schedule of R$ 5,
+ * a note issued, authorized and cancelled, and the schedule deleted. The
+ * cancelled note stays in the company's history for good — there is no route
+ * that removes a fiscal document, and there should not be.
+ */
+describe('executeServiceInvoice — Issue', () => {
+	const NEW_ID = 'be35e904-0669-40d3-bad1-cc7277d56781';
+	const CONTACT = 'a0e6a4b2-1f11-4f0e-9c3d-5b7e2c8a4d10';
+
+	const QUEUED = { id: NEW_ID, status: { code: 1, description: 'Em fila de processamento' } };
+	const PROCESSING = {
+		id: NEW_ID,
+		status: { code: 2, description: 'Em processamento de autorização' },
+	};
+	const AUTHORIZED = { ...AN_INVOICE, id: NEW_ID };
+	const DENIED = {
+		id: NEW_ID,
+		status: { code: -1, description: 'Negada' },
+		lastStatusMessage: 'Error',
+		lastMessage:
+			'NFSe negada. \r\nCódigo: _Cert002\r\nDescrição: O certificado digital da empresa está vencido, será necessário a atualização do mesmo antes de continuar as emissões de nota fiscal.',
+	};
+
+	function issuing(parameters: IDataObject = {}) {
+		return executeServiceInvoice.call(
+			context({
+				scheduleId: SCHEDULE,
+				serviceProfileId: PROFILE,
+				stakeholderId: CONTACT,
+				accrualDate: '2026-07-29',
+				...parameters,
+			}),
+			'serviceInvoice',
+			'issue',
+		);
+	}
+
+	/** The POST answers a quoted GUID, and the note is read back from the list */
+	function answersWith(...records: IDataObject[]) {
+		apiRequest.mockResolvedValue(NEW_ID);
+		for (const record of records) {
+			listRequest.mockResolvedValueOnce({ records: [record], count: 1 });
+		}
+	}
+
+	it('posts to /nfse with the body in the PascalCase this API asks for here', async () => {
+		answersWith(AUTHORIZED);
+
+		await issuing({
+			additionalFields: {
+				additionalServiceDescription: 'Mensalidade Teste',
+				stateWhereServiceWasProvided: 'RJ',
+				cityWhereServiceWasProvided: 'Rio de Janeiro',
+			},
+		});
+
+		const [, method, endpoint, , body] = apiRequest.mock.calls[0];
+		expect(method).toBe('POST');
+		expect(endpoint).toBe('/nfse');
+		expect(body).toEqual({
+			ScheduleId: SCHEDULE,
+			ServiceProfileId: PROFILE,
+			StakeholderId: CONTACT,
+			AccrualRpsDate: '2026-07-29',
+			AdditionalServiceDescription: 'Mensalidade Teste',
+			StateWhereServiceWasProvided: 'RJ',
+			CityWhereServiceWasProvided: 'Rio de Janeiro',
+		});
+	});
+
+	/**
+	 * 🔴 **There is no amount in this body, and that is not an omission.** The
+	 * note takes its value from the schedule — a receivable of R$ 5 produced a
+	 * note of R$ 5 — so a field for it on this screen would be a field the API
+	 * never reads.
+	 */
+	it('sends nothing about the amount, which comes from the schedule', async () => {
+		answersWith(AUTHORIZED);
+
+		await issuing();
+
+		const body = apiRequest.mock.calls[0][4] as IDataObject;
+		expect(Object.keys(body)).toEqual([
+			'ScheduleId',
+			'ServiceProfileId',
+			'StakeholderId',
+			'AccrualRpsDate',
+		]);
+	});
+
+	it('reads the bare GUID out of the quoted string the API answers', async () => {
+		answersWith(AUTHORIZED);
+
+		const items = await issuing();
+
+		expect(items[0].json.id).toBe(NEW_ID);
+		expect(optionsSentToTransport().filter).toBe(`id eq ${NEW_ID}`);
+	});
+
+	/**
+	 * The clock, as it was measured: `1` at 0.4 s, `2` at 0.8 s and `3` at
+	 * 22.8 s, with the number, the PDF and the XML arriving together with the
+	 * authorization.
+	 */
+	it('waits through Queued and Processing and hands back the authorized note', async () => {
+		answersWith(QUEUED, PROCESSING, AUTHORIZED);
+
+		const items = await issuing();
+
+		expect(items[0].json).toMatchObject({ status: { code: 3 }, number: '35' });
+		expect(listRequest).toHaveBeenCalledTimes(3);
+	});
+
+	/**
+	 * 🔴 **A denied note is an item, not an exception.** The call worked; the
+	 * city hall refused. Failing the operation here would tell a workflow to
+	 * issue again, and the second RPS has already left.
+	 */
+	it('stops on a denial and hands back the city hall text whole', async () => {
+		answersWith(DENIED);
+
+		const items = await issuing();
+
+		expect(items[0].json.status).toMatchObject({ code: -1 });
+		expect(items[0].json.lastMessage).toBe(DENIED.lastMessage);
+	});
+
+	/**
+	 * `-2` and `-3` were never seen, and the wait does not hang on a code it has
+	 * no name for: it stops and hands the record over as it came. Only `1` and
+	 * `2` are known to be transient.
+	 */
+	it('treats a status code nobody has ever seen as terminal', async () => {
+		answersWith({ id: NEW_ID, status: { code: -3, description: 'Algo novo' } });
+
+		const items = await issuing();
+
+		expect(items[0].json.status).toMatchObject({ code: -3 });
+		expect(listRequest).toHaveBeenCalledTimes(1);
+	});
+
+	/**
+	 * 🔴 **The timeout never says the issuing failed**, because it did not: the
+	 * note is at the city hall, with its RPS. A workflow told "failed" issues
+	 * again, and that is a second note.
+	 */
+	it('says issued and not authorized yet when the ceiling is reached', async () => {
+		answersWith(QUEUED);
+
+		const items = await issuing({ options: { authorizationTimeout: 0 } });
+
+		const said = String(items[0].json._niboAuthorizationPending);
+
+		expect(items[0].json.id).toBe(NEW_ID);
+		expect(said).toMatch(/not authorized yet/i);
+		// It says the opposite of "failed", on purpose and in those words.
+		expect(said).toMatch(/nothing failed/i);
+		expect(said).not.toMatch(/\bfailed to\b|could not issue|error/i);
+	});
+
+	it('never sleeps or reads twice when the wait is switched off', async () => {
+		answersWith(QUEUED);
+
+		const items = await issuing({ options: { waitForAuthorization: false } });
+
+		expect(items[0].json.status).toMatchObject({ code: 1 });
+		expect(listRequest).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * 🔴 **The two defaults are a test, not a comment.** A default that changes
+	 * without anybody deciding is exactly the defect 0.13.1 had to correct — so
+	 * with nothing added under Options, the wait is **on** and the ceiling is
+	 * **300 s**, which is the decision of 2026-07-29.
+	 */
+	it('waits by default, with nothing added under Options', async () => {
+		answersWith(QUEUED, AUTHORIZED);
+
+		const items = await issuing();
+
+		expect(items[0].json.status).toMatchObject({ code: 3 });
+	});
+
+	it('refuses an empty schedule ID before anything is written', async () => {
+		const failure = issuing({ scheduleId: '   ' });
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+
+	it('refuses an empty service profile before anything is written', async () => {
+		const failure = issuing({ serviceProfileId: '' });
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+
+	// The taker travels as a resourceLocator on a screen and as a plain string in
+	// a node saved by hand — the handler reads both, as the schedules do.
+	it('reads the taker out of the picker as well as out of a bare ID', async () => {
+		answersWith(AUTHORIZED);
+
+		await issuing({ stakeholderId: { mode: 'list', value: CONTACT } });
+
+		expect((apiRequest.mock.calls[0][4] as IDataObject).StakeholderId).toBe(CONTACT);
+	});
+
+	// A note nobody can read back is still a note that was issued. Failing here
+	// would send a workflow to issue a second one.
+	it('still succeeds, naming the note, when the read-back finds nothing', async () => {
+		apiRequest.mockResolvedValue(NEW_ID);
+		listRequest.mockResolvedValue({ records: [], count: 0 });
+
+		const items = await issuing({ options: { waitForAuthorization: false } });
+
+		expect(items[0].json).toMatchObject({ serviceInvoiceId: NEW_ID, issued: true });
+	});
+});
+
 describe('NiboEmpresas — what the Service Invoice screen offers', () => {
 	const description = new NiboEmpresas().description;
 
@@ -556,5 +782,74 @@ describe('NiboEmpresas — what the Service Invoice screen offers', () => {
 	it('offers the scan the two parameters every scan of this node has', () => {
 		expect(property('returnAll')).toBeDefined();
 		expect(property('limit')).toBeDefined();
+	});
+
+	/** One field of the Options collection, which is the last parameter of the node */
+	function option(name: string): INodeProperties | undefined {
+		const options = description.properties[description.properties.length - 1];
+		expect(options?.name).toBe('options');
+
+		return ((options?.options ?? []) as INodeProperties[]).find((field) => field.name === name);
+	}
+
+	it('offers the five operations that were measured, and no more', () => {
+		const operations = description.properties.find(
+			(one) =>
+				one.name === 'operation' &&
+				((one.displayOptions?.show?.resource ?? []) as string[]).includes('serviceInvoice'),
+		);
+
+		expect((operations?.options as INodePropertyOptions[]).map((one) => one.value)).toEqual([
+			'get',
+			'list',
+			'listProfiles',
+			'issue',
+		]);
+		expect(operations?.default).toBe('list');
+	});
+
+	/**
+	 * 🔴 The amount has no field, and the notice is what keeps that from reading
+	 * as forgetfulness: the note takes it from the schedule, measured — a
+	 * receivable of R$ 5 produced a note of R$ 5.
+	 */
+	it('asks for no amount and says where the amount comes from', () => {
+		expect(property('value')).toBeUndefined();
+		expect(property('issueNotice')?.type).toBe('notice');
+		expect(property('issueNotice')?.displayName).toMatch(/schedule/i);
+	});
+
+	it('names a profile list the node actually declares', () => {
+		const method = property('serviceProfileId')?.typeOptions?.loadOptionsMethod as string;
+
+		expect(Object.keys(new NiboEmpresas().methods.loadOptions)).toContain(method);
+	});
+
+	it('names a contact search the node actually declares', () => {
+		const modes = property('stakeholderId')?.modes ?? [];
+		const method = modes
+			.map((mode) => mode.typeOptions?.searchListMethod)
+			.find((named) => named !== undefined) as string;
+
+		expect(Object.keys(new NiboEmpresas().methods.listSearch)).toContain(method);
+	});
+
+	/**
+	 * 🔴 The two defaults of 2026-07-29, read off the screen rather than off a
+	 * comment. 120 s had been recommended and was withdrawn for sitting **below**
+	 * the slowest sample measured, 123.1 s.
+	 */
+	it('waits by default and gives the city hall 300 seconds', () => {
+		expect(option('waitForAuthorization')?.default).toBe(true);
+		expect(option('authorizationTimeout')?.default).toBe(300);
+	});
+
+	it('offers both of those only where they can happen — on the issuing', () => {
+		for (const name of ['waitForAuthorization', 'authorizationTimeout']) {
+			expect(option(name)?.displayOptions?.show).toEqual({
+				'/resource': ['serviceInvoice'],
+				'/operation': ['issue'],
+			});
+		}
 	});
 });

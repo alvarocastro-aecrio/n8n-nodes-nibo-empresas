@@ -316,6 +316,29 @@ export class NiboEmpresas implements INodeType {
 						},
 					},
 					{
+						// The ceiling of the wait above, and it is **not** how long the
+						// node takes: it returns the moment the note reaches a final
+						// state. Measured on 2026-07-29 across five notes, from 1.3 s to
+						// 123.1 s — and the Alvaro reports up to five minutes. 300 s is
+						// his decision, taken after a recommendation of 120 s was
+						// withdrawn for sitting below the slowest sample there is.
+						displayName: 'Authorization Timeout',
+						name: 'authorizationTimeout',
+						type: 'number',
+						typeOptions: {
+							minValue: 0,
+						},
+						default: 300,
+						description:
+							'How long to follow a note before handing it back, in seconds. It is a ceiling, not a wait: the node returns as soon as the city hall answers, so a generous number costs nothing on a note that authorizes in five seconds. Reached, the node returns the record as it stands, saying the note was issued and is not authorized yet — never that anything failed.',
+						displayOptions: {
+							show: {
+								'/resource': ['serviceInvoice'],
+								'/operation': ['issue'],
+							},
+						},
+					},
+					{
 						displayName: 'Fail on Incomplete Results',
 						name: 'failOnIncomplete',
 						type: 'boolean',
@@ -359,6 +382,24 @@ export class NiboEmpresas implements INodeType {
 						default: 1000,
 						description:
 							'How long to wait, in milliseconds, between two calls to the API. It applies between input items and between the pages of one scan, never before the first call. Leave it out and the node waits a second; set it to 0 to send the calls back to back.',
+					},
+					{
+						// On by default, which is the safe behaviour being the default —
+						// the same choice Fail on Incomplete Results has carried since
+						// 0.4.3. Whoever issues in a loop and does not want to wait for
+						// any of them switches it off and reads the notes later with Get.
+						displayName: 'Wait for Authorization',
+						name: 'waitForAuthorization',
+						type: 'boolean',
+						default: true,
+						description:
+							'Whether to follow a note until the city hall has answered and hand back the final record — with its number, its PDF and its XML when authorized. Switched off, the node returns the note as it was born, usually still queued.',
+						displayOptions: {
+							show: {
+								'/resource': ['serviceInvoice'],
+								'/operation': ['issue'],
+							},
+						},
 					},
 				],
 			},

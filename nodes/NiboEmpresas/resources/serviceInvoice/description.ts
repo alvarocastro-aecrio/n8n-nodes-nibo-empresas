@@ -64,6 +64,13 @@ export const serviceInvoiceOperations: INodeProperties[] = [
 				description:
 					'Retrieve the service profiles, which is what a note is issued through and the only way to know whether this organization issues one at all',
 			},
+			{
+				name: 'Issue',
+				value: 'issue',
+				action: 'Issue a service invoice',
+				description:
+					'Issue a note from a receivable and, unless the wait is switched off, follow it until the city hall has answered',
+			},
 		],
 		default: 'list',
 	},
@@ -190,6 +197,17 @@ const LIST_NOTICE =
 const PROFILES_NOTICE =
 	'A service profile decides which service the note declares, how much tax it charges and the remarks printed on it — where bank details and a Pix key usually go. An empty answer here is not an error: it means this organization does not issue NFS-e, which needs a valid digital certificate and a profile approved by the city hall.';
 
+/**
+ * The sentence read before the button that cannot be un-pressed.
+ *
+ * Three things it has to say, and each of them was measured rather than
+ * reasoned: the amount is not on this screen because it comes from the
+ * schedule; what comes back is a city hall's answer and not this node's; and
+ * cancelling later does not remove the note nor take its documents off the air.
+ */
+const ISSUE_NOTICE =
+	'Issuing sends an RPS to the city hall, and there is no undo: the note can only be cancelled afterwards, which leaves the record in place and keeps its PDF and XML answering. The amount is not asked for here because it comes from the schedule. If the city hall denies the note, that is not a failure of this node — the item comes out with the denial and the city hall\'s own text in lastMessage.';
+
 export const serviceInvoiceFields: INodeProperties[] = [
 	{
 		displayName: LIST_NOTICE,
@@ -214,6 +232,154 @@ export const serviceInvoiceFields: INodeProperties[] = [
 				operation: ['listProfiles'],
 			},
 		},
+	},
+	{
+		displayName: ISSUE_NOTICE,
+		name: 'issueNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['issue'],
+			},
+		},
+	},
+	{
+		displayName: 'Schedule ID',
+		name: 'scheduleId',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'a01f0058-d321-4805-bd73-810e88b98557',
+		description:
+			'The receivable the note is issued from. The amount of the note comes from it and is not asked for here. One schedule was measured carrying three notes, so this API has no one-note-per-schedule rule and the node puts no guard of its own here.',
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['issue'],
+			},
+		},
+	},
+	{
+		displayName: 'Service Profile Name or ID',
+		name: 'serviceProfileId',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'loadServiceProfiles',
+			// The way back from the per-item mode, where the list refuses to load.
+			loadOptionsDependsOn: ['authMode'],
+		},
+		required: true,
+		default: '',
+		description:
+			'Which profile the note is declared under. It decides the service, the tax and the remarks printed on the note, and the API refuses an issuing without one. ⚠️ A wrong profile is not something fixed afterwards: undoing it is a cancellation at the city hall. The list shows the service code and the ISS rate next to each name, which is what tells two similar profiles apart. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['issue'],
+			},
+		},
+	},
+	{
+		displayName: 'Taker',
+		name: 'stakeholderId',
+		type: 'resourceLocator',
+		default: { mode: 'list', value: '' },
+		required: true,
+		description:
+			'The contact the note is issued to. It is obligatory in the body, so it is asked for here rather than taken from the schedule — and whether this API demands the same contact the schedule carries was not measured, so the node neither promises nor prevents it.',
+		modes: [
+			{
+				displayName: 'From List',
+				name: 'list',
+				type: 'list',
+				placeholder: 'Search for a contact…',
+				typeOptions: {
+					searchListMethod: 'searchScheduleStakeholders',
+					// Searched on the server: an organization can have thousands of
+					// customers, and filtering a page of them in the browser would
+					// only ever find what happened to be on that page.
+					searchable: true,
+					searchFilterRequired: false,
+				},
+			},
+			{
+				displayName: 'By ID',
+				name: 'id',
+				type: 'string',
+				placeholder: '2efffcd0-8730-4348-86da-6d9a95be6149',
+				hint: 'The ID as Nibo returns it, or an expression reading it from the incoming item',
+			},
+		],
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['issue'],
+			},
+		},
+	},
+	{
+		displayName: 'Accrual Date',
+		name: 'accrualDate',
+		type: 'dateTime',
+		typeOptions: {
+			// A competence is a day. The API takes YYYY-MM-DD and there is no hour
+			// in it, so a clock would offer a decision that does not exist — and one
+			// with a wrong answer, since midnight in Brasília is the day before in
+			// UTC.
+			dateOnly: true,
+		},
+		required: true,
+		default: '',
+		description:
+			'The competence of the RPS — the month the service is declared in. Asked for rather than guessed: on the schedules of this API an omitted accrual date is copied from the due date, which throws the competence into the wrong month.',
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['issue'],
+			},
+		},
+	},
+	{
+		displayName: 'Additional Fields',
+		name: 'additionalFields',
+		type: 'collection',
+		placeholder: 'Add field',
+		default: {},
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['issue'],
+			},
+		},
+		options: [
+			{
+				displayName: 'City Where Service Was Provided',
+				name: 'cityWhereServiceWasProvided',
+				type: 'string',
+				default: '',
+				placeholder: 'Rio de Janeiro',
+				description:
+					'Where the service was provided, when it was not where the company is. Left out, the key is not sent at all and Nibo decides — which is what a company issuing from its own address wants.',
+			},
+			{
+				displayName: 'Service Description',
+				name: 'additionalServiceDescription',
+				type: 'string',
+				default: '',
+				description:
+					'The text that fills the description template of the profile — the {{Descricao}} it carries. Left out, the key is not sent and the profile is left to resolve it on its own.',
+			},
+			{
+				displayName: 'State Where Service Was Provided',
+				name: 'stateWhereServiceWasProvided',
+				type: 'string',
+				default: '',
+				placeholder: 'RJ',
+				description: 'The state of the city above, as the two-letter abbreviation',
+			},
+		],
 	},
 	{
 		displayName: 'Service Invoice ID',
