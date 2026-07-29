@@ -18,10 +18,9 @@ que é o propósito escrito deste pacote.
 
 **Cinco operações:** `Get Many`, `Get`, `Get Many Service Profiles`, `Issue` e `Cancel`.
 
-**A escrita foi medida em produção, de novo, e de novo com exceção declarada.** A cobaia está
-fora por dois motivos independentes: a empresa foi **trocada no meio desta versão** e o token
-novo ainda não chegou às sondas, e a empresa nova **não emite NFS-e** (1.1). O Alvaro autorizou
-explicitamente em **2026-07-29**:
+**A escrita foi medida em produção, de novo, e de novo com exceção declarada.** A cobaia foi
+**trocada no meio desta versão**, e a empresa nova **não emite NFS-e** — medido, e por lista
+vazia em vez de erro (1.1). O Alvaro autorizou explicitamente em **2026-07-29**:
 empresa de produção, contato de teste no nome dele, **valores abaixo de R$ 10**. A sonda usou
 R$ 5. É a **terceira** exceção declarada do projeto.
 
@@ -59,27 +58,38 @@ medição encontrou:
 **O 401 não é da NFS-e: é do token.** Toda rota responde igual, inclusive as que a cobaia atende
 desde a 0.4.0 — que é como se sabe que o impedimento é de credencial e não de recurso.
 
-**A cobaia nova está de pé e vazia**, e o token dela foi trocado na credencial do n8n. O que
-ainda **não** aconteceu é a troca no arquivo de ambiente que as sondas leem — enquanto ela não
-acontecer, medição e aceite contra a cobaia continuam parados. É o item 1 da seção 7, e é o
-único bloqueio que resta nesta versão.
+✅ **Resolvido no mesmo dia.** O token da cobaia nova entrou no arquivo de ambiente e a empresa
+foi medida:
 
-⚠️ **A empresa nova não serve para NFS-e** — informado pelo Alvaro em 2026-07-29. Fica
-registrado como **informação dele, não como medição**, e a distinção tem consequência prática:
-
-| Se a lista de perfis responder | O que significa para o node |
+| Rota | Resposta |
 |---|---|
-| **200 com `count: 0`** | É o caso de teste perfeito do `Get Many Service Profiles` — a frase *"esta empresa não emite NFS-e"* (1.10) tem onde ser provada |
-| **403 ou 404** | É outra coisa, e o recurso precisa de tratamento próprio para ela |
+| `GET /categories` | **200**, `count: 22` — as categorias próprias de uma empresa nova |
+| `GET /accounts` · `/customers` · `/schedules/credit` · `/costcenters` | **200**, `count: 0` em todas |
+| `GET /public/collections` · `/public/collections-profiles` | **200**, `count: 0` |
+| **`GET /nfse`** | **200**, `count: 0` |
+| 🔴 **`GET /nfse/serviceprofiles`** | **200**, **`count: 0`** |
 
-São telas diferentes, e escrever uma sem medir é exatamente o erro que a 0.13.1 corrigiu. É a
-**primeira** medição a fazer quando o token entrar.
+**A empresa está genuinamente vazia** — 22 categorias, que é o que o Nibo cria sozinho, e zero
+de todo o resto. É uma cobaia melhor que a anterior para o aceite, porque o caminho vazio é
+exatamente o que ela existe para provar.
 
-**Por que isso não é surpresa:** emitir NFS-e depende de certificado digital válido e de perfil
-de serviço homologado no município (1.10, 1.15) — a mesma classe de impedimento que tirou a
-cobrança da cobaia na 0.13.0, onde era o provedor bancário contratado. Uma empresa recém-criada
-não tem nenhum dos dois. **Foi por isso que a medição desta versão saiu inteira de produção**, e
-não por escolha.
+🔴 **E a recusa da NFS-e é por lista vazia, não por erro.** O Alvaro tinha informado que a
+empresa nova "não serve para NFS-e", e a medição diz **como**: a rota responde **200 com
+`count: 0`**, não 403 nem 404. A diferença decide a tela:
+
+| Se a lista de perfis respondesse | O que o node precisaria |
+|---|---|
+| **200 com `count: 0`** ← **é este** | A frase *"esta empresa não emite NFS-e"* (1.10), que já estava desenhada |
+| 403 ou 404 | Tratamento próprio, e a fatia 2 mudaria |
+
+**É o mesmo formato da cobrança na 0.13.0** — lá a cobaia também respondia coleção e perfis
+vazios —, então o recurso trata os dois casos com o mesmo padrão, sem inventar um terceiro.
+
+**Por que a empresa não emite:** NFS-e depende de certificado digital válido e de perfil de
+serviço homologado no município (1.10, 1.15) — a mesma classe de impedimento que tirou a cobrança
+da cobaia na 0.13.0, onde era o provedor bancário contratado. Uma empresa recém-criada não tem
+nenhum dos dois. **Foi por isso que a medição de escrita desta versão saiu de produção**, e não
+por escolha.
 
 ### 1.2 A rota, o envelope e a contagem
 
@@ -453,20 +463,14 @@ protocolo. O transporte não sabe o que é uma nota autorizada, e não deve sabe
 **Gate local:** `npm run lint`, `npm run lint:community`, `npm test`, `npm run build`,
 `npm pack` verdes antes de cada commit de fatia.
 
-🔴 **O aceite espera o token da cobaia nova chegar ao arquivo de ambiente** (1.1). Não é uma
-ressalva desta versão: é a regra 3 e o arranjo de aceite do projeto inteiro — vale igual para
-uma correção de qualquer outra versão. **As fatias 1 a 5 podem ser escritas, testadas e
-commitadas antes disso**; só o aceite espera.
+✅ **Nada bloqueia o aceite.** A cobaia foi trocada no meio desta versão e o token novo já está
+no arquivo de ambiente (1.1); as duas empresas respondem.
 
-**Como será, quando destravar:** o arranjo de sempre — `IExecuteFunctions` real dirigindo os
-handlers de `dist/`, nunca `curl`. Contra a **cobaia**, o caminho vazio — e ela serve melhor
-para isso do que a anterior, porque foi criada do zero em 2026-07-29 e **não tem registro
-nenhum**. Contra a **empresa de produção**, a leitura do registro, os filtros e — sob a mesma
-exceção da seção 5, com R$ 5 — uma emissão, a espera, o cancelamento e a limpeza do agendamento.
-
-⚠️ **Um item do aceite depende de uma medição que ainda não pôde ser feita:** o
-`Get Many Service Profiles` contra a cobaia só é conferível depois de saber se ela responde
-`count: 0` ou um erro (1.1). Se for erro, esse item do aceite muda, e a fatia 2 muda com ele.
+**Como será:** o arranjo de sempre — `IExecuteFunctions` real dirigindo os handlers de `dist/`,
+nunca `curl`. Contra a **cobaia**, o caminho vazio — e ela serve melhor para isso do que a
+anterior, porque foi criada do zero em 2026-07-29 e **não tem registro nenhum**. Contra a
+**empresa de produção**, a leitura do registro, os filtros e — sob a mesma exceção da seção 5,
+com R$ 5 — uma emissão, a espera, o cancelamento e a limpeza do agendamento.
 
 | ☐ | Item | Como conferir |
 |---|---|---|
@@ -475,7 +479,7 @@ exceção da seção 5, com R$ 5 — uma emissão, a espera, o cancelamento e a 
 | ☐ | O filtro por `schedule/id` monta o GUID **sem aspas** | Produção — 500 se errar |
 | ☐ | `Get` de um ID inexistente diz "não encontrado" com o ID | Produção |
 | ☐ | `Get Many Service Profiles` mostra código de serviço e ISS | Produção |
-| ☐ | Lista de perfis vazia vira "esta empresa não emite NFS-e" | Cobaia — **depende da medição de 1.1**: só vale assim se ela responder `count: 0` |
+| ☐ | Lista de perfis vazia vira "esta empresa não emite NFS-e" | Cobaia — ela responde `count: 0`, medido em 1.1 |
 | ☐ | **Os 41 campos de um registro real batem** | Produção (1.3) |
 | ☐ | `Issue` monta o corpo em PascalCase e sem valor | Unitário + produção |
 | ☐ | A espera atravessa `1` → `2` → `3` e devolve o `number` | Produção, R$ 5 |
@@ -493,14 +497,17 @@ exceção da seção 5, com R$ 5 — uma emissão, a espera, o cancelamento e a 
 
 | # | Em aberto | Situação |
 |---|---|---|
-| 1 | 🔴 **O token da cobaia nova não está no arquivo de ambiente** | A empresa antiga expirou e foi excluída; a nova foi criada em 2026-07-29 e o token dela entrou na credencial do n8n, mas **não** em `/root/.config/nibo/cobaia.env`, que é de onde as sondas leem (regra 4). Até lá, toda rota responde 401 (1.1). **Bloqueia o aceite desta versão e de qualquer outra** — não bloqueia escrever o código. É a única pendência que impede a versão de fechar |
+| 1 | ~~O token da cobaia nova~~ | ✅ **Resolvida em 2026-07-29.** A empresa antiga expirou e foi excluída; a nova foi criada no mesmo dia e o token dela está no arquivo de ambiente. As duas empresas respondem (1.1). **Nada bloqueia o aceite** |
 | 2 | **O padrão do teto de espera** | Medido: 1,3 s a 123 s em quatro amostras, e o Alvaro relata até 5 min (1.7). Minha recomendação: **120 s ligado por padrão** — cobre o que foi medido com folga, e quem trabalha com município lento sobe o número. O contra é um laço de 50 notas segurando o worker; para esse caso o README documenta emitir com a espera **desligada** e conferir depois com `Get`. **Não é medição: é escolha, e é sua** |
-| 3 | **Como a cobaia nova recusa a NFS-e** | O Alvaro informou que ela **não serve** para NFS-e, e a razão é plausível (certificado e perfil homologado — 1.1). O que falta não é *se*, é **como**: `count: 0` e `403`/`404` pedem telas diferentes, e a fatia 2 depende disso. **Primeira medição assim que o item 1 destravar** |
+| 3 | ~~Como a cobaia nova recusa a NFS-e~~ | ✅ **Resolvida em 2026-07-29.** Por **lista vazia**, não por erro: `GET /nfse/serviceprofiles` responde **200 `count: 0`** (1.1). É o mesmo formato da cobrança na 0.13.0, e a fatia 2 fica como estava desenhada |
 | 4 | **Segunda nota num agendamento com uma Autorizada viva** | Não medido (1.11). Enquanto não for, o node não promete nem impede |
 | 5 | **Se o tomador precisa ser o do agendamento** | Não medido. Muda a tela: se a API recusar, o campo pode nascer preenchido e a validação acontece antes da chamada (2h) |
 | 6 | **A numeração** | **0.14.0** — capacidade nova é minor |
 
 **O que não depende de decisão:** a rota, a chave de paginação, o registro campo a campo, os
 cinco códigos de status, os campos de filtro um a um, a rota de cancelar, o formato do corpo, e o
-ciclo inteiro no relógio. Está tudo medido. **A fatia 1 pode começar com o OK do Alvaro** — e as
-fatias 1 a 5 podem ser escritas e testadas antes do token da cobaia voltar; só o aceite espera.
+ciclo inteiro no relógio, e **como a cobaia recusa a NFS-e**. Está tudo medido, e as duas
+empresas de teste respondem. **Só o item 2 — o padrão do teto de espera — depende de decisão, e
+a fatia 1 não depende dele: ele é opção de tela, escrita na fatia 3.**
+
+**A fatia 1 pode começar com o OK do Alvaro.**
