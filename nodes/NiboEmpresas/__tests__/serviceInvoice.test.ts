@@ -1,14 +1,16 @@
 import type {
 	IDataObject,
 	IExecuteFunctions,
+	ILoadOptionsFunctions,
 	INode,
 	INodeProperties,
 	INodePropertyOptions,
 } from 'n8n-workflow';
-import { sleep } from 'n8n-workflow';
+import { NodeOperationError, sleep } from 'n8n-workflow';
 
 import { NiboEmpresas } from '../NiboEmpresas.node';
 import { executeServiceInvoice } from '../resources/serviceInvoice/execute';
+import { loadServiceProfiles } from '../resources/serviceInvoice/load';
 import { niboListRequest } from '../transport/paginate';
 import { niboApiRequest } from '../transport/request';
 
@@ -232,6 +234,186 @@ describe('executeServiceInvoice — the assisted filter', () => {
 		await filtering([{ field: 'accrualRpsDate', operator: 'ge', dateValue: '2026-07-01' }]);
 
 		expect(filterSent()).toBe('accrualRpsDate ge 2026-07-01');
+	});
+});
+
+/**
+ * One note, read through the list filtered by its ID.
+ *
+ * **There is no get-by-id.** `GET /nfse/{id}` answers 404 *"Resource not
+ * found"*, identical to the 404 of a route that was never there — measured on
+ * 2026-07-29. Category has read a single record this way since 0.9.0, for a
+ * different reason and by the same means.
+ */
+describe('executeServiceInvoice — Get', () => {
+	function getting(id: string = INVOICE) {
+		return executeServiceInvoice.call(
+			context({ serviceInvoiceId: id }),
+			'serviceInvoice',
+			'get',
+		);
+	}
+
+	it('reads the record through the list filtered by ID, never through a get-by-id', async () => {
+		listRequest.mockResolvedValue({ records: [AN_INVOICE], count: 1 });
+
+		await getting();
+
+		expect(listRequest.mock.calls[0][1]).toBe('/nfse');
+		expect(optionsSentToTransport().filter).toBe(`id eq ${INVOICE}`);
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+
+	it('hands back the one record, not a list of one', async () => {
+		listRequest.mockResolvedValue({ records: [AN_INVOICE], count: 1 });
+
+		const items = await getting();
+
+		expect(items).toHaveLength(1);
+		expect(items[0].json.id).toBe(INVOICE);
+	});
+
+	it('says not found, with the ID, when the filter matches nothing', async () => {
+		listRequest.mockResolvedValue({ records: [], count: 0 });
+
+		const failure = getting();
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		await expect(failure).rejects.toThrow(new RegExp(INVOICE));
+	});
+
+	it('refuses an empty ID before reading anything', async () => {
+		const failure = getting('   ');
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		expect(listRequest).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * The service profiles — the field that decides the whole note, and the only
+ * route that answers whether an organization issues one at all.
+ *
+ * Undocumented by Nibo, and the single source of the `ServiceProfileId` that
+ * the issuing body demands.
+ */
+describe('executeServiceInvoice — Get Many Service Profiles', () => {
+	function listingProfiles() {
+		return executeServiceInvoice.call(context({}), 'serviceInvoice', 'listProfiles');
+	}
+
+	it('reads the profiles from their own route', async () => {
+		apiRequest.mockResolvedValue({ items: [{ id: PROFILE, name: 'Certificação Digital' }], count: 1 });
+
+		await listingProfiles();
+
+		const [, method, endpoint] = apiRequest.mock.calls[0];
+		expect(method).toBe('GET');
+		expect(endpoint).toBe('/nfse/serviceprofiles');
+	});
+
+	it('unwraps the envelope into one item per profile, whole', async () => {
+		apiRequest.mockResolvedValue({
+			items: [
+				{ id: PROFILE, name: 'Certificação Digital', issAliquot: 5, cityServiceCode: '170102002' },
+				{ id: 'p2', name: 'Outro' },
+			],
+			count: 2,
+		});
+
+		const items = await listingProfiles();
+
+		expect(items).toHaveLength(2);
+		expect(items[0].json).toMatchObject({ id: PROFILE, issAliquot: 5, cityServiceCode: '170102002' });
+	});
+
+	/**
+	 * 🔴 The refusal is an **empty list**, not an error — measured on the test
+	 * company on 2026-07-29: `200 {"items":[],"count":0}`, not a 403 and not a
+	 * 404. It is the same shape the charges of 0.13.0 refuse in, and it means
+	 * something specific enough to be worth a sentence rather than an empty box.
+	 */
+	it('says the organization does not issue NFS-e when there is no profile', async () => {
+		apiRequest.mockResolvedValue({ items: [], count: 0 });
+
+		const failure = listingProfiles();
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		await expect(failure).rejects.toThrow(/does not issue/i);
+		await expect(failure).rejects.toMatchObject({
+			description: expect.stringMatching(/certificate|city hall/i),
+		});
+	});
+});
+
+/**
+ * The list behind the Service Profile field, which is where the choice is
+ * actually made — and the one place a wrong pick is expensive: a profile
+ * decides the tax and the payment instructions printed on the note, and undoing
+ * that is a cancellation at the city hall.
+ */
+describe('loadServiceProfiles — the list behind the field', () => {
+	const A_PROFILE = {
+		id: PROFILE,
+		name: 'Certificação Digital',
+		cityServiceCode: '170102002',
+		issAliquot: 5,
+	};
+
+	function loader(response: unknown, authMode = 'credential') {
+		const request = jest.fn().mockResolvedValue(response);
+
+		const context = {
+			getCurrentNodeParameter: () => authMode,
+			getCredentials: async () => ({ baseUrl: 'https://api.nibo.com.br/empresas/v1' }),
+			getNode: () => NODE,
+			helpers: { httpRequestWithAuthentication: request },
+		} as unknown as ILoadOptionsFunctions;
+
+		return { context, request };
+	}
+
+	it('reads the profiles from the undocumented route', async () => {
+		const { context: ctx, request } = loader({ items: [A_PROFILE], count: 1 });
+
+		await loadServiceProfiles.call(ctx);
+
+		expect(request.mock.calls[0][1]).toMatchObject({
+			method: 'GET',
+			url: 'https://api.nibo.com.br/empresas/v1/nfse/serviceprofiles',
+		});
+	});
+
+	/**
+	 * The name alone is not enough to choose by. Two profiles called something
+	 * like "padrão" differ in the service code and in the tax, which is exactly
+	 * what the note carries — so both travel next to the name.
+	 */
+	it('shows the service code and the ISS rate next to the name', async () => {
+		const { context: ctx } = loader({ items: [A_PROFILE], count: 1 });
+
+		const options = await loadServiceProfiles.call(ctx);
+
+		expect(options[0].name).toBe('Certificação Digital');
+		expect(options[0].value).toBe(PROFILE);
+		expect(options[0].description).toMatch(/170102002/);
+		expect(options[0].description).toMatch(/5/);
+		expect(options[0].description).toMatch(/ISS/i);
+	});
+
+	it('says the organization does not issue NFS-e instead of drawing an empty box', async () => {
+		const { context: ctx } = loader({ items: [], count: 0 });
+
+		await expect(loadServiceProfiles.call(ctx)).rejects.toThrow(/does not issue/i);
+	});
+
+	// A profile belongs to one organization, so one picked here would be right
+	// for one item of a portfolio loop and wrong for every other.
+	it('refuses to load at all when the token is read per item', async () => {
+		const { context: ctx, request } = loader({ items: [A_PROFILE], count: 1 }, 'field');
+
+		await expect(loadServiceProfiles.call(ctx)).rejects.toThrow(/per item/i);
+		expect(request).not.toHaveBeenCalled();
 	});
 });
 

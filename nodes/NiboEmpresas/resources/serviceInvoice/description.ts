@@ -45,10 +45,24 @@ export const serviceInvoiceOperations: INodeProperties[] = [
 		},
 		options: [
 			{
+				name: 'Get',
+				value: 'get',
+				action: 'Get a service invoice',
+				description:
+					'Retrieve one note by ID, read through the list — this API has no get-by-ID route for a note',
+			},
+			{
 				name: 'Get Many',
 				value: 'list',
 				action: 'Get many service invoices',
 				description: 'Retrieve the service invoices of the organization',
+			},
+			{
+				name: 'Get Many Service Profiles',
+				value: 'listProfiles',
+				action: 'Get many service profiles',
+				description:
+					'Retrieve the service profiles, which is what a note is issued through and the only way to know whether this organization issues one at all',
 			},
 		],
 		default: 'list',
@@ -169,6 +183,13 @@ export const serviceInvoiceFilterFieldTypes = filterFieldTypes(FILTER_FIELDS);
 const LIST_NOTICE =
 	'The pdfFileUrl and xmlFileUrl on these records are public: they open without a token, and they keep answering after the note is cancelled. Treat a link as the document itself, not as a reference to it.';
 
+/**
+ * Said above the list of profiles, because a profile is not a setting to be
+ * tried: it decides the tax and the text printed on the note.
+ */
+const PROFILES_NOTICE =
+	'A service profile decides which service the note declares, how much tax it charges and the remarks printed on it — where bank details and a Pix key usually go. An empty answer here is not an error: it means this organization does not issue NFS-e, which needs a valid digital certificate and a profile approved by the city hall.';
+
 export const serviceInvoiceFields: INodeProperties[] = [
 	{
 		displayName: LIST_NOTICE,
@@ -179,6 +200,34 @@ export const serviceInvoiceFields: INodeProperties[] = [
 			show: {
 				resource: [SERVICE_INVOICE],
 				operation: ['list'],
+			},
+		},
+	},
+	{
+		displayName: PROFILES_NOTICE,
+		name: 'profilesNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['listProfiles'],
+			},
+		},
+	},
+	{
+		displayName: 'Service Invoice ID',
+		name: 'serviceInvoiceId',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'be35e904-0669-40d3-bad1-cc7277d56781',
+		description:
+			'The note, as Get Many returns it. There is no get-by-ID route on this API — the record is fetched through the list filtered by this ID.',
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['get'],
 			},
 		},
 	},

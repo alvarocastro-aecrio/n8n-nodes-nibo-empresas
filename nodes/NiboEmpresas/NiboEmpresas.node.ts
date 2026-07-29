@@ -83,6 +83,7 @@ import {
 	serviceInvoiceResources,
 } from './resources/serviceInvoice/description';
 import { executeServiceInvoice } from './resources/serviceInvoice/execute';
+import { loadServiceProfiles } from './resources/serviceInvoice/load';
 import {
 	stakeholderFields,
 	stakeholderOperations,
@@ -377,6 +378,7 @@ export class NiboEmpresas implements INodeType {
 			loadCategorySubgroups,
 			loadCostCenters,
 			loadScheduleCategories,
+			loadServiceProfiles,
 		},
 		/**
 		 * The searches, which are the lists too big to hand over whole. A
