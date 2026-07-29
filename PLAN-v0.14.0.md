@@ -493,25 +493,25 @@ anterior, porque foi criada do zero em 2026-07-29 e **não tem registro nenhum**
 **empresa de produção**, a leitura do registro, os filtros e — sob a mesma exceção da seção 5,
 com R$ 5 — uma emissão, a espera, o cancelamento e a limpeza do agendamento.
 
-| ☐ | Item | Como conferir |
+| ☑ | Item | Como conferir |
 |---|---|---|
-| ☐ | `Get Many` chama `/nfse` e pagina por `id` | Produção |
-| ☐ | O menu de filtro não oferece `status/description` nem `isDeleted` | Unitário — os dois são 500 (1.9) |
-| ☐ | O filtro por `schedule/id` monta o GUID **sem aspas** | Produção — 500 se errar |
-| ☐ | `Get` de um ID inexistente diz "não encontrado" com o ID | Produção |
-| ☐ | `Get Many Service Profiles` mostra código de serviço e ISS | Produção |
-| ☐ | Lista de perfis vazia vira "esta empresa não emite NFS-e" | Cobaia — ela responde `count: 0`, medido em 1.1 |
-| ☐ | **Os 41 campos de um registro real batem** | Produção (1.3) |
-| ☐ | `Issue` monta o corpo em PascalCase e sem valor | Unitário + produção |
-| ☐ | A espera atravessa `1` → `2` → `3` e devolve o `number` | Produção, R$ 5 |
-| ☐ | Teto estourado diz **emitida, não autorizada** — nunca "falhou" | Unitário, com teto de 0 s |
-| ☐ | Sem tocar em `Options`: espera **ligada**, teto **300 s** | Unitário (2c) |
-| ☐ | Nota negada sai como **item**, com o texto da prefeitura | Unitário |
-| ☐ | `Cancel` chama `POST …/cancel` e a releitura mostra `-4` | Produção (1.8) |
-| ☐ | O notice diz que PDF e XML seguem públicos **depois** do cancelamento | 1.12 |
+| ✅ | `Get Many` chama `/nfse` e pagina por `id` | Produção — 5 notas (8.1) |
+| ✅ | O menu de filtro não oferece `status/description` nem `isDeleted` | Unitário — os dois são 500 (1.9) |
+| ✅ | O filtro por `schedule/id` monta o GUID **sem aspas** | Produção — 3 notas no mesmo agendamento (8.1) |
+| ✅ | `Get` de um ID inexistente diz "não encontrado" com o ID | Produção |
+| ✅ | `Get Many Service Profiles` mostra código de serviço e ISS | Produção — *Certificação Digital · Service code 170102002 · ISS 5%* |
+| ✅ | Lista de perfis vazia vira "esta empresa não emite NFS-e" | Cobaia — ela responde `count: 0`, medido em 1.1 |
+| ✅ | **Os 41 campos de um registro real batem** | Produção — 42 na união das 5 notas (1.3, 8.1) |
+| ✅ | `Issue` monta o corpo em PascalCase e sem valor | Unitário ✅ · produção **pendente de OK** (8.2) |
+| ☐ | A espera atravessa `1` → `2` → `3` e devolve o `number` | Produção, R$ 5 — **pendente de OK** (8.2) |
+| ✅ | Teto estourado diz **emitida, não autorizada** — nunca "falhou" | Unitário, com teto de 0 s |
+| ✅ | Sem tocar em `Options`: espera **ligada**, teto **300 s** | Unitário (2c) |
+| ✅ | Nota negada sai como **item**, com o texto da prefeitura | Unitário |
+| ☐ | `Cancel` chama `POST …/cancel` e a releitura mostra `-4` | Produção (1.8) — **pendente de OK** (8.2) |
+| ✅ | O notice diz que PDF e XML seguem públicos **depois** do cancelamento | 1.12 |
 | ☐ | Resíduo conferido: agendamento apagado, nota cancelada declarada | Toda sonda de escrita fecha assim |
-| ☐ | Node salvo na 0.13.x executa sem ser tocado | `Collection · Get Many` e `Schedule · Get Many` |
-| ☐ | **Instalação real (regra 7)** | Tela Community Nodes de instância limpa |
+| ✅ | Node salvo na 0.13.x executa sem ser tocado | `Collection · Get Many` e `Schedule · Get Many`, os dois na cobaia |
+| ☐ | **Instalação real (regra 7)** | Tela Community Nodes de instância limpa — é do Alvaro |
 
 ---
 
@@ -537,3 +537,57 @@ no relógio, e **como a cobaia recusa a NFS-e**. As duas empresas de teste respo
 está desenhado. Enquanto não forem medidos, o node não promete nem impede.
 
 **Nada mais depende de decisão. A fatia 1 pode começar.**
+
+---
+
+## 8. O que foi construído e aceito — 2026-07-29
+
+As cinco fatias estão escritas, cada uma com commit próprio e gate local verde:
+`lint`, `lint:community`, **941 testes**, `build` e `pack`. O pacote está em **0.14.0**.
+
+**Uma correção do plano, achada pela própria construção.** A 1.9 lista os campos que filtram e
+**não diz a forma do literal de cada um** — e três campos de cara numérica discordam entre si,
+medidos um a um antes de a fatia 1 ser escrita:
+
+| Campo | Tipo na API | Literal |
+|---|---|---|
+| `number` — o número da nota | **`Edm.String`** | `number eq '35'` · `number eq 35` é **500** |
+| `rpsNumber` | `Edm.Int32` | nu — e o inverso do de cima |
+| `rpsSeries` | **`Edm.String`** | entre aspas outra vez |
+
+Um menu montado por analogia teria posto os três como número e produzido 500 em dois deles.
+
+### 8.1 O aceite de leitura — 17 itens, todos verdes
+
+Dirigindo os handlers de `dist/` com um `IExecuteFunctions` real, nunca `curl`. **Nenhuma
+escrita.**
+
+**Contra a cobaia** — o caminho vazio, que é o que ela existe para provar: `Get Many` devolve
+lista vazia sem erro; `Get Many Service Profiles` **e** a lista do campo recusam com a mesma
+frase, *"This organization does not issue NFS-e"*, com certificado e prefeitura na descrição;
+`Get` de um ID inexistente cita o ID; e `Collection · Get Many` e `Schedule · Get Many` seguem
+executando sem ser tocados.
+
+**Contra a empresa de produção** — só leitura: 5 notas, **42 campos** na união delas (os 41 do
+plano, mais os que um estado terminal traz e o outro não); a nota que passou pela autorização
+carrega número, PDF e XML **e continua carregando depois de cancelada**, enquanto as três negadas
+nunca os ganharam; `Get` pelo ID; o filtro por `schedule/id` com **GUID nu** achando as 3 notas do
+mesmo agendamento (1.11 confirmado no aceite); `status/code` nu; o número da nota **entre aspas** e
+o do RPS **nu**, cada um achando a própria nota; o perfil com código de serviço e ISS; e a lista
+recusando-se a carregar no modo de token por item.
+
+### 8.2 🔴 O que falta, e por que parou aqui
+
+Três itens do aceite são **escrita em empresa de produção**: emitir a nota de R$ 5, ver a espera
+atravessar `1` → `2` → `3`, cancelar e apagar o agendamento.
+
+**A exceção do dia 29 foi dada para a medição, e ela já foi usada.** Repetir a sonda é uma
+**segunda** nota fiscal na empresa — e, como diz o aviso no topo deste plano, **o resíduo não
+chega a zero**: mais uma nota `Cancelada` fica no histórico para sempre. Por isso esses três
+itens esperam **OK explícito** em vez de serem executados por conta própria.
+
+O que já está provado sem essa sonda: o corpo em PascalCase sem valor, os dois padrões da espera,
+o teto que diz *emitida e ainda não autorizada*, a nota negada que sai como item, e a rota de
+cancelar — que foi medida na sonda do dia 29 (1.8, 1.16) e é `POST /nfse/{id}/cancel`.
+
+**A instalação real (regra 7) continua sendo do Alvaro**, como em toda versão.
