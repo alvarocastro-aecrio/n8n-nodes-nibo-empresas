@@ -100,6 +100,11 @@ export async function executeServiceInvoice(
 					json: await issueInvoice.call(this, i, options, interval),
 					pairedItem: { item: i },
 				});
+			} else if (operation === 'cancel') {
+				returnData.push({
+					json: await cancelInvoice.call(this, i),
+					pairedItem: { item: i },
+				});
 			} else if (operation === 'listProfiles') {
 				for (const profile of await serviceProfiles.call(this, i)) {
 					returnData.push({ json: profile, pairedItem: { item: i } });
@@ -311,6 +316,62 @@ async function issueInvoice(
 	}
 
 	return record;
+}
+
+/** What a cancelled note carries in `status.code` */
+const CANCELLED = -4;
+
+/**
+ * Cancels a note, through the route that this project's catalogue got wrong —
+ * for the **second** time, in the same way.
+ *
+ * The catalogue listed `DELETE /nfse/{id}`, marked unverified. Against an
+ * invented GUID, which cannot undo anything: the `DELETE` answers **404
+ * "Resource not found"**, which talks about the route, while
+ * `POST /nfse/{id}/cancel` answers **500 "NFSe não encontrada"**, which talks
+ * about the record. A business error only exists where there is a route to
+ * produce it. Identical reasoning to the charge of 0.13.0, and identical
+ * mistake in the same document.
+ *
+ * 🔴 **What cancelling does not do:** remove anything. The note stays in the
+ * company's history for good, marked Cancelled — it is a fiscal document — and
+ * its PDF and XML keep answering, with no token, measured on the cancelled note
+ * itself.
+ */
+async function cancelInvoice(this: IExecuteFunctions, itemIndex: number): Promise<IDataObject> {
+	const id = recordId.call(this, 'serviceInvoiceId', itemIndex);
+
+	await niboApiRequest.call(
+		this,
+		itemIndex,
+		'POST',
+		`${INVOICES}/${encodeURIComponent(id)}/cancel`,
+		{},
+		{},
+	);
+
+	const after = await readInvoice.call(this, itemIndex, id);
+	if (after === undefined) {
+		// Measured: cancelling leaves the record in place. A note that is gone is
+		// something this project has not seen, and saying so beats inventing a
+		// confirmation of a state nobody read.
+		return { serviceInvoiceId: id, cancelled: true };
+	}
+
+	const code = Number((after.status as IDataObject | undefined)?.code);
+	if (code === CANCELLED) {
+		return after;
+	}
+
+	// And here this parts company with the charge, which fails in the same spot.
+	// A charge is cancelled at a bank provider and was measured changing at once;
+	// a note is cancelled at a **city hall**, and the only measurement there is a
+	// re-read three seconds later. The API answered 204 — it accepted — so
+	// calling this a failure would send a workflow to ask a second time.
+	return {
+		...after,
+		_niboCancellationPending: `Nibo accepted the cancellation of ${id} and the note has not reached Cancelled yet. Nothing has to be sent again — read it with Service Invoice - Get until status.code is -4.`,
+	};
 }
 
 /** One note by ID, or nothing at all — the reading the wait repeats */

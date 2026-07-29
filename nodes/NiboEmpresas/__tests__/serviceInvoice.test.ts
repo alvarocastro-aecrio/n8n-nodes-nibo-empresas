@@ -643,6 +643,90 @@ describe('executeServiceInvoice — Issue', () => {
 	});
 });
 
+/**
+ * Cancelling, through the route this project's catalogue got wrong for the
+ * **second** time.
+ *
+ * The catalogue listed `DELETE /nfse/{id}`, never verified. Against an invented
+ * GUID, which cannot undo anything, it answers **404** — the route does not
+ * exist — while `POST /nfse/{id}/cancel` answers **500 "NFSe não encontrada"**,
+ * which is a business error, and a business error only exists where there is a
+ * route to produce it. Exactly how the charge's cancellation was found in
+ * 0.13.0, and exactly the same mistake in the same document.
+ */
+describe('executeServiceInvoice — Cancel', () => {
+	const CANCELLED = {
+		...AN_INVOICE,
+		status: { code: -4, description: 'Cancelada' },
+		cancelDate: '2026-07-29T05:02:00.000Z',
+	};
+
+	function cancelling(id: string = INVOICE) {
+		return executeServiceInvoice.call(
+			context({ serviceInvoiceId: id }),
+			'serviceInvoice',
+			'cancel',
+		);
+	}
+
+	it('posts to the cancel route, and never to the DELETE that is a 404', async () => {
+		apiRequest.mockResolvedValue(undefined);
+		listRequest.mockResolvedValue({ records: [CANCELLED], count: 1 });
+
+		await cancelling();
+
+		const [, method, endpoint] = apiRequest.mock.calls[0];
+		expect(method).toBe('POST');
+		expect(endpoint).toBe(`/nfse/${INVOICE}/cancel`);
+		expect(apiRequest.mock.calls.every((call) => call[1] !== 'DELETE')).toBe(true);
+	});
+
+	it('reads the note back and hands it over showing Cancelled', async () => {
+		apiRequest.mockResolvedValue(undefined);
+		listRequest.mockResolvedValue({ records: [CANCELLED], count: 1 });
+
+		const items = await cancelling();
+
+		expect(items[0].json).toMatchObject({ id: INVOICE, status: { code: -4 } });
+		expect(items[0].json._niboCancellationPending).toBeUndefined();
+	});
+
+	/**
+	 * 🔴 And a note that has not caught up is **not** a failure — which is where
+	 * this parts company with the charge of 0.13.0. A charge is cancelled at a
+	 * bank provider and was measured changing at once; a note is cancelled at a
+	 * **city hall**, and the only measurement there is a re-read three seconds
+	 * later. The API answered 204: the cancellation was accepted, and saying it
+	 * failed would send a workflow to ask twice.
+	 */
+	it('says the cancellation was accepted when the record has not caught up', async () => {
+		apiRequest.mockResolvedValue(undefined);
+		listRequest.mockResolvedValue({ records: [AN_INVOICE], count: 1 });
+
+		const items = await cancelling();
+
+		expect(items[0].json.status).toMatchObject({ code: 3 });
+		expect(String(items[0].json._niboCancellationPending)).toMatch(/accepted/i);
+		expect(String(items[0].json._niboCancellationPending)).not.toMatch(/\bfailed\b/i);
+	});
+
+	it('says it cancelled but could not read it back when the record is gone', async () => {
+		apiRequest.mockResolvedValue(undefined);
+		listRequest.mockResolvedValue({ records: [], count: 0 });
+
+		const items = await cancelling();
+
+		expect(items[0].json).toMatchObject({ serviceInvoiceId: INVOICE, cancelled: true });
+	});
+
+	it('refuses an empty ID rather than posting to the collection endpoint', async () => {
+		const failure = cancelling('   ');
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		expect(apiRequest).not.toHaveBeenCalled();
+	});
+});
+
 describe('NiboEmpresas — what the Service Invoice screen offers', () => {
 	const description = new NiboEmpresas().description;
 
@@ -800,12 +884,27 @@ describe('NiboEmpresas — what the Service Invoice screen offers', () => {
 		);
 
 		expect((operations?.options as INodePropertyOptions[]).map((one) => one.value)).toEqual([
+			'cancel',
 			'get',
 			'list',
 			'listProfiles',
 			'issue',
 		]);
 		expect(operations?.default).toBe('list');
+	});
+
+	/**
+	 * Three things nobody would guess, all three measured on 2026-07-29 — and the
+	 * middle one on a note that was **already cancelled**: both documents still
+	 * answered 200 with no header of any kind.
+	 */
+	it('warns what cancelling leaves behind, including the documents', () => {
+		const notice = property('cancelNotice');
+
+		expect(notice?.type).toBe('notice');
+		expect(notice?.displayName).toMatch(/stays|remains|does not remove/i);
+		expect(notice?.displayName).toMatch(/PDF/);
+		expect(notice?.displayName).toMatch(/city hall/i);
 	});
 
 	/**

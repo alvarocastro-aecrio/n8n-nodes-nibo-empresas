@@ -45,6 +45,13 @@ export const serviceInvoiceOperations: INodeProperties[] = [
 		},
 		options: [
 			{
+				name: 'Cancel',
+				value: 'cancel',
+				action: 'Cancel a service invoice',
+				description:
+					'Cancel a note at the city hall, which leaves the record in place with its status set to Cancelled',
+			},
+			{
 				name: 'Get',
 				value: 'get',
 				action: 'Get a service invoice',
@@ -205,6 +212,15 @@ const PROFILES_NOTICE =
  * schedule; what comes back is a city hall's answer and not this node's; and
  * cancelling later does not remove the note nor take its documents off the air.
  */
+/**
+ * What cancelling really does, and the middle sentence is the one that was
+ * measured rather than reasoned: with the probe's note already in `-4`, its PDF
+ * and its XML were fetched with no authentication header at all and both
+ * answered 200.
+ */
+const CANCEL_NOTICE =
+	'Cancelling is done at the city hall and it does not remove anything: the note stays in the company\'s history for good, marked Cancelled — it is a fiscal document. Its PDF and XML keep answering afterwards, and they are public, so whoever received a link before still downloads the note after it is cancelled, with nothing in the document saying so.';
+
 const ISSUE_NOTICE =
 	'Issuing sends an RPS to the city hall, and there is no undo: the note can only be cancelled afterwards, which leaves the record in place and keeps its PDF and XML answering. The amount is not asked for here because it comes from the schedule. If the city hall denies the note, that is not a failure of this node — the item comes out with the denial and the city hall\'s own text in lastMessage.';
 
@@ -382,6 +398,18 @@ export const serviceInvoiceFields: INodeProperties[] = [
 		],
 	},
 	{
+		displayName: CANCEL_NOTICE,
+		name: 'cancelNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['cancel'],
+			},
+		},
+	},
+	{
 		displayName: 'Service Invoice ID',
 		name: 'serviceInvoiceId',
 		type: 'string',
@@ -393,7 +421,7 @@ export const serviceInvoiceFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: [SERVICE_INVOICE],
-				operation: ['get'],
+				operation: ['cancel', 'get'],
 			},
 		},
 	},
