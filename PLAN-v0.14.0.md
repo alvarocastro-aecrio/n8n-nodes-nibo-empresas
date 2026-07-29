@@ -378,10 +378,18 @@ ele se sustenta porque **tudo já está medido**, inclusive o cancelamento.
 **2c — A espera é opção de tela, com teto configurável.** Decisão do Alvaro em 2026-07-29. Duas
 entradas em `Options`:
 
-| Opção | Comportamento |
-|---|---|
-| **Wait for Authorization** | Ligada, o node acompanha a nota até um estado terminal e devolve o registro final — com `number`, PDF e XML quando autorizada |
-| **Authorization Timeout** | O teto, em segundos. Estourou, o node devolve o registro **como está** dizendo que a nota **foi emitida e ainda não foi autorizada** |
+| Opção | Padrão | Comportamento |
+|---|---|---|
+| **Wait for Authorization** | **Ligada** | O node acompanha a nota até um estado terminal e devolve o registro final — com `number`, PDF e XML quando autorizada |
+| **Authorization Timeout** | **300 s** | O teto, em segundos. Estourou, o node devolve o registro **como está** dizendo que a nota **foi emitida e ainda não foi autorizada** |
+
+**Os dois padrões foram decididos pelo Alvaro em 2026-07-29**, depois de uma recomendação de
+120 s ter sido retirada por ficar **abaixo** da amostra mais lenta medida, de 123,1 s (1.7).
+**300 s** fica acima de toda amostra e igual ao que a prática dele relata.
+
+**Ligada por padrão é o comportamento seguro sendo o padrão** — a mesma escolha do *Fail on
+Incomplete Results* desde a 0.4.3: quem não quer, desliga. E **300 s não é caro**, porque o teto
+não é o tempo de espera (1.7): o node devolve assim que a nota chega a um estado terminal.
 
 🔴 **O que a espera nunca faz é dizer que falhou.** Uma emissão que passou e é reportada como
 falha faz o workflow emitir de novo — e o segundo RPS já saiu. É a mesma regra que a 0.10.0
@@ -440,7 +448,9 @@ protocolo. O transporte não sabe o que é uma nota autorizada, e não deve sabe
    (1.14); o GUID entre aspas vira registro relido; a espera para em `code > 0 && number` e em
    `code < 0`, e **um código desconhecido é terminal**; o teto estourado devolve *emitida, ainda
    não autorizada* e **nunca** "falhou" (2c); uma nota negada sai como item com `lastMessage`
-   inteiro e **não** como exceção (2d); com a espera desligada, o node devolve na hora.
+   inteiro e **não** como exceção (2d); com a espera desligada, o node devolve na hora. **E os
+   dois padrões são teste**: sem tocar em `Options`, a espera está **ligada** e o teto é **300 s**
+   (2c) — um padrão que mude sem ninguém decidir é o defeito que a 0.13.1 corrigiu.
 
 4. **`Cancel`** *(commit próprio)*. Testes: chama **`POST /nfse/{id}/cancel`** e **não** o
    `DELETE`, que é 404 (1.8); o 204 vira confirmação relida com `code -4`; o notice diz que o
@@ -495,6 +505,7 @@ com R$ 5 — uma emissão, a espera, o cancelamento e a limpeza do agendamento.
 | ☐ | `Issue` monta o corpo em PascalCase e sem valor | Unitário + produção |
 | ☐ | A espera atravessa `1` → `2` → `3` e devolve o `number` | Produção, R$ 5 |
 | ☐ | Teto estourado diz **emitida, não autorizada** — nunca "falhou" | Unitário, com teto de 0 s |
+| ☐ | Sem tocar em `Options`: espera **ligada**, teto **300 s** | Unitário (2c) |
 | ☐ | Nota negada sai como **item**, com o texto da prefeitura | Unitário |
 | ☐ | `Cancel` chama `POST …/cancel` e a releitura mostra `-4` | Produção (1.8) |
 | ☐ | O notice diz que PDF e XML seguem públicos **depois** do cancelamento | 1.12 |
@@ -509,16 +520,20 @@ com R$ 5 — uma emissão, a espera, o cancelamento e a limpeza do agendamento.
 | # | Em aberto | Situação |
 |---|---|---|
 | 1 | ~~O token da cobaia nova~~ | ✅ **Resolvida em 2026-07-29.** A empresa antiga expirou e foi excluída; a nova foi criada no mesmo dia e o token dela está no arquivo de ambiente. As duas empresas respondem (1.1). **Nada bloqueia o aceite** |
-| 2 | **O padrão do teto de espera** | Medido: 1,3 s a **123,1 s** em cinco amostras, e o Alvaro relata até 5 min (1.7). Minha recomendação: **300 s (5 min) ligado por padrão** — acima de toda amostra medida e igual ao relato da prática. **Uma recomendação anterior de 120 s foi retirada por ser incoerente com a própria medição**: ficava abaixo da amostra de 123,1 s. E o argumento que a sustentava também não se sustenta — o teto **não** é o tempo de espera (1.7), então um teto alto não custa nada no caso comum. Para quem emite em laço e não quer esperar por nenhuma, o caminho é a espera **desligada** + `Get` depois, e o README documenta isso. **Não é medição: é escolha, e é sua** |
+| 2 | ~~O padrão do teto de espera~~ | ✅ **Resolvida em 2026-07-29: `Wait for Authorization` ligada, `Authorization Timeout` de 300 s** (2c). Uma recomendação anterior de 120 s foi retirada por ficar **abaixo** da amostra mais lenta medida, 123,1 s — o Alvaro apontou a incoerência. Para quem emite em laço e não quer esperar por nenhuma, o caminho é a espera **desligada** + `Get` depois, e o README documenta isso |
 | 3 | ~~Como a cobaia nova recusa a NFS-e~~ | ✅ **Resolvida em 2026-07-29.** Por **lista vazia**, não por erro: `GET /nfse/serviceprofiles` responde **200 `count: 0`** (1.1). É o mesmo formato da cobrança na 0.13.0, e a fatia 2 fica como estava desenhada |
 | 4 | **Segunda nota num agendamento com uma Autorizada viva** | Não medido (1.11). Enquanto não for, o node não promete nem impede |
 | 5 | **Se o tomador precisa ser o do agendamento** | Não medido. Muda a tela: se a API recusar, o campo pode nascer preenchido e a validação acontece antes da chamada (2h) |
 | 6 | **A numeração** | **0.14.0** — capacidade nova é minor |
 
-**O que não depende de decisão:** a rota, a chave de paginação, o registro campo a campo, os
-cinco códigos de status, os campos de filtro um a um, a rota de cancelar, o formato do corpo, e o
-ciclo inteiro no relógio, e **como a cobaia recusa a NFS-e**. Está tudo medido, e as duas
-empresas de teste respondem. **Só o item 2 — o padrão do teto de espera — depende de decisão, e
-a fatia 1 não depende dele: ele é opção de tela, escrita na fatia 3.**
+**O que está medido:** a rota, a chave de paginação, o registro campo a campo, os cinco códigos
+de status, os campos de filtro um a um, a rota de cancelar, o formato do corpo, o ciclo inteiro
+no relógio, e **como a cobaia recusa a NFS-e**. As duas empresas de teste respondem.
 
-**A fatia 1 pode começar com o OK do Alvaro.**
+**O que está decidido:** o recorte (2a a 2h), os padrões da espera (2c) e a numeração.
+
+**Os itens 4 e 5 continuam em aberto e nenhum dos dois trava nada** — são medições que
+*acrescentariam* comportamento (uma guarda, um campo preenchido sozinho), não que mudariam o que
+está desenhado. Enquanto não forem medidos, o node não promete nem impede.
+
+**Nada mais depende de decisão. A fatia 1 pode começar.**
