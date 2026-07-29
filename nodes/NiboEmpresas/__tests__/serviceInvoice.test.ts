@@ -551,16 +551,45 @@ describe('executeServiceInvoice — Issue', () => {
 	});
 
 	/**
-	 * `-2` and `-3` were never seen, and the wait does not hang on a code it has
-	 * no name for: it stops and hands the record over as it came. Only `1` and
-	 * `2` are known to be transient.
+	 * The wait does not hang on a code it has no name for: it stops and hands the
+	 * record over as it came. Four codes are known to be on their way somewhere —
+	 * `1` and `2` on the way in, `-2` and `-3` on the way out — and everything
+	 * else is somewhere a note stays.
 	 */
 	it('treats a status code nobody has ever seen as terminal', async () => {
-		answersWith({ id: NEW_ID, status: { code: -3, description: 'Algo novo' } });
+		answersWith({ id: NEW_ID, status: { code: -7, description: 'Algo novo' } });
 
 		const items = await issuing();
 
-		expect(items[0].json.status).toMatchObject({ code: -3 });
+		expect(items[0].json.status).toMatchObject({ code: -7 });
+		expect(listRequest).toHaveBeenCalledTimes(1);
+	});
+
+	/**
+	 * 🔴 **The correction the acceptance of this version brought.** The plan had
+	 * `-2` and `-3` down as never seen, and the first cancellation run through
+	 * the node walked both of them: they are the **cancellation queue**, the
+	 * mirror of `1` and `2`, and `-4` follows in seconds. A wait that read "a
+	 * negative code is final" would stop on a note that is still moving.
+	 */
+	it.each([-2, -3])('keeps waiting on %s, which is the cancellation queue', async (code) => {
+		answersWith({ id: NEW_ID, status: { code, description: 'Em fila de cancelamento' } }, {
+			...AN_INVOICE,
+			id: NEW_ID,
+			status: { code: -4, description: 'Cancelada' },
+		});
+
+		const items = await issuing();
+
+		expect(items[0].json.status).toMatchObject({ code: -4 });
+		expect(listRequest).toHaveBeenCalledTimes(2);
+	});
+
+	it.each([-1, -4])('stops on %s, where a note stays', async (code) => {
+		answersWith({ id: NEW_ID, status: { code, description: 'Terminal' } });
+
+		await issuing();
+
 		expect(listRequest).toHaveBeenCalledTimes(1);
 	});
 
@@ -710,6 +739,28 @@ describe('executeServiceInvoice — Cancel', () => {
 		expect(String(items[0].json._niboCancellationPending)).not.toMatch(/\bfailed\b/i);
 	});
 
+	/**
+	 * 🔴 And this is what the acceptance actually found, within the hour: the
+	 * read-back that follows the 204 lands on **`-2`**, not on `-4`. Cancelling
+	 * has its own queue. Had this operation copied the charge of 0.13.0, which
+	 * fails when the record has not changed, it would have failed **every real
+	 * cancellation** while the API was doing exactly what it was told.
+	 */
+	it.each([-2, -3])('names the cancellation queue when the note is at %s', async (code) => {
+		apiRequest.mockResolvedValue(undefined);
+		listRequest.mockResolvedValue({
+			records: [{ ...AN_INVOICE, status: { code, description: 'Em fila de cancelamento' } }],
+			count: 1,
+		});
+
+		const items = await cancelling();
+
+		const said = String(items[0].json._niboCancellationPending);
+		expect(said).toMatch(/cancellation queue/i);
+		expect(said).toMatch(/-4/);
+		expect(said).not.toMatch(/\bfailed\b/i);
+	});
+
 	it('says it cancelled but could not read it back when the record is gone', async () => {
 		apiRequest.mockResolvedValue(undefined);
 		listRequest.mockResolvedValue({ records: [], count: 0 });
@@ -818,10 +869,10 @@ describe('NiboEmpresas — what the Service Invoice screen offers', () => {
 	});
 
 	/**
-	 * Five codes, three of which only exist because the probe watched a note go
-	 * through them. `-2` and `-3` never appeared, and this list does not claim
-	 * they do not exist — the fourteenth gotcha of this project holds for the
-	 * value of an enum as it holds for a route.
+	 * Seven codes, and the last two were found by the **acceptance** of this
+	 * version: cancelling a note walks `-2` → `-3` → `-4`, which the plan had
+	 * written off as never seen. Two mirrored pipelines, and only `3`, `-1` and
+	 * `-4` are places a note stays.
 	 */
 	function statusChoices(): INodePropertyOptions[] {
 		const value = ((property('filters')?.options ?? []) as Array<{ values?: INodeProperties[] }>)
@@ -835,8 +886,24 @@ describe('NiboEmpresas — what the Service Invoice screen offers', () => {
 		return (value?.options ?? []) as INodePropertyOptions[];
 	}
 
-	it('offers the five status codes that were measured', () => {
-		expect(statusChoices().map((one) => one.value)).toEqual(['3', '-4', '-1', '1', '2']);
+	it('offers the seven status codes that were measured', () => {
+		expect(statusChoices().map((one) => one.value)).toEqual([
+			'3',
+			'-3',
+			'-4',
+			'-1',
+			'-2',
+			'1',
+			'2',
+		]);
+	});
+
+	it('says which of them are transient, so nobody filters for a doorway', () => {
+		const transient = statusChoices()
+			.filter((one) => /transient/i.test(one.description ?? ''))
+			.map((one) => one.value);
+
+		expect(transient.sort()).toEqual(['-2', '-3', '1', '2']);
 	});
 
 	it('says on that field that the measured codes are not the whole set', () => {

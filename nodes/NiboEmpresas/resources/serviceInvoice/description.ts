@@ -88,15 +88,20 @@ export const serviceInvoiceOperations: INodeProperties[] = [
  * compares: `status/code eq 3` answers 200 and `status/code eq '3'` is a 500
  * about incompatible types.
  *
- * Three of these five only exist because the probe of 2026-07-29 watched a note
- * go through them at 400 ms intervals — no note of the organization was sitting
- * in `1`, `2` or `3`. The two negative ones came free, from notes that were
- * already there.
+ * Seven, and the last two arrived in the **acceptance** of this version rather
+ * than in the measurements that preceded it — which is what a real run buys
+ * over a test. The plan had written that `-2` and `-3` had never been seen and
+ * refused to claim they did not exist; cancelling a note walked straight
+ * through both of them.
  *
- * ⚠️ **`-2` and `-3` never appeared, and this list does not claim they do not
- * exist.** The fourteenth gotcha of this project — a 404 proves the absence of
- * that path, never of the capability — holds for the value of an enum as it
- * holds for a route. There is no route that enumerates this one.
+ * There are **two pipelines**, and they mirror each other: `1` → `2` → `3` on
+ * the way in, and `-2` → `-3` → `-4` on the way out. Only `3`, `-1` and `-4`
+ * are places a note stays.
+ *
+ * ⚠️ Even so, this list is **what was measured, not what exists**: there is no
+ * route that enumerates this enum, and the fourteenth gotcha of this project —
+ * a 404 proves the absence of that path, never of the capability — holds for
+ * the value of an enum as it holds for a route.
  */
 const STATUS_CODES: INodePropertyOptions[] = [
 	{
@@ -104,6 +109,11 @@ const STATUS_CODES: INodePropertyOptions[] = [
 		value: '3',
 		description:
 			'Code 3 — the good terminal state. Only here does the note gain its number, its verification code, its PDF and its XML.',
+	},
+	{
+		name: 'Cancellation in Progress',
+		value: '-3',
+		description: 'Code -3 — the city hall is cancelling it. Transient, and it reaches -4.',
 	},
 	{
 		name: 'Cancelled',
@@ -115,6 +125,12 @@ const STATUS_CODES: INodePropertyOptions[] = [
 		value: '-1',
 		description:
 			'Code -1 — the city hall refused it, and the reason is its own text in lastMessage',
+	},
+	{
+		name: 'Queued for Cancellation',
+		value: '-2',
+		description:
+			'Code -2 — where a cancellation is born, and where a note sits the instant after Cancel is accepted. Transient.',
 	},
 	{
 		name: 'Queued for Processing',
@@ -129,7 +145,7 @@ const STATUS_CODES: INodePropertyOptions[] = [
 ];
 
 const PARTIAL_LIST_NOTE =
-	'These are the codes seen on 2026-07-29, three of them by watching one note go through them, and this API has no route that lists the whole set. For a state that is not here, write the condition in Filter (OData), under Options at the end of the node.';
+	'These are the codes measured on 2026-07-29 — five while the version was built and two more in its acceptance, by cancelling a note — and this API has no route that lists the whole set. For a state that is not here, write the condition in Filter (OData), under Options at the end of the node.';
 
 /**
  * The closed menu, alphabetical by label, every path measured one by one

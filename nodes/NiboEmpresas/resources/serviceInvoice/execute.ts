@@ -174,13 +174,24 @@ async function oneInvoice(this: IExecuteFunctions, itemIndex: number): Promise<I
  * The states a note can be sitting in while it is still on its way.
  *
  * Measured on 2026-07-29, watching one note at 400 ms intervals: `1` at 0.4 s,
- * `2` at 0.8 s and `3` at 22.8 s. Everything else stops the wait — including a
- * code this project has never seen, because a wait that hangs on an unknown
- * value is a wait that never ends.
+ * `2` at 0.8 s and `3` at 22.8 s.
+ *
+ * 🔴 **And two more turned up in the acceptance of this very version**, which
+ * is what a real run buys over a test: cancelling an authorized note walks
+ * `-2` *Em fila de cancelamento* → `-3` *Em processamento de cancelamento* →
+ * `-4` *Cancelada*, in seconds. The plan had written that `-2` and `-3` had
+ * never been seen and refused to claim they did not exist — they are the
+ * **cancellation pipeline**, the mirror of `1` and `2`, and they are
+ * **transient**. A negative code is therefore not the same as a final one.
  */
 const QUEUED = 1;
 const PROCESSING = 2;
 const AUTHORIZED = 3;
+const CANCEL_QUEUED = -2;
+const CANCEL_PROCESSING = -3;
+
+/** The four states that are on their way somewhere else */
+const TRANSIENT = [QUEUED, PROCESSING, CANCEL_QUEUED, CANCEL_PROCESSING];
 
 /** How long the wait runs for by default, in seconds — the decision of 2026-07-29 */
 const DEFAULT_TIMEOUT = 300;
@@ -201,15 +212,16 @@ const MINIMUM_POLL = 1000;
  *
  * Three ways in, and the third is the one that matters most:
  *
- * - **`code < 0`** — denied or cancelled. Terminal, and **not a failure of this
- *   node**: the call worked and the city hall said no.
+ * - **`1`, `2`, `-2` and `-3`** — the four measured to be on their way
+ *   somewhere: the two of the authorization and the two of the cancellation.
+ *   The wait keeps reading.
+ * - **`code < 0` otherwise** — denied (`-1`) or cancelled (`-4`). Terminal, and
+ *   **not a failure of this node**: the call worked and the city hall said no.
  * - **`code > 0` with a `number`** — authorized, with everything that arrives
  *   with the authorization: the number, the verification code, the PDF and the
  *   XML.
- * - **anything else that is not `1` or `2`** — a code nobody has seen. `-2` and
- *   `-3` never showed up in any measurement and this project does not claim
- *   they do not exist, so an unknown code is terminal and travels out as it
- *   came.
+ * - **anything else** — a code nobody has seen. It is terminal and travels out
+ *   as it came, because a wait that hangs on an unknown value never ends.
  */
 function isTerminal(record: IDataObject): boolean {
 	const code = Number((record.status as IDataObject | undefined)?.code);
@@ -218,11 +230,11 @@ function isTerminal(record: IDataObject): boolean {
 		// No status at all is nothing to wait for either.
 		return true;
 	}
+	if (TRANSIENT.includes(code)) {
+		return false;
+	}
 	if (code < 0) {
 		return true;
-	}
-	if (code === QUEUED || code === PROCESSING) {
-		return false;
 	}
 
 	// Authorized without its number yet is the one case worth another reading:
@@ -363,14 +375,21 @@ async function cancelInvoice(this: IExecuteFunctions, itemIndex: number): Promis
 		return after;
 	}
 
-	// And here this parts company with the charge, which fails in the same spot.
-	// A charge is cancelled at a bank provider and was measured changing at once;
-	// a note is cancelled at a **city hall**, and the only measurement there is a
-	// re-read three seconds later. The API answered 204 — it accepted — so
-	// calling this a failure would send a workflow to ask a second time.
+	// 🔴 And here this parts company with the charge, which fails in the same
+	// spot — a decision the acceptance of this version proved right within the
+	// hour. A charge is cancelled at a bank provider and changes at once; a note
+	// is cancelled at a **city hall**, and the read-back that follows the 204
+	// lands on `-2` *Em fila de cancelamento*: the cancellation has its own
+	// queue, exactly as the authorization does, and `-4` arrives seconds later.
+	// The API accepted, so calling this a failure would send a workflow to ask a
+	// second time.
+	const queued = code === CANCEL_QUEUED || code === CANCEL_PROCESSING;
+
 	return {
 		...after,
-		_niboCancellationPending: `Nibo accepted the cancellation of ${id} and the note has not reached Cancelled yet. Nothing has to be sent again — read it with Service Invoice - Get until status.code is -4.`,
+		_niboCancellationPending: queued
+			? `Nibo accepted the cancellation of ${id} and it is under way — the note is at ${code}, in the cancellation queue, and reaches -4 in seconds. Nothing has to be sent again: read it with Service Invoice - Get.`
+			: `Nibo accepted the cancellation of ${id} and the note has not reached Cancelled yet. Nothing has to be sent again — read it with Service Invoice - Get until status.code is -4.`,
 	};
 }
 

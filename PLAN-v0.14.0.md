@@ -502,14 +502,14 @@ com R$ 5 — uma emissão, a espera, o cancelamento e a limpeza do agendamento.
 | ✅ | `Get Many Service Profiles` mostra código de serviço e ISS | Produção — *Certificação Digital · Service code 170102002 · ISS 5%* |
 | ✅ | Lista de perfis vazia vira "esta empresa não emite NFS-e" | Cobaia — ela responde `count: 0`, medido em 1.1 |
 | ✅ | **Os 41 campos de um registro real batem** | Produção — 42 na união das 5 notas (1.3, 8.1) |
-| ✅ | `Issue` monta o corpo em PascalCase e sem valor | Unitário ✅ · produção **pendente de OK** (8.2) |
-| ☐ | A espera atravessa `1` → `2` → `3` e devolve o `number` | Produção, R$ 5 — **pendente de OK** (8.2) |
+| ✅ | `Issue` monta o corpo em PascalCase e sem valor | Unitário + produção (8.2) |
+| ✅ | A espera atravessa `1` → `2` → `3` e devolve o `number` | Produção, R$ 5 — 0,5s / 1,6s / 23,3s, nº 2842 (8.2) |
 | ✅ | Teto estourado diz **emitida, não autorizada** — nunca "falhou" | Unitário, com teto de 0 s |
 | ✅ | Sem tocar em `Options`: espera **ligada**, teto **300 s** | Unitário (2c) |
 | ✅ | Nota negada sai como **item**, com o texto da prefeitura | Unitário |
-| ☐ | `Cancel` chama `POST …/cancel` e a releitura mostra `-4` | Produção (1.8) — **pendente de OK** (8.2) |
+| ✅ | `Cancel` chama `POST …/cancel` — e a releitura mostra **`-2`**, não `-4` | Produção (8.2). 🔴 O item do plano estava errado: cancelar tem fila própria |
 | ✅ | O notice diz que PDF e XML seguem públicos **depois** do cancelamento | 1.12 |
-| ☐ | Resíduo conferido: agendamento apagado, nota cancelada declarada | Toda sonda de escrita fecha assim |
+| ✅ | Resíduo conferido: agendamento apagado, nota cancelada declarada | Agendamento `da479837…` apagado; nota `ac9fc756…` fica em `-4` (8.2) |
 | ✅ | Node salvo na 0.13.x executa sem ser tocado | `Collection · Get Many` e `Schedule · Get Many`, os dois na cobaia |
 | ☐ | **Instalação real (regra 7)** | Tela Community Nodes de instância limpa — é do Alvaro |
 
@@ -576,18 +576,60 @@ mesmo agendamento (1.11 confirmado no aceite); `status/code` nu; o número da no
 o do RPS **nu**, cada um achando a própria nota; o perfil com código de serviço e ISS; e a lista
 recusando-se a carregar no modo de token por item.
 
-### 8.2 🔴 O que falta, e por que parou aqui
+### 8.2 🔴 O aceite de escrita — e os dois códigos que a 1.6 dizia não ter visto
 
-Três itens do aceite são **escrita em empresa de produção**: emitir a nota de R$ 5, ver a espera
-atravessar `1` → `2` → `3`, cancelar e apagar o agendamento.
+Autorizado pelo Alvaro em **2026-07-29**, depois do aceite de leitura: um agendamento de R$ 5 sobre
+o mesmo contato de teste, uma nota emitida **pelo node**, sem tocar em `Options`.
 
-**A exceção do dia 29 foi dada para a medição, e ela já foi usada.** Repetir a sonda é uma
-**segunda** nota fiscal na empresa — e, como diz o aviso no topo deste plano, **o resíduo não
-chega a zero**: mais uma nota `Cancelada` fica no histórico para sempre. Por isso esses três
-itens esperam **OK explícito** em vez de serem executados por conta própria.
+| Momento | Estado |
+|---|---|
+| `+0,5s` | `1` Em fila de processamento |
+| `+1,6s` | `2` Em processamento de autorização |
+| **`+23,3s`** | **`3` Autorizada**, nº **2842**, com PDF e XML |
 
-O que já está provado sem essa sonda: o corpo em PascalCase sem valor, os dois padrões da espera,
-o teto que diz *emitida e ainda não autorizada*, a nota negada que sai como item, e a rota de
-cancelar — que foi medida na sonda do dia 29 (1.8, 1.16) e é `POST /nfse/{id}/cancel`.
+Bate com a 1.7 (22,8 s naquela nota) e prova os dois padrões da 2c **em produção**: sem tocar em
+`Options`, a espera ficou ligada e o teto foi 300 s.
 
-**A instalação real (regra 7) continua sendo do Alvaro**, como em toda versão.
+🔴 **E o `Cancel` achou o que 941 testes verdes não achariam.** A releitura logo depois do 204 não
+mostra `-4`: mostra **`-2` Em fila de cancelamento**. Acompanhada até o fim, a nota andou
+**`-2` → `-3` Em processamento de cancelamento → `-4` Cancelada**.
+
+**A 1.6 estava errada por omissão, e do jeito que ela mesma previu.** Ela escreveu que `-2` e `-3`
+não tinham aparecido e que **não se afirmava que não existissem** — gotcha 14. Existem, e são o
+**pipeline de cancelamento**, espelho de `1` e `2`:
+
+| Entrada | Saída |
+|---|---|
+| `1` em fila *(transitório)* | `-2` em fila de cancelamento *(transitório)* |
+| `2` em processamento *(transitório)* | `-3` em processamento de cancelamento *(transitório)* |
+| `3` **Autorizada** | `-4` **Cancelada** |
+| `-1` **Negada** | |
+
+**Código negativo não é sinônimo de terminal**, que é exatamente o que a 2d e o `isTerminal` da
+fatia 3 assumiam. Corrigido: a espera continua em `1`, `2`, `-2` e `-3`, e para no resto.
+
+⚠️ **E a decisão da fatia 4 se provou no mesmo minuto.** O `Cancel` da cobrança **reprova** quando a
+releitura não mostra o estado final; o da NFS-e foi escrito para **não reprovar**, porque cancelar
+é ato de prefeitura e a única medição era de três segundos depois. Se ele tivesse copiado a
+cobrança, teria reprovado **todo cancelamento real** — a nota está em `-2` naquele instante, sempre.
+
+**Resíduo, declarado:** o agendamento `da479837…` foi apagado e conferido (releitura 500
+*"Agendamento não encontrado"*). **A nota `ac9fc756…` fica**, em `-4 Cancelada`, nº 2842 — é a
+segunda nota de sonda desta empresa, e era o custo dito antes e aceito. Seu **PDF continua
+respondendo 200 `application/pdf` sem header nenhum**, medido depois do cancelamento, que é a
+1.12 confirmada no aceite.
+
+### 8.3 🔴 O que falta, e por que parou aqui
+
+**Um item só: a instalação real (regra 7)**, que é do Alvaro e fecha toda versão deste projeto —
+`npm install` na tela Community Nodes de uma instância limpa.
+
+**E uma decisão que fica em aberto, sem travar nada.** Agora que se sabe que o cancelamento tem
+fila própria, o `Cancel` **poderia** esperar até `-4`, como o `Issue` espera pela autorização. Ele
+não espera: devolve o registro com `_niboCancellationPending` dizendo que foi aceito e que `-4` vem
+em segundos. Esperar seria comportamento que este plano não desenhou e pediria opção própria —
+fica para o Alvaro decidir, numa 0.14.1 se ele quiser.
+
+**O resíduo desta versão na empresa de produção:** duas notas de sonda, ambas `Cancelada` — a de
+1.16 (nº 2841) e a do aceite (nº 2842). Nenhum agendamento. Fica escrito porque escrita em produção
+não se declara limpa sem dizer onde.
