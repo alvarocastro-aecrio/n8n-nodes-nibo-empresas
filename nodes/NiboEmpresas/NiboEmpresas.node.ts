@@ -78,6 +78,12 @@ import {
 } from './resources/scheduleFile/description';
 import { executeScheduleFile } from './resources/scheduleFile/execute';
 import {
+	serviceInvoiceFields,
+	serviceInvoiceOperations,
+	serviceInvoiceResources,
+} from './resources/serviceInvoice/description';
+import { executeServiceInvoice } from './resources/serviceInvoice/execute';
+import {
 	stakeholderFields,
 	stakeholderOperations,
 	stakeholderResources,
@@ -118,6 +124,7 @@ const RESOURCES: INodePropertyOptions[] = [
 	...scheduleFileResources,
 	...annotationResources,
 	...collectionResources,
+	...serviceInvoiceResources,
 ].sort((one, other) => one.name.localeCompare(other.name));
 
 /** Which handler each resource belongs to — the whole of what the node knows about them */
@@ -158,6 +165,9 @@ const HANDLERS: Record<string, Handler> = {
 	),
 	...Object.fromEntries(
 		collectionResources.map((resource) => [resource.value as string, executeCollection]),
+	),
+	...Object.fromEntries(
+		serviceInvoiceResources.map((resource) => [resource.value as string, executeServiceInvoice]),
 	),
 };
 
@@ -266,6 +276,7 @@ export class NiboEmpresas implements INodeType {
 			...scheduleFileOperations,
 			...annotationOperations,
 			...collectionOperations,
+			...serviceInvoiceOperations,
 			...stakeholderFields,
 			...scheduleFields,
 			...categoryFields,
@@ -277,6 +288,7 @@ export class NiboEmpresas implements INodeType {
 			...scheduleFileFields,
 			...annotationFields,
 			...collectionFields,
+			...serviceInvoiceFields,
 			{
 				displayName: 'Options',
 				name: 'options',
