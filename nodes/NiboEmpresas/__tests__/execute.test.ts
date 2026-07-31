@@ -362,6 +362,52 @@ describe('executeStakeholder — create', () => {
 		});
 	});
 
+	/**
+	 * The document stopped being required in 0.14.2, and an empty one is not the
+	 * same as none: `document.number: ''` next to a type is a document, and the
+	 * API validates it. So a blank number takes the type with it.
+	 */
+	it('sends no document at all when the number was left empty', async () => {
+		await executeStakeholder.call(
+			context({ name: 'ACME LTDA', documentNumber: '', documentType: 'CNPJ' }),
+			'customer',
+			'create',
+		);
+
+		expect(payloadSent()).toEqual({ name: 'ACME LTDA' });
+	});
+
+	it('treats a number of nothing but spaces as no document either', async () => {
+		await executeStakeholder.call(
+			context({ name: 'Fulano de Tal', documentNumber: '   ', documentType: 'CPF' }),
+			'employee',
+			'create',
+		);
+
+		expect(payloadSent()).toEqual({ name: 'Fulano de Tal' });
+	});
+
+	// The rest of the form still travels: no document is not a reason to drop
+	// the address or the phone the workflow did fill in.
+	it('keeps every other field of a contact created without a document', async () => {
+		await executeStakeholder.call(
+			context({
+				name: 'ACME LTDA',
+				documentNumber: '',
+				documentType: 'CNPJ',
+				additionalFields: { email: 'billing@example.com', addressCity: 'Rio de Janeiro' },
+			}),
+			'customer',
+			'create',
+		);
+
+		expect(payloadSent()).toEqual({
+			name: 'ACME LTDA',
+			communication: { email: 'billing@example.com' },
+			address: { city: 'Rio de Janeiro' },
+		});
+	});
+
 	it('files each additional field under the branch the API keeps it in', async () => {
 		await executeStakeholder.call(
 			context({

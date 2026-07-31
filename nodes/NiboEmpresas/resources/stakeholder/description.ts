@@ -363,11 +363,16 @@ export const stakeholderFields: INodeProperties[] = [
 	},
 	// Two declarations of the same parameter: the type decides which documents
 	// are on offer, and an employee gets only the one a person has.
+	//
+	// Neither of the two is required, and the number below is not either: the
+	// API stores a contact that has nothing but a name, and a workflow reading
+	// a lead or a form usually has no CPF or CNPJ to give it. What the type is
+	// for is the number when there is one — left blank, it goes nowhere, and
+	// the handler drops the whole branch rather than sending an empty document.
 	{
 		displayName: 'Document Type',
 		name: 'documentType',
 		type: 'options',
-		required: true,
 		options: documentTypeOptions(false),
 		default: 'CNPJ',
 		displayOptions: {
@@ -381,7 +386,6 @@ export const stakeholderFields: INodeProperties[] = [
 		displayName: 'Document Type',
 		name: 'documentType',
 		type: 'options',
-		required: true,
 		options: documentTypeOptions(true),
 		default: 'CPF',
 		displayOptions: {
@@ -395,10 +399,10 @@ export const stakeholderFields: INodeProperties[] = [
 		displayName: 'Document Number',
 		name: 'documentNumber',
 		type: 'string',
-		required: true,
 		default: '',
 		placeholder: '00000000000000',
-		description: 'Digits only, with no dots, slashes or dashes',
+		description:
+			'Digits only, with no dots, slashes or dashes. Optional: left empty, the contact is created with no document at all.',
 		displayOptions: {
 			show: {
 				resource: EVERY_TYPE,

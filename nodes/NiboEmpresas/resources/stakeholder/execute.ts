@@ -134,8 +134,7 @@ export async function executeStakeholder(
 					endpoint,
 					writePayload({
 						name: this.getNodeParameter('name', i) as string,
-						documentNumber: this.getNodeParameter('documentNumber', i) as string,
-						documentType: this.getNodeParameter('documentType', i) as string,
+						...documentGiven.call(this, i),
 						...(this.getNodeParameter('additionalFields', i, {}) as IDataObject),
 					}),
 					{ answersWithTheRecord: collection.createAnswersWithTheRecord },
@@ -213,6 +212,30 @@ const WRITE_FIELD_PATHS: Record<string, string[]> = {
 	addressZipCode: ['address', 'zipCode'],
 	addressCountry: ['address', 'country'],
 };
+
+/**
+ * The document of a contact being created — when there is one.
+ *
+ * The API stores a contact that has nothing but a name, so neither field is
+ * required on the form. An empty number, though, is not the same as no
+ * document: `document.number: ''` next to a type is still a document, and it
+ * is the API's to validate. So a blank number takes the type with it, and the
+ * whole branch stays out of the payload.
+ *
+ * Only Create passes through here. An Update reads the two from Update Fields,
+ * where an empty value is how a stored document is erased on purpose.
+ */
+function documentGiven(this: IExecuteFunctions, itemIndex: number): IDataObject {
+	const number = this.getNodeParameter('documentNumber', itemIndex, '') as string;
+	if (typeof number !== 'string' || number.trim() === '') {
+		return {};
+	}
+
+	return {
+		documentNumber: number,
+		documentType: this.getNodeParameter('documentType', itemIndex, '') as string,
+	};
+}
 
 /**
  * Turns what the editor collected into the payload the API keeps.

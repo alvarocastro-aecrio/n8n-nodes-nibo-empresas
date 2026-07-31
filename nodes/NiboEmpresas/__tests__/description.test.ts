@@ -271,6 +271,18 @@ describe('NiboEmpresas — the four stakeholder types', () => {
 		}
 	});
 
+	// The name is the whole obligation: the API stores a contact with no CPF and
+	// no CNPJ, and a workflow reading a lead or a form very often has neither.
+	// The two fields stay on the screen — they simply stopped being demanded.
+	it('demands no document of any of the four when creating', () => {
+		for (const field of [...declarations('documentNumber'), ...declarations('documentType')]) {
+			expect(field.required).toBeUndefined();
+		}
+
+		expect(shownFor('documentNumber')).toEqual(expect.arrayContaining(TYPES));
+		expect(shownFor('documentType')).toEqual(expect.arrayContaining(TYPES));
+	});
+
 	it('offers an employee no company name to change either', () => {
 		const forEmployee = description.properties.find(
 			(prop) =>
@@ -318,11 +330,14 @@ describe('NiboEmpresas — the Customer operations', () => {
 		);
 	});
 
+	// All three are up front, but only the name is an obligation — see "demands
+	// no document of any of the four" above.
 	it('asks for a name and a document up front when creating', () => {
 		for (const name of ['name', 'documentNumber', 'documentType']) {
-			expect(property(name)?.required).toBe(true);
 			expect(property(name)?.displayOptions?.show?.operation).toEqual(['create']);
 		}
+
+		expect(property('name')?.required).toBe(true);
 
 		const type = property('documentType')?.options as INodePropertyOptions[];
 		expect(type.map((option) => option.value)).toEqual(['CNPJ', 'CPF']);
