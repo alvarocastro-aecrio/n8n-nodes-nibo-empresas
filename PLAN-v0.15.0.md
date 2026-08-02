@@ -2144,23 +2144,43 @@ recorrência+parcelas (inalcançável até por expressão, nota da fatia 1). Cob
 
 Protocolo, escrito antes de qualquer requisição:
 
-- [ ] Valor **R$ 1,00**, contato combinado, descrição `aceite 0.15.0 — apagar`
-- [ ] **2.7** — agendamento com boleto "5 dias antes" e vencimento a 6 meses → ler o registro e
-      conferir `autoGenerateCollectionType` → **apagar o agendamento** → conferir que nenhuma
-      cobrança nasceu (`GET /public/collections` filtrando por `scheduleId`)
-- [ ] **2.7** — o mesmo para a nota "quando a baixa for realizada" → nunca dar baixa → apagar
-- [ ] **2.6** — num desses, antes de apagar, rodar um **Update** de descrição e reler
-      `autoGenerateNFSeType` e `autoGenerateCollectionType`. Se mudaram, **parar e abrir fatia
-      para o `writeBody`**
-- [ ] Boleto **imediato** → conferir o registro e a URL → **cancelar** com Collection - Cancel →
-      conferir status `-1`
-- [ ] Nota **imediata** → esperar a autorização → conferir número e PDF → **cancelar** →
-      conferir que passa por `-2`/`-3` e chega em `-4`
-- [ ] Apagar os agendamentos de teste
-- [ ] Escrever o resultado numa seção 8 deste arquivo, com o que foi gasto e o que ficou
+- [x] Valor combinado — **R$ 5,00**, dito pelo Alvaro em 2026-08-02 ("pode emitir boletos e
+      notas de baixo valor (5 reais)"); contato de teste no nome dele, o mesmo das versões
+      anteriores; descrição `aceite 0.15.0 — apagar`
+- [x] **2.7** — boleto "5 dias antes" com vencimento em 2027-02: `autoGenerateCollectionType`
+      gravado **2** e nenhuma cobrança nasceu. Apagado, e nada nasceu dele
+- [x] **2.7** — nota "quando a baixa for realizada": `autoGenerateNFSeType` gravado **3**,
+      baixa nunca dada, nenhuma nota nasceu. Apagado
+- [x] **2.6** — **MUDARAM.** O update de descrição zerou `autoGenerateCollectionType` (2 → 0).
+      Medição estendida na sequência, três PUTs de controle: o desarme é de **todo PUT que não
+      reenvia o bloco na grafia da criação** (objeto `collection` para o boleto; chaves rasas
+      `autoGenerateNFSeType`/`serviceProfileId` para a nota — reenviadas, preservam, medido
+      dos dois lados). E o `writeBody` que o plano previa é **impossível**: nenhuma leitura
+      devolve `DaysBeforeDueDateToGenerateCollection` nem os perfis, então não há de onde
+      reconstituir o bloco. A resposta virou documentação no README e item em aberto abaixo
+- [x] Boleto **imediato** — com ressalva que não é do node: a automação **dispara em <1 s**
+      (createDate da cobrança = criação + 0,4 s, três medições), com URL pública, valor e
+      sacado certos, `createUser: Nibo`. Mas **o provedor da organização cancela toda cobrança
+      em ~100 ms** — as manuais do próprio Alvaro de 2026-07-28 inclusive, todas `-1` — então o
+      Cancel do node não teve cobrança viva para exercitar. O Cancel não mudou nesta versão e
+      ficou provado na 0.13.0
+- [x] Nota **imediata** — emitida **pela automação** (`createUser` do fluxo), autorizada
+      (status 3), **número 2893**, PDF respondendo (HTTP 200, 42 KB), cancelada pelo node
+      passando pela fila (`-2` na resposta do Cancel) e chegando em `-4` segundos depois
+- [x] Agendamentos de teste apagados — todos, conferidos ausentes um a um
+- [x] Resultado escrito abaixo, com o gasto e o que ficou
 
 > **O custo, aceito e escrito:** a NFS-e emitida fica **para sempre** no histórico fiscal da
 > organização, marcada Cancelada. Nota fiscal não se apaga, e cancelar não tira o PDF do ar.
+
+**Resultado — 2026-08-02, com OK do Alvaro na hora.** Treze agendamentos criados ao longo das
+medições, todos apagados e conferidos ausentes. O que ficou na organização: **uma NFS-e de
+R$ 5, número 2893, marcada Cancelada** — o custo declarado — e quatro cobranças de R$ 5
+nascidas e canceladas (três da automação, uma da rodada anterior), nenhuma paga, canceladas
+como todas as cobranças da organização desde junho. Duas descobertas de API além do protocolo:
+**as chaves `autoGenerate*` só existem no DTO da lista** (o get-by-id não as ecoa, então a
+conferência é por `$filter=scheduleId eq …`), e **a nota não tem `scheduleId` raso** — o filtro
+é `schedule/id eq …`. Nenhum número de organização neste arquivo: o repo é público.
 
 ---
 
@@ -2170,7 +2190,12 @@ Protocolo, escrito antes de qualquer requisição:
 - **Ler as ocorrências de uma recorrência.** Mesma razão — vira o aviso da fatia 6.
 - **Um recurso `Installment` próprio**, com Get e Get Many das parcelas. As duas rotas ficam
   medidas aqui; virar recurso é decisão da 0.16.0, se fizer falta.
-- **Se um agendamento com automação aceita `PUT`** — a 2.6 responde na fatia 9, e a resposta pode
-  abrir uma fatia nova nesta mesma versão.
+- **O desarme da automação no update — respondido em 2026-08-02, e sem conserto possível no
+  transporte.** Todo `PUT` zera `autoGenerateCollectionType` e `autoGenerateNFSeType` a menos
+  que o corpo reenvie os blocos na grafia da criação — e reenviar fielmente é impossível porque
+  nenhuma leitura devolve os dias nem os perfis. O `writeBody` que este plano previa não tem de
+  onde ler. **Fica documentado no README**; um aviso ativo no Update (ler a lista antes do PUT e
+  sair com `_niboAutomationDisarmed` quando havia automação) custa um GET por update e é decisão
+  de recorte da 0.15.1 ou 0.16.0, com o Alvaro.
 - **O que acontece quando o gatilho da nota é "quando o boleto for criado" e nunca há boleto.**
   Provavelmente nada, e "provavelmente" não é medição: fica dito na tela e não no código.
