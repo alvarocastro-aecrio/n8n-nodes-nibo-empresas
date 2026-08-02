@@ -2,6 +2,7 @@ import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
 import type { IFilterField } from '../shared/filter';
 import { filterFieldTypes, filterProperties } from '../shared/filter';
+import { automationProperties } from './automation';
 import { repeatProperties } from './repeat';
 
 /**
@@ -604,6 +605,7 @@ export const scheduleFields: INodeProperties[] = [
 			},
 		}),
 	),
+	...automationProperties(['creditSchedule']),
 	...repeatProperties(EVERY_TYPE),
 	{
 		displayName: 'Additional Fields',
