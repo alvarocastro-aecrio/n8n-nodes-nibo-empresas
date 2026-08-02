@@ -18,12 +18,36 @@ const AUTO_COLLECTION: Record<string, number> = { before: 2, now: 3 };
 /** O que a API chama de `autoGenerateNFSeType` */
 const AUTO_NFSE: Record<string, number> = { before: 2, settled: 3, boleto: 4, now: 5 };
 
-/** Os opcionais da nota, que viajam com o nome que a operação Issue já usa */
-const INVOICE_EXTRAS = [
-	'additionalServiceDescription',
-	'additionalRemarks',
-	'cityWhereServiceWasProvided',
-	'stateWhereServiceWasProvided',
+/**
+ * Os quatro campos que esta organização preenche sempre, ao emitir uma nota —
+ * por isso aparecem direto na tela, sem o "+ Add Field" que a operação Issue
+ * avulsa ainda usa, e o node recusa a criação se um deles ficar vazio.
+ *
+ * `param` é o nome do campo aqui dentro do node; `key` é como a API chama a
+ * mesma informação — a mesma grafia da operação Issue, que continua opcional
+ * porque é outra tela e essa obrigatoriedade é deste bloco, não da API.
+ */
+const INVOICE_FIELDS: Array<{ param: string; key: string; label: string }> = [
+	{
+		param: 'invoiceServiceDescription',
+		key: 'additionalServiceDescription',
+		label: 'Service Description',
+	},
+	{
+		param: 'invoiceAdditionalRemarks',
+		key: 'additionalRemarks',
+		label: 'Additional Remarks',
+	},
+	{
+		param: 'invoiceCityWhereServiceWasProvided',
+		key: 'cityWhereServiceWasProvided',
+		label: 'City Where Service Was Provided',
+	},
+	{
+		param: 'invoiceStateWhereServiceWasProvided',
+		key: 'stateWhereServiceWasProvided',
+		label: 'State Where Service Was Provided',
+	},
 ];
 
 export function automationProperties(resources: string[]): INodeProperties[] {
@@ -160,46 +184,46 @@ export function automationProperties(resources: string[]): INodeProperties[] {
 			displayOptions: { show: onInvoice },
 		},
 		{
-			displayName: 'Invoice Fields',
-			name: 'invoiceFields',
-			type: 'collection',
-			placeholder: 'Add Field',
-			default: {},
+			displayName: 'Additional Remarks',
+			name: 'invoiceAdditionalRemarks',
+			type: 'string',
+			required: true,
+			default: '',
 			description:
-				'What the note carries beyond the profile. A field left out is not sent, and the profile resolves it on its own.',
+				'Supplementary information printed on the note. Required for every note this schedule issues.',
 			displayOptions: { show: onInvoice },
-			options: [
-				{
-					displayName: 'Additional Remarks',
-					name: 'additionalRemarks',
-					type: 'string',
-					default: '',
-					description: 'Supplementary information printed on the note',
-				},
-				{
-					displayName: 'City Where Service Was Provided',
-					name: 'cityWhereServiceWasProvided',
-					type: 'string',
-					default: '',
-					placeholder: 'Rio de Janeiro',
-					description: 'Where the service was provided, when it was not where the company is',
-				},
-				{
-					displayName: 'Service Description',
-					name: 'additionalServiceDescription',
-					type: 'string',
-					default: '',
-					description: 'The text that fills the {{Descricao}} template the profile carries',
-				},
-				{
-					displayName: 'State Where Service Was Provided',
-					name: 'stateWhereServiceWasProvided',
-					type: 'string',
-					default: '',
-					placeholder: 'RJ',
-					description: 'The state of the city above, as the two-letter abbreviation',
-				},
-			],
+		},
+		{
+			displayName: 'City Where Service Was Provided',
+			name: 'invoiceCityWhereServiceWasProvided',
+			type: 'string',
+			required: true,
+			default: '',
+			placeholder: 'Rio de Janeiro',
+			description:
+				'Where the service was provided. Required for every note this schedule issues.',
+			displayOptions: { show: onInvoice },
+		},
+		{
+			displayName: 'Service Description',
+			name: 'invoiceServiceDescription',
+			type: 'string',
+			required: true,
+			default: '',
+			description:
+				'The text that fills the {{Descricao}} template the profile carries. Required for every note this schedule issues.',
+			displayOptions: { show: onInvoice },
+		},
+		{
+			displayName: 'State Where Service Was Provided',
+			name: 'invoiceStateWhereServiceWasProvided',
+			type: 'string',
+			required: true,
+			default: '',
+			placeholder: 'RJ',
+			description:
+				'The state of the city above, as the two-letter abbreviation. Required for every note this schedule issues.',
+			displayOptions: { show: onInvoice },
 		},
 	];
 }
@@ -308,11 +332,14 @@ function invoicePayload(
 		payload.daysBeforeDueDateToGenerateNFSe = days;
 	}
 
-	const extras = (collected.invoiceFields ?? {}) as IDataObject;
-	for (const key of INVOICE_EXTRAS) {
-		const value = String(extras[key] ?? '').trim();
-		if (value !== '') {
-			payload[key] = value;
+	for (const field of INVOICE_FIELDS) {
+		const value = String(collected[field.param] ?? '').trim();
+		if (value === '') {
+			throw new NodeOperationError(this.getNode(), `This invoice has no ${field.label}`, {
+				itemIndex,
+				description: `${field.label} is required for every note this schedule issues.`,
+			});
 		}
+		payload[field.key] = value;
 	}
 }

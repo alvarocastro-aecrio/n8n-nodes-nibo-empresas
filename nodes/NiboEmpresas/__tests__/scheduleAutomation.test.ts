@@ -63,14 +63,22 @@ describe('automation — o boleto', () => {
 });
 
 describe('automation — a nota', () => {
+	/** Os cinco campos que esta organização preenche sempre, ao emitir uma nota */
+	const NOTA_COMPLETA = {
+		invoiceServiceProfileId: 'perfil-nfse',
+		invoiceServiceDescription: 'Assinatura mensal',
+		invoiceAdditionalRemarks: 'Sem juros',
+		invoiceCityWhereServiceWasProvided: 'Rio de Janeiro',
+		invoiceStateWhereServiceWasProvided: 'RJ',
+	};
+
 	it('não põe chave nenhuma quando ninguém pediu nota', () => {
 		expect(payload({ issueInvoice: 'no' })).toEqual({});
 	});
 
 	it('manda cada gatilho com o número que a API usa', () => {
 		const numero = (escolha: string) =>
-			payload({ issueInvoice: escolha, invoiceServiceProfileId: 'perfil-nfse', invoiceDaysBefore: 3 })
-				.autoGenerateNFSeType;
+			payload({ issueInvoice: escolha, invoiceDaysBefore: 3, ...NOTA_COMPLETA }).autoGenerateNFSeType;
 
 		expect(numero('before')).toBe(2);
 		expect(numero('settled')).toBe(3);
@@ -79,39 +87,43 @@ describe('automation — a nota', () => {
 	});
 
 	it('manda os dias só no gatilho que os usa', () => {
-		expect(
-			payload({ issueInvoice: 'before', invoiceDaysBefore: 3, invoiceServiceProfileId: 'perfil-nfse' }),
-		).toEqual({
+		expect(payload({ issueInvoice: 'before', invoiceDaysBefore: 3, ...NOTA_COMPLETA })).toMatchObject({
 			autoGenerateNFSeType: 2,
 			daysBeforeDueDateToGenerateNFSe: 3,
-			serviceProfileId: 'perfil-nfse',
 		});
 
-		expect(payload({ issueInvoice: 'settled', invoiceServiceProfileId: 'perfil-nfse' })).toEqual({
-			autoGenerateNFSeType: 3,
-			serviceProfileId: 'perfil-nfse',
-		});
+		expect(payload({ issueInvoice: 'settled', ...NOTA_COMPLETA })).not.toHaveProperty(
+			'daysBeforeDueDateToGenerateNFSe',
+		);
 	});
 
-	it('leva os campos opcionais só quando estão preenchidos', () => {
-		expect(
-			payload({
-				issueInvoice: 'now',
-				invoiceServiceProfileId: 'perfil-nfse',
-				invoiceFields: {
-					additionalServiceDescription: 'Assinatura mensal',
-					cityWhereServiceWasProvided: '',
-				},
-			}),
-		).toEqual({
+	it('manda os quatro campos sempre, na grafia da API', () => {
+		expect(payload({ issueInvoice: 'now', ...NOTA_COMPLETA })).toEqual({
 			autoGenerateNFSeType: 5,
 			serviceProfileId: 'perfil-nfse',
 			additionalServiceDescription: 'Assinatura mensal',
+			additionalRemarks: 'Sem juros',
+			cityWhereServiceWasProvided: 'Rio de Janeiro',
+			stateWhereServiceWasProvided: 'RJ',
 		});
 	});
 
 	it('recusa nota sem perfil de serviço', () => {
 		expect(() => payload({ issueInvoice: 'now', invoiceServiceProfileId: '' })).toThrow(
+			NodeOperationError,
+		);
+	});
+
+	it.each([
+		['invoiceServiceDescription'],
+		['invoiceAdditionalRemarks'],
+		['invoiceCityWhereServiceWasProvided'],
+		['invoiceStateWhereServiceWasProvided'],
+	])('recusa nota sem %s — são todos obrigatórios', (campo) => {
+		expect(() => payload({ issueInvoice: 'now', ...NOTA_COMPLETA, [campo]: '' })).toThrow(
+			NodeOperationError,
+		);
+		expect(() => payload({ issueInvoice: 'now', ...NOTA_COMPLETA, [campo]: '   ' })).toThrow(
 			NodeOperationError,
 		);
 	});
@@ -122,7 +134,7 @@ describe('automation — a nota', () => {
 			boletoCollectionProfileId: 'perfil-1',
 			boletoDeliveryType: 'default',
 			issueInvoice: 'boleto',
-			invoiceServiceProfileId: 'perfil-nfse',
+			...NOTA_COMPLETA,
 		});
 
 		expect(corpo.collection).toMatchObject({ AutoGenerateCollectionType: 3 });
@@ -138,5 +150,24 @@ describe('automation — a tela', () => {
 				expect(path).not.toContain('/');
 			}
 		}
+	});
+
+	it('os quatro campos da nota aparecem direto na tela, obrigatórios — nada de "Add Field"', () => {
+		const fields = automationProperties(['creditSchedule']);
+		const nomes = [
+			'invoiceServiceDescription',
+			'invoiceAdditionalRemarks',
+			'invoiceCityWhereServiceWasProvided',
+			'invoiceStateWhereServiceWasProvided',
+		];
+
+		for (const nome of nomes) {
+			const field = fields.find((f) => f.name === nome);
+			expect(field).toBeDefined();
+			expect(field?.required).toBe(true);
+			expect(field?.displayOptions?.show?.issueInvoice).toEqual(['before', 'boleto', 'now', 'settled']);
+		}
+
+		expect(fields.some((f) => f.name === 'invoiceFields')).toBe(false);
 	});
 });

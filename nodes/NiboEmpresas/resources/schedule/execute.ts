@@ -193,7 +193,18 @@ export async function executeSchedule(
 								issueInvoice: this.getNodeParameter('issueInvoice', i, 'no'),
 								invoiceDaysBefore: this.getNodeParameter('invoiceDaysBefore', i, 0),
 								invoiceServiceProfileId: this.getNodeParameter('invoiceServiceProfileId', i, ''),
-								invoiceFields: this.getNodeParameter('invoiceFields', i, {}),
+								invoiceServiceDescription: this.getNodeParameter('invoiceServiceDescription', i, ''),
+								invoiceAdditionalRemarks: this.getNodeParameter('invoiceAdditionalRemarks', i, ''),
+								invoiceCityWhereServiceWasProvided: this.getNodeParameter(
+									'invoiceCityWhereServiceWasProvided',
+									i,
+									'',
+								),
+								invoiceStateWhereServiceWasProvided: this.getNodeParameter(
+									'invoiceStateWhereServiceWasProvided',
+									i,
+									'',
+								),
 							})
 						: {};
 
