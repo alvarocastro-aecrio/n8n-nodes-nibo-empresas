@@ -15,9 +15,21 @@ import { NodeOperationError } from 'n8n-workflow';
  */
 const AUTO_COLLECTION: Record<string, number> = { before: 2, now: 3 };
 
+/** O que a API chama de `autoGenerateNFSeType` */
+const AUTO_NFSE: Record<string, number> = { before: 2, settled: 3, boleto: 4, now: 5 };
+
+/** Os opcionais da nota, que viajam com o nome que a operação Issue já usa */
+const INVOICE_EXTRAS = [
+	'additionalServiceDescription',
+	'additionalRemarks',
+	'cityWhereServiceWasProvided',
+	'stateWhereServiceWasProvided',
+];
+
 export function automationProperties(resources: string[]): INodeProperties[] {
 	const onCreate = { resource: resources, operation: ['create'] };
 	const onBoleto = { ...onCreate, generateBoleto: ['before', 'now'] };
+	const onInvoice = { ...onCreate, issueInvoice: ['before', 'boleto', 'now', 'settled'] };
 
 	return [
 		{
@@ -89,6 +101,106 @@ export function automationProperties(resources: string[]): INodeProperties[] {
 				'Which way the charge leaves. Both deliver — the choice is the route, not whether. Through the Accountant only makes sense for an organization whose Nibo is integrated with that module.',
 			displayOptions: { show: onBoleto },
 		},
+		{
+			// "Issue Invoice (NFS-e)" no plano — mas o linter do n8n põe todo
+			// displayName em title case e NFS-e viraria NFS-E, grafia que não
+			// existe. Mesmo muro da 0.14.0, mesma saída: o documento é nomeado
+			// na descrição, onde nada o reescreve.
+			displayName: 'Issue Invoice',
+			name: 'issueInvoice',
+			type: 'options',
+			options: [
+				{ name: 'A Number of Days Before the Due Date', value: 'before' },
+				{
+					name: "Don't Issue",
+					value: 'no',
+					description:
+						'No note, which is what every schedule written before this field existed does',
+				},
+				{
+					name: 'Immediately',
+					value: 'now',
+					description:
+						'The note is issued as the schedule is created. This reaches a city hall, and there is no undo.',
+				},
+				{
+					name: 'When the Boleto Is Generated',
+					value: 'boleto',
+					description:
+						'Waits for a charge on this schedule — one asked for above, or one made by hand in Nibo later',
+				},
+				{
+					name: 'When the Receipt Is Settled',
+					value: 'settled',
+					description: 'Waits for the money to be marked as received',
+				},
+			],
+			default: 'no',
+			description:
+				"Whether this receivable is born with a service invoice — an NFS-e — programmed. ⚠️ Issuing reaches a city hall and there is no undo: a note can only be cancelled afterwards, which leaves it in the company's fiscal history for good and keeps its public PDF and XML answering. The amount and the taker come from this schedule.",
+			displayOptions: { show: onCreate },
+		},
+		{
+			displayName: 'Days Before Due Date',
+			name: 'invoiceDaysBefore',
+			type: 'number',
+			typeOptions: { minValue: 1 },
+			default: 3,
+			description: 'How many days before the due date Nibo issues the note',
+			displayOptions: { show: { ...onCreate, issueInvoice: ['before'] } },
+		},
+		{
+			displayName: 'Service Profile Name or ID',
+			name: 'invoiceServiceProfileId',
+			type: 'options',
+			typeOptions: { loadOptionsMethod: 'loadServiceProfiles', loadOptionsDependsOn: ['authMode'] },
+			default: '',
+			description:
+				'Which profile the note is declared under. It decides the service, the tax and the remarks printed on it. ⚠️ A wrong profile is not fixed afterwards: undoing it is a cancellation at the city hall. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+			displayOptions: { show: onInvoice },
+		},
+		{
+			displayName: 'Invoice Fields',
+			name: 'invoiceFields',
+			type: 'collection',
+			placeholder: 'Add Field',
+			default: {},
+			description:
+				'What the note carries beyond the profile. A field left out is not sent, and the profile resolves it on its own.',
+			displayOptions: { show: onInvoice },
+			options: [
+				{
+					displayName: 'Additional Remarks',
+					name: 'additionalRemarks',
+					type: 'string',
+					default: '',
+					description: 'Supplementary information printed on the note',
+				},
+				{
+					displayName: 'City Where Service Was Provided',
+					name: 'cityWhereServiceWasProvided',
+					type: 'string',
+					default: '',
+					placeholder: 'Rio de Janeiro',
+					description: 'Where the service was provided, when it was not where the company is',
+				},
+				{
+					displayName: 'Service Description',
+					name: 'additionalServiceDescription',
+					type: 'string',
+					default: '',
+					description: 'The text that fills the {{Descricao}} template the profile carries',
+				},
+				{
+					displayName: 'State Where Service Was Provided',
+					name: 'stateWhereServiceWasProvided',
+					type: 'string',
+					default: '',
+					placeholder: 'RJ',
+					description: 'The state of the city above, as the two-letter abbreviation',
+				},
+			],
+		},
 	];
 }
 
@@ -97,11 +209,26 @@ export function automationPayload(
 	itemIndex: number,
 	collected: IDataObject,
 ): IDataObject {
+	// Os dois blocos são independentes: uma nota sem boleto e um boleto sem nota
+	// são pedidos legítimos, então nenhum dos dois retorna cedo pelo outro.
 	const payload: IDataObject = {};
+
+	boletoPayload.call(this, itemIndex, collected, payload);
+	invoicePayload.call(this, itemIndex, collected, payload);
+
+	return payload;
+}
+
+function boletoPayload(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	collected: IDataObject,
+	payload: IDataObject,
+): void {
 	const boleto = String(collected.generateBoleto ?? 'no');
 
 	if (boleto === 'no') {
-		return payload;
+		return;
 	}
 
 	const profile = String(collected.boletoCollectionProfileId ?? '').trim();
@@ -140,6 +267,52 @@ export function automationPayload(
 	}
 
 	payload.collection = collection;
+}
 
-	return payload;
+function invoicePayload(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	collected: IDataObject,
+	payload: IDataObject,
+): void {
+	const invoice = String(collected.issueInvoice ?? 'no');
+	if (invoice === 'no') {
+		return;
+	}
+
+	const profile = String(collected.invoiceServiceProfileId ?? '').trim();
+	if (profile === '') {
+		throw new NodeOperationError(this.getNode(), 'This invoice names no service profile', {
+			itemIndex,
+			description:
+				'Pick a Service Profile. It decides which service the note declares, how much tax it charges and the remarks printed on it, and the API refuses without one. An empty list there means the organization does not issue NFS-e — that needs a digital certificate and a profile approved by the city hall.',
+		});
+	}
+
+	payload.autoGenerateNFSeType = AUTO_NFSE[invoice];
+	payload.serviceProfileId = profile;
+
+	if (invoice === 'before') {
+		const days = Number(collected.invoiceDaysBefore ?? 0);
+		if (!Number.isFinite(days) || days < 1) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'This invoice is due before a number of days it does not give',
+				{
+					itemIndex,
+					description:
+						'Days Before Due Date needs a number of 1 or more. For a note issued at once, choose Immediately instead.',
+				},
+			);
+		}
+		payload.daysBeforeDueDateToGenerateNFSe = days;
+	}
+
+	const extras = (collected.invoiceFields ?? {}) as IDataObject;
+	for (const key of INVOICE_EXTRAS) {
+		const value = String(extras[key] ?? '').trim();
+		if (value !== '') {
+			payload[key] = value;
+		}
+	}
 }
