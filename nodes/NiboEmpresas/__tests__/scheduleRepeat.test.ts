@@ -99,6 +99,91 @@ describe('repeat — a recorrência', () => {
 	});
 });
 
+describe('repeat — as parcelas digitadas', () => {
+	it('manda o array na grafia da API, uma entrada por linha', () => {
+		expect(
+			payload({
+				repeat: 'installments',
+				installmentsAre: 'listed',
+				installments: {
+					installment: [
+						{ installmentNumber: 1, dueDate: '2027-03-10T00:00:00.000-03:00', value: 100 },
+						{
+							installmentNumber: 2,
+							dueDate: '2027-04-10T00:00:00.000-03:00',
+							value: 200,
+							description: 'segunda',
+						},
+					],
+				},
+			}),
+		).toEqual({
+			instalment: [
+				{ installmentNumber: 1, dueDate: '2027-03-10', value: 100 },
+				{ installmentNumber: 2, dueDate: '2027-04-10', value: 200, description: 'segunda' },
+			],
+		});
+	});
+
+	it('a linha sem detalhe herda a descrição do agendamento — a API descarta a da raiz', () => {
+		const out = payload({
+			repeat: 'installments',
+			installmentsAre: 'listed',
+			description: 'raiz',
+			installments: {
+				installment: [
+					{ installmentNumber: 1, dueDate: '2027-03-10', value: 100 },
+					{ installmentNumber: 2, dueDate: '2027-04-10', value: 100, description: 'própria' },
+				],
+			},
+		}).instalment as IDataObject[];
+
+		expect(out[0].description).toBe('raiz');
+		expect(out[1].description).toBe('própria');
+	});
+
+	it('recusa linha sem vencimento', () => {
+		expect(() =>
+			payload({
+				repeat: 'installments',
+				installmentsAre: 'listed',
+				installments: { installment: [{ installmentNumber: 1, dueDate: '', value: 100 }] },
+			}),
+		).toThrow(NodeOperationError);
+	});
+
+	it('recusa números de parcela repetidos', () => {
+		expect(() =>
+			payload({
+				repeat: 'installments',
+				installmentsAre: 'listed',
+				installments: {
+					installment: [
+						{ installmentNumber: 1, dueDate: '2027-03-10', value: 100 },
+						{ installmentNumber: 1, dueDate: '2027-04-10', value: 100 },
+					],
+				},
+			}),
+		).toThrow(NodeOperationError);
+	});
+
+	it('recusa linha sem valor', () => {
+		expect(() =>
+			payload({
+				repeat: 'installments',
+				installmentsAre: 'listed',
+				installments: { installment: [{ installmentNumber: 1, dueDate: '2027-03-10', value: 0 }] },
+			}),
+		).toThrow(NodeOperationError);
+	});
+
+	it('recusa a lista vazia — parcelar em nada não é parcelar', () => {
+		expect(() =>
+			payload({ repeat: 'installments', installmentsAre: 'listed', installments: {} }),
+		).toThrow(NodeOperationError);
+	});
+});
+
 describe('repeat — a tela', () => {
 	it('mostra Repeat nas duas famílias e esconde os filhos até haver resposta', () => {
 		const fields = repeatProperties(['creditSchedule', 'debitSchedule']);

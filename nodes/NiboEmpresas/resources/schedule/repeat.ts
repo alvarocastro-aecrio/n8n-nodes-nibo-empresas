@@ -27,6 +27,7 @@ const INTERVAL_OPTIONS = [
 export function repeatProperties(resources: string[]): INodeProperties[] {
 	const onCreate = { resource: resources, operation: ['create'] };
 	const onRecurrence = { ...onCreate, [REPEAT]: ['recurrence'] };
+	const onInstallments = { ...onCreate, [REPEAT]: ['installments'] };
 
 	return [
 		{
@@ -110,6 +111,79 @@ export function repeatProperties(resources: string[]): INodeProperties[] {
 			description: 'The last day the repetition may fall on',
 			displayOptions: { show: { ...onRecurrence, recurrenceEnds: ['date'] } },
 		},
+		{
+			displayName: 'Installments Are',
+			name: 'installmentsAre',
+			type: 'options',
+			options: [
+				{
+					name: 'Generated',
+					value: 'generated',
+					description:
+						'Say how many and how far apart, and the node writes the parcels — the first one falling on the Due Date above',
+				},
+				{
+					name: 'Listed One by One',
+					value: 'listed',
+					description:
+						'Type every parcel, for a plan that is not regular — a bigger first parcel, a broken due date',
+				},
+			],
+			default: 'generated',
+			description:
+				'How the parcels are told to the node. The API always wants them one by one; this is only who writes them out.',
+			displayOptions: { show: onInstallments },
+		},
+		{
+			displayName: 'Installments',
+			name: 'installments',
+			type: 'fixedCollection',
+			typeOptions: { multipleValues: true },
+			placeholder: 'Add Installment',
+			default: {},
+			description: 'The parcels, as the API takes them. Up to 100.',
+			displayOptions: { show: { ...onInstallments, installmentsAre: ['listed'] } },
+			options: [
+				{
+					displayName: 'Installment',
+					name: 'installment',
+					values: [
+						{
+							displayName: 'Number',
+							name: 'installmentNumber',
+							type: 'number',
+							typeOptions: { minValue: 1 },
+							default: 1,
+							description:
+								'Which parcel this is — 1 for the first. Nibo shows it as "Parcelado — X/Y".',
+						},
+						{
+							displayName: 'Due Date',
+							name: 'dueDate',
+							type: 'dateTime',
+							typeOptions: { dateOnly: true },
+							default: '',
+							description: 'The day this parcel falls due',
+						},
+						{
+							displayName: 'Value',
+							name: 'value',
+							type: 'number',
+							default: 0,
+							description: 'The amount of this parcel, always typed as a positive number',
+						},
+						{
+							displayName: 'Detail',
+							name: 'description',
+							type: 'string',
+							default: '',
+							description:
+								'What this parcel is about. Left empty, the Description of the schedule is written here instead — the API keeps only the line\'s text, tagged "X/Y", and discards the one at the root.',
+						},
+					],
+				},
+			],
+		},
 	];
 }
 
@@ -125,7 +199,78 @@ export function repeatPayload(
 		return { recurrence: recurrence.call(this, itemIndex, collected) };
 	}
 
+	if (chosen === 'installments') {
+		return { instalment: listed.call(this, itemIndex, collected) };
+	}
+
 	return {};
+}
+
+/**
+ * As parcelas digitadas, na grafia da API — **`instalment`, com um "l" só**. Não é
+ * engano deste arquivo: é como a documentação da Nibo escreve a chave, e esta API
+ * aceita-e-ignora o que não reconhece — medido na sonda de 2026-08-02, a grafia com
+ * dois "l" respondeu 200 e criou um agendamento sem parcela nenhuma.
+ *
+ * A linha sem detalhe herda a descrição do agendamento, porque a API **descarta a
+ * descrição da raiz** quando há parcelas: cada uma nasce com `"{detalhe} - X/Y"`,
+ * medido na mesma sonda. Sem a herança, o que o usuário escreveu some em silêncio
+ * e as parcelas ficam inencontráveis por descrição.
+ */
+function listed(this: IExecuteFunctions, itemIndex: number, collected: IDataObject): IDataObject[] {
+	const rows = (collected.installments as IDataObject | undefined)?.installment;
+
+	if (!Array.isArray(rows) || rows.length === 0) {
+		throw new NodeOperationError(this.getNode(), 'This installment plan has no installment', {
+			itemIndex,
+			description:
+				'Add at least one line under Installments, with its number, its due date and its amount — or switch Installments Are to "Generated" and say how many.',
+		});
+	}
+
+	const fallback = String(collected.description ?? '').trim();
+	const seen = new Set<number>();
+
+	return rows.map((row) => {
+		const { installmentNumber, dueDate, value, description } = (row ?? {}) as IDataObject;
+		const day = onlyTheDay(String(dueDate ?? ''));
+		const number = Number(installmentNumber);
+
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+			throw new NodeOperationError(this.getNode(), 'An installment line has no due date', {
+				itemIndex,
+				description:
+					'Every line under Installments needs the day it falls due. The API refuses the plan without it.',
+			});
+		}
+
+		if (!Number.isFinite(number) || seen.has(number)) {
+			throw new NodeOperationError(
+				this.getNode(),
+				`Installment number ${String(installmentNumber)} is missing or repeated`,
+				{
+					itemIndex,
+					description:
+						'Each line needs its own number, and the numbers are what tell the parcels apart in Nibo — where they are shown as "Parcelado — X/Y".',
+				},
+			);
+		}
+		seen.add(number);
+
+		const amount = Number(value);
+		if (!Number.isFinite(amount) || amount <= 0) {
+			throw new NodeOperationError(this.getNode(), `Installment ${number} has no amount`, {
+				itemIndex,
+				description:
+					'Every line under Installments needs a positive amount. A parcel worth nothing is not a parcel, and the API refuses the plan rather than the line.',
+			});
+		}
+
+		const line: IDataObject = { installmentNumber: number, dueDate: day, value: amount };
+		const detail = String(description ?? '').trim() || fallback;
+
+		return detail === '' ? line : { ...line, description: detail };
+	});
 }
 
 function recurrence(
