@@ -2,6 +2,7 @@ import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
 import type { IFilterField } from '../shared/filter';
 import { filterFieldTypes, filterProperties } from '../shared/filter';
+import { repeatProperties } from './repeat';
 
 /**
  * Credit Schedule and Debit Schedule — what a workflow calls accounts
@@ -603,6 +604,7 @@ export const scheduleFields: INodeProperties[] = [
 			},
 		}),
 	),
+	...repeatProperties(EVERY_TYPE),
 	{
 		displayName: 'Additional Fields',
 		name: 'additionalFields',
