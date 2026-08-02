@@ -447,7 +447,7 @@ git commit -m "medicao: a sonda da 0.15.0 respondeu as oito perguntas"
   Nomes de parâmetro: `repeat`, `recurrenceInterval`, `recurrenceIntervalType`, `recurrenceEnds`,
   `recurrenceOccurrences`, `recurrenceEndDate`.
 
-- [ ] **Passo 1: escrever o teste que falha**
+- [x] **Passo 1: escrever o teste que falha**
 
 ```ts
 // nodes/NiboEmpresas/__tests__/scheduleRepeat.test.ts
@@ -576,12 +576,12 @@ describe('repeat — a tela', () => {
 });
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Rodar: `npx jest scheduleRepeat -t 'recorrência'`
 Esperado: **FALHA** — `Cannot find module '../resources/schedule/repeat'`.
 
-- [ ] **Passo 3: escrever o mínimo que passa**
+- [x] **Passo 3: escrever o mínimo que passa**
 
 ```ts
 // nodes/NiboEmpresas/resources/schedule/repeat.ts
@@ -755,12 +755,12 @@ function recurrence(
 }
 ```
 
-- [ ] **Passo 4: rodar e ver passar**
+- [x] **Passo 4: rodar e ver passar**
 
 Rodar: `npx jest scheduleRepeat`
 Esperado: **PASSA**, todos os casos da recorrência e da tela.
 
-- [ ] **Passo 5: ligar na tela**
+- [x] **Passo 5: ligar na tela**
 
 Em `resources/schedule/description.ts`, importar e espalhar dentro de `scheduleFields`, logo
 depois do bloco de `COST_CENTERS`/`APPORTION_BY` e **antes** de `Additional Fields`:
@@ -771,13 +771,13 @@ import { repeatProperties } from './repeat';
 	...repeatProperties(EVERY_TYPE),
 ```
 
-- [ ] **Passo 6: rodar o pacote inteiro**
+- [x] **Passo 6: rodar o pacote inteiro**
 
 Rodar: `npm run lint && npm test`
 Esperado: verde. `description.test.ts` já varre a tela inteira contra as regras do linter do n8n
 — se ele reclamar de ordem alfabética das opções, a ordem das opções é que muda, nunca o `value`.
 
-- [ ] **Passo 7: commit**
+- [x] **Passo 7: commit**
 
 ```bash
 git add nodes/NiboEmpresas/resources/schedule/repeat.ts \
@@ -806,7 +806,7 @@ git commit -m "feat: o agendamento aprende a se repetir — a recorrencia"
 - Produz: os parâmetros `installmentsAre` e `installments` (fixedCollection cujas linhas se
   chamam `installment`, com `installmentNumber`, `dueDate`, `value`, `description`).
 
-- [ ] **Passo 1: escrever o teste que falha**
+- [x] **Passo 1: escrever o teste que falha**
 
 ```ts
 describe('repeat — as parcelas digitadas', () => {
@@ -873,12 +873,12 @@ describe('repeat — as parcelas digitadas', () => {
 });
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Rodar: `npx jest scheduleRepeat -t 'parcelas digitadas'`
 Esperado: **FALHA** — o payload volta `{}`, porque `installments` ainda não é tratado.
 
-- [ ] **Passo 3: escrever o mínimo que passa**
+- [x] **Passo 3: escrever o mínimo que passa**
 
 Em `repeat.ts`, o quarto parâmetro de `repeatPayload` deixa de ser ignorado: renomear `_total`
 para `total` na assinatura, e acrescentar o ramo novo:
@@ -1035,12 +1035,12 @@ E a tela, acrescentada a `repeatProperties`, com `onInstallments = { ...onCreate
 		},
 ```
 
-- [ ] **Passo 4: rodar e ver passar**
+- [x] **Passo 4: rodar e ver passar**
 
 Rodar: `npx jest scheduleRepeat`
 Esperado: **PASSA**. `generated` ainda não existe — o teste da fatia 3 é quem a cobra.
 
-- [ ] **Passo 5: commit**
+- [x] **Passo 5: commit**
 
 ```bash
 git add nodes/NiboEmpresas/resources/schedule/repeat.ts nodes/NiboEmpresas/__tests__/scheduleRepeat.test.ts
@@ -1059,7 +1059,7 @@ git commit -m "feat: as parcelas digitadas linha a linha"
 - Produz: os parâmetros `installmentCount`, `installmentInterval`, `installmentIntervalType`,
   `installmentAmount`, e a função interna `generated`.
 
-- [ ] **Passo 1: escrever o teste que falha**
+- [x] **Passo 1: escrever o teste que falha**
 
 ```ts
 describe('repeat — as parcelas calculadas', () => {
@@ -1130,12 +1130,12 @@ describe('repeat — as parcelas calculadas', () => {
 });
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Rodar: `npx jest scheduleRepeat -t 'parcelas calculadas'`
 Esperado: **FALHA** — `generated` não existe.
 
-- [ ] **Passo 3: escrever o mínimo que passa**
+- [x] **Passo 3: escrever o mínimo que passa**
 
 ```ts
 /** O teto do parcelamento, declarado pela central de ajuda da Nibo */
@@ -1287,12 +1287,12 @@ E os quatro campos na tela, com
 > ⚠️ `dueDate` entra em `collected` pelo handler (fatia 6) e **não** é um campo declarado aqui:
 > ele já está na tela desde a 0.1.0, e declarar de novo seria dois campos com um nome só.
 
-- [ ] **Passo 4: rodar e ver passar**
+- [x] **Passo 4: rodar e ver passar**
 
 Rodar: `npx jest scheduleRepeat`
 Esperado: **PASSA**, incluindo os casos de 31/01, de bissexto e do centavo.
 
-- [ ] **Passo 5: rodar o pacote e commitar**
+- [x] **Passo 5: rodar o pacote e commitar**
 
 ```bash
 npm run lint && npm test
@@ -1318,7 +1318,7 @@ git commit -m "feat: o node calcula as parcelas — datas grudadas no fim do mes
 > node, nos recursos Collection e Service Invoice. Parâmetro é guardado **por nome dentro do
 > node**, então repetir o nome seria dividir o valor entre duas telas diferentes.
 
-- [ ] **Passo 1: escrever o teste que falha**
+- [x] **Passo 1: escrever o teste que falha**
 
 ```ts
 // nodes/NiboEmpresas/__tests__/scheduleAutomation.test.ts
@@ -1381,12 +1381,12 @@ describe('automation — o boleto', () => {
 });
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Rodar: `npx jest scheduleAutomation`
 Esperado: **FALHA** — módulo não encontrado.
 
-- [ ] **Passo 3: escrever o mínimo que passa**
+- [x] **Passo 3: escrever o mínimo que passa**
 
 ```ts
 // nodes/NiboEmpresas/resources/schedule/automation.ts
@@ -1529,12 +1529,12 @@ export function automationPayload(
 }
 ```
 
-- [ ] **Passo 4: rodar e ver passar**
+- [x] **Passo 4: rodar e ver passar**
 
 Rodar: `npx jest scheduleAutomation`
 Esperado: **PASSA**.
 
-- [ ] **Passo 5: ligar na tela — só no crédito**
+- [x] **Passo 5: ligar na tela — só no crédito**
 
 Em `description.ts`, **antes** de `repeatProperties(EVERY_TYPE)`:
 
@@ -1544,7 +1544,7 @@ import { automationProperties } from './automation';
 	...automationProperties(['creditSchedule']),
 ```
 
-- [ ] **Passo 6: rodar tudo e commitar**
+- [x] **Passo 6: rodar tudo e commitar**
 
 ```bash
 npm run lint && npm test
@@ -1566,7 +1566,7 @@ git commit -m "feat: o recebivel nasce com o boleto programado"
 `invoiceFields` (coleção com `additionalServiceDescription`, `additionalRemarks`,
 `cityWhereServiceWasProvided`, `stateWhereServiceWasProvided`).
 
-- [ ] **Passo 1: escrever o teste que falha**
+- [x] **Passo 1: escrever o teste que falha**
 
 ```ts
 describe('automation — a nota', () => {
@@ -1629,12 +1629,12 @@ describe('automation — a nota', () => {
 });
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Rodar: `npx jest scheduleAutomation -t 'a nota'`
 Esperado: **FALHA** — `autoGenerateNFSeType` não sai no corpo.
 
-- [ ] **Passo 3: escrever o mínimo que passa**
+- [x] **Passo 3: escrever o mínimo que passa**
 
 Em `automation.ts`:
 
@@ -1774,12 +1774,12 @@ E a tela, com `onInvoice = { ...onCreate, issueInvoice: ['before', 'boleto', 'no
 		},
 ```
 
-- [ ] **Passo 4: rodar e ver passar**
+- [x] **Passo 4: rodar e ver passar**
 
 Rodar: `npx jest scheduleAutomation && npm run lint && npm test`
 Esperado: tudo verde.
 
-- [ ] **Passo 5: commit**
+- [x] **Passo 5: commit**
 
 ```bash
 git add nodes/NiboEmpresas/resources/schedule/automation.ts nodes/NiboEmpresas/__tests__/scheduleAutomation.test.ts
@@ -1799,7 +1799,7 @@ git commit -m "feat: o recebivel nasce com a NFS-e programada"
 - Produz: o item de saída com `installment` (quando há parcelas) ou `_niboRecurrenceNotListed`
   (quando há recorrência).
 
-- [ ] **Passo 1: escrever o teste que falha**
+- [x] **Passo 1: escrever o teste que falha**
 
 ```ts
 describe('create — os blocos novos', () => {
@@ -1859,12 +1859,12 @@ describe('create — os blocos novos', () => {
 });
 ```
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
 Rodar: `npx jest schedule.test -t 'os blocos novos'`
 Esperado: **FALHA** — nem `installment` nem `_niboRecurrenceNotListed` existem.
 
-- [ ] **Passo 3: escrever o mínimo que passa**
+- [x] **Passo 3: escrever o mínimo que passa**
 
 Em `execute.ts`, no ramo `create`, o corpo passa a ser montado assim:
 
@@ -1998,13 +1998,13 @@ async function withTheSiblings(
 }
 ```
 
-- [ ] **Passo 4: rodar e ver passar**
+- [x] **Passo 4: rodar e ver passar**
 
 Rodar: `npx jest schedule.test && npm run lint && npm test`
 Esperado: verde, e **os testes antigos de `create` continuam passando sem alteração** — é o que
 prova a compatibilidade.
 
-- [ ] **Passo 5: compilar e commitar**
+- [x] **Passo 5: compilar e commitar**
 
 ```bash
 npm run build
@@ -2019,7 +2019,7 @@ git commit -m "feat: a criacao junta os blocos, le as parcelas irmas e avisa da 
 **Arquivos:**
 - Modificar: `README.md`, `package.json`
 
-- [ ] **Passo 1: README — a seção Schedules**
+- [x] **Passo 1: README — a seção Schedules**
 
 Acrescentar depois de *Apportionment across cost centers*, com este texto:
 
@@ -2064,17 +2064,17 @@ in March. For a plan that is not regular — a bigger first parcel, a broken due
 with the plan and every sibling parcel in it.
 ````
 
-- [ ] **Passo 2: README — Version history**
+- [x] **Passo 2: README — Version history**
 
 Uma linha `0.15.0`, no formato das anteriores, dizendo o que entrou e o que ficou de fora.
 
-- [ ] **Passo 3: bump**
+- [x] **Passo 3: bump**
 
 ```bash
 npm version 0.15.0 --no-git-tag-version
 ```
 
-- [ ] **Passo 4: gate completo**
+- [x] **Passo 4: gate completo**
 
 ```bash
 npm run lint && npm run lint:community && npm test && npm run build
@@ -2082,7 +2082,7 @@ npm run lint && npm run lint:community && npm test && npm run build
 Esperado: verde nos quatro. O `lint:community` é o scanner oficial — se ele sair zero **sem
 analisar nada**, conferir o `.npmrc` do repo antes de comemorar.
 
-- [ ] **Passo 5: commit**
+- [x] **Passo 5: commit**
 
 ```bash
 git add README.md package.json package-lock.json
@@ -2113,17 +2113,30 @@ git commit -m "docs: README e o bump para 0.15.0"
 Dirigindo os handlers de `dist/`, **nunca com `curl`** — foi assim que a 0.9.0 achou o defeito
 que 830 testes verdes não acharam, e a 0.12.0 achou que `attach` move em vez de adicionar.
 
-- [ ] Recorrência mensal, 3 ocorrências, no crédito → conferir quantos agendamentos nasceram
-- [ ] Recorrência semanal por data, no débito
-- [ ] Parcelamento calculado, 3× dividindo o total → conferir os valores e as datas no Nibo
-- [ ] Parcelamento calculado começando em 31/01 → conferir 28/02 e a volta ao 31/03
-- [ ] Parcelamento digitado, 2 linhas desiguais
-- [ ] O item de saída traz `installment` com as irmãs
-- [ ] O item de saída da recorrência traz `_niboRecurrenceNotListed`
-- [ ] Boleto pedido na cobaia → a recusa é a frase do node sobre organização sem perfil
-- [ ] Nota pedida na cobaia → idem
-- [ ] Todas as recusas da seção 7 da spec, uma a uma
-- [ ] **Cobaia zerada ao fim**, conferida alguns segundos depois do último DELETE
+- [x] Recorrência mensal, 3 ocorrências, no crédito → conferir quantos agendamentos nasceram
+- [x] Recorrência semanal por data, no débito
+- [x] Parcelamento calculado, 3× dividindo o total → conferir os valores e as datas no Nibo
+- [x] Parcelamento calculado começando em 31/01 → conferir 28/02 e a volta ao 31/03
+- [x] Parcelamento digitado, 2 linhas desiguais
+- [x] O item de saída traz `installment` com as irmãs
+- [x] O item de saída da recorrência traz `_niboRecurrenceNotListed`
+- [x] Boleto pedido na cobaia → a recusa é a frase do node sobre organização sem perfil
+- [x] Nota pedida na cobaia → idem
+- [x] Todas as recusas da seção 7 da spec, uma a uma
+- [x] **Cobaia zerada ao fim**, conferida alguns segundos depois do último DELETE
+
+**Resultado — 2026-08-02:** 28 verificações, 28 passaram, dirigindo os handlers de `dist/`
+com o contexto descartável de sempre. As doze recusas saem antes de qualquer rede, com as
+frases do node. A recorrência mensal criou **um** agendamento (confirmando 2.8) e o item saiu
+com o aviso; a semanal por data passou no débito — com um **fornecedor**, porque débito recusa
+Customer, o que o primeiro passe do aceite redescobriu na prática. O parcelado 3× veio com as
+três irmãs dentro do item, valores 100/100/100, datas de mês em mês, `parcelNumber` preservado
+e a descrição sobrevivendo como `"aceite 0.15.0 parcelado - 1/3"`; o de 31/01 fez
+31/01 → 28/02 → **31/03**; o digitado manteve os valores desiguais e o detalhe próprio da
+linha. Duas recusas da seção 7 da spec **não existem por decisão registrada**: a data de fim
+anterior ao vencimento (o plano não a escreveu — a API é quem responde) e a combinação
+recorrência+parcelas (inalcançável até por expressão, nota da fatia 1). Cobaia ao fim:
+0 créditos, 0 débitos, 0 contatos, conferido 10 segundos depois do último DELETE.
 
 ### Fatia 9 — Aceite em produção — exceção declarada
 
