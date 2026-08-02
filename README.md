@@ -124,6 +124,52 @@ Two more behaviors of this API that a workflow will meet:
 
 **Due Date**, **Schedule Date** and **Accrual Date** are asked as days, with no clock on them: a schedule falls due on a date, and this API takes `YYYY-MM-DD`. A node saved before 0.7.6 still carries a full timestamp in those fields and goes on working — the day is taken from it, cut rather than converted, because `2026-08-10T00:00:00.000-03:00` is the 9th in UTC and a schedule that falls due one day early is a schedule that is overdue one day early.
 
+#### Creating with a boleto, a note or a repetition
+
+A schedule does not have to be a bare line. **Create** takes three more questions, each of them
+answered *no* until you say otherwise — a workflow that ignores them writes exactly the schedule
+it wrote before.
+
+| Question | Answers | Where |
+|---|---|---|
+| **Generate Boleto** | *Don't generate* · *Immediately* · *A number of days before the due date* | Credit only |
+| **Issue Invoice** (the NFS-e) | *Don't issue* · *Immediately* · *A number of days before the due date* · *When the receipt is settled* · *When the boleto is generated* | Credit only |
+| **Repeat** | *Don't repeat* · *Recurrence* · *Installments* | Both |
+
+Boleto and note exist on the receivable only, because that is where the API puts them: a payable
+has neither.
+
+> 🔴 **Immediately means immediately.** The charge is issued and the note is sent to the city
+> hall as the schedule is created. A note cannot be undone — only cancelled, which leaves it in
+> the company's fiscal history for good and keeps its public PDF and XML answering. See
+> [Collections](#collections) and [Service invoices](#service-invoices) for what each one is.
+
+**Repeat is one question with three answers, not two checkboxes.** The API refuses a request
+carrying a recurrence *and* an installment plan, and neither can be turned into the other
+afterwards, so the screen makes the pair unreachable instead of reporting it later.
+
+**A recurrence is written and then it is gone.** The creation answers the first schedule alone —
+measured on 2026-08-02 — and this API has no route that reads, lists or ends a recurrence:
+`/recurrences` answers 404 in every form. Nibo writes the further occurrences itself, up to 36
+months ahead. The item that comes out of Create says so in `_niboRecurrenceNotListed`; to see
+the occurrences, read them with **Get Many**, filtering by description or by due date. Ending a
+recurrence is done in Nibo.
+
+**An installment plan is readable, and comes back with the item.** Say how many parcels and how
+far apart and the node writes them out — the first one falling on the **Due Date** already on
+the screen, the total being the sum of the lines under **Categories**, and the leftover cents
+going on the first parcels so the sum closes. On months the day is kept and clamped to the end
+of a short month: a plan starting on the 31st falls on the 28th in February and back on the 31st
+in March. For a plan that is not regular — a bigger first parcel, a broken due date — switch
+**Installments Are** to *Listed one by one*. Either way the created item carries `installment`,
+with the plan and every sibling parcel in it.
+
+> **The description of a parcel is its line's, never the schedule's.** Measured on 2026-08-02:
+> the API discards the description at the root and keeps each parcel as `{line detail} - X/Y`.
+> So the node writes the schedule's **Description** into every parcel that does not carry its
+> own **Detail** — without that, what you typed would vanish silently and the parcels would be
+> unfindable by description.
+
 ### Categories
 
 The chart of accounts. Five operations, where 0.8.x had one:
@@ -623,6 +669,7 @@ To read several organizations in a single node, switch **Authentication** to *AP
 | 0.14.0 | **Service invoices — the NFS-e**, with **Get Many**, **Get**, **Get Many Service Profiles**, **Issue** and **Cancel**. It is what the two invoice workflows needed to leave HTTP Request behind entirely: 0.12.0 had migrated their file half, and this is the other one — issuing the note and following it. The write side cost the same exception as 0.13.0, and for the same kind of reason: the test organization **does not issue NFS-e at all**, since a note needs a digital certificate and a service profile approved by the city hall, so a note of R$ 5 was issued, watched, cancelled and its schedule deleted on a production organization. ⚠️ **That exception does not clean up to zero** — cancelling a note does not remove it, and it should not: it is a fiscal document. What it bought could not have been read anywhere. **The cancel route of this project's catalogue does not exist**, for the second time in two versions and in the same way: the `DELETE` is a 404 and the real one is `POST …/{id}/cancel`. **There is no get-by-ID**, so a note is read through the list. The **wait** for the authorization is an option with a **300 s ceiling**, and it never reports a failure — a timeout says the note *was issued and is not authorized yet*, and a denial comes out as an item with the city hall's own words, because the alternative sentence makes a workflow issue a second note. And the filter menu carries three numeric-looking fields with disagreeing literals: the invoice **number is text**, the RPS number is a number, the RPS series is text. Its own acceptance then added a seventh and eighth status code: **cancelling walks `-2` → `-3` → `-4`**, so a negative code is not the same as a final one, and the read-back right after Cancel shows the queue rather than the cancellation |
 | 0.14.1 | **The taker leaves the Issue screen.** 0.14.0 asked for it because the API wants `StakeholderId` as a key of its own — but a receivable already names its contact, and asking twice is only a chance for the two to disagree. The node now reads the contact off the schedule (`stakeholder.id`, never the root `stakeholderId`, which a GET answers zeroed). Two things come with it, and both are gains: the issuing now **reads the schedule before sending anything**, which is the guard it never had — this API accepts writing onto a schedule that does not exist — and a schedule with no contact is refused at the node, naming the schedule. A saved 0.14.0 node keeps working; whatever taker it stored is ignored, and the schedule's own contact is used |
 | 0.14.2 | **A contact no longer needs a document.** Creating a customer, supplier, employee or partner demanded **Document Number** and **Document Type** since 0.1.0; the API never did — it stores a contact that has only a name, which is what a lead, a form or an imported list usually is. Both fields stay on the screen, so a node saved with them keeps sending exactly what it sent. What is new is what happens when the number is left empty: the node sends **no document at all** rather than an empty one, because `document.number: ""` next to a type is still a document for the API to validate. Accepted against the test organization on 2026-07-31, in all four collections: the creation is accepted, the record comes back with `document` as an **empty object**, and the number goes in later through **Update** |
+| 0.15.0 | **A schedule is born with its boleto, its NFS-e and its repetition** — three new questions on **Create**, each defaulting to *no*, so an untouched workflow writes byte for byte the schedule it wrote before. **Generate Boleto** and **Issue Invoice** exist on the receivable only, where the API puts them, and go through the same single `POST` the node already made. **Repeat** is one question with three answers — recurrence or installments, never both, which is the API's own refusal made unreachable. The node **generates** the parcels from a count and an interval (dates clamped to short months and back — the 31st falls on Feb 28th and returns to the 31st — and leftover cents on the first parcels so the sum closes) or takes them **listed one by one**. Measured before any code, on 2026-08-02: the `installmentId` lives nested in `installment.installmentId`; the sibling parcels are readable through `/installments/{id}/schedules` and come back inside the created item; a recurrence answers **one** schedule and `/recurrences` is 404 in every form, so the item carries `_niboRecurrenceNotListed` instead of a list; and the API **discards the root description on installments**, keeping `{line detail} - X/Y` — so the node writes the schedule's description into every parcel without its own. What stayed out, and why: update with these blocks (the API only takes them on creation), ending or reading a recurrence (no route), and an Installment resource of its own (a 0.16.0 conversation) |
 | 1.0.0 *(planned)* | Production acceptance against real workflows |
 
 ## Disclaimer
