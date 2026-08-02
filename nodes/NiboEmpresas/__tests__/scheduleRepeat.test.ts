@@ -184,6 +184,87 @@ describe('repeat — as parcelas digitadas', () => {
 	});
 });
 
+describe('repeat — as parcelas calculadas', () => {
+	const plano = (extra: IDataObject, total = 300) =>
+		payload(
+			{
+				repeat: 'installments',
+				installmentsAre: 'generated',
+				dueDate: '2027-03-10',
+				installmentInterval: 1,
+				installmentIntervalType: 'month',
+				installmentAmount: 'split',
+				...extra,
+			},
+			total,
+		).instalment as IDataObject[];
+
+	it('divide o total e anda de mês em mês', () => {
+		expect(plano({ installmentCount: 3 })).toEqual([
+			{ installmentNumber: 1, dueDate: '2027-03-10', value: 100 },
+			{ installmentNumber: 2, dueDate: '2027-04-10', value: 100 },
+			{ installmentNumber: 3, dueDate: '2027-05-10', value: 100 },
+		]);
+	});
+
+	it('repete o valor em cada parcela quando é o que se pediu', () => {
+		expect(plano({ installmentCount: 2, installmentAmount: 'repeat' })).toEqual([
+			{ installmentNumber: 1, dueDate: '2027-03-10', value: 300 },
+			{ installmentNumber: 2, dueDate: '2027-04-10', value: 300 },
+		]);
+	});
+
+	it('cada parcela gerada carrega a descrição do agendamento — a API descarta a da raiz', () => {
+		const parcelas = plano({ installmentCount: 2, description: 'mensalidade' });
+		expect(parcelas.map((p) => p.description)).toEqual(['mensalidade', 'mensalidade']);
+	});
+
+	it('fecha a soma em centavos, distribuindo a sobra nas primeiras', () => {
+		const parcelas = plano({ installmentCount: 3 }, 100);
+		expect(parcelas.map((p) => p.value)).toEqual([33.34, 33.33, 33.33]);
+		expect(parcelas.reduce((sum, p) => sum + (p.value as number), 0)).toBeCloseTo(100, 10);
+	});
+
+	it('mês curto: 31/01 vira o último dia de fevereiro e VOLTA para 31 em março', () => {
+		expect(
+			plano({ installmentCount: 4, dueDate: '2027-01-31' }, 400).map((p) => p.dueDate),
+		).toEqual(['2027-01-31', '2027-02-28', '2027-03-31', '2027-04-30']);
+	});
+
+	it('ano bissexto: 31/12/2027 mais dois meses cai em 29/02/2028', () => {
+		expect(
+			plano({ installmentCount: 3, dueDate: '2027-12-31' }, 300).map((p) => p.dueDate),
+		).toEqual(['2027-12-31', '2028-01-31', '2028-02-29']);
+	});
+
+	it('anda em dias, semanas e anos também', () => {
+		expect(
+			plano({ installmentCount: 2, installmentIntervalType: 'day', installmentInterval: 15 }).map(
+				(p) => p.dueDate,
+			),
+		).toEqual(['2027-03-10', '2027-03-25']);
+		expect(
+			plano({ installmentCount: 2, installmentIntervalType: 'week', installmentInterval: 2 }).map(
+				(p) => p.dueDate,
+			),
+		).toEqual(['2027-03-10', '2027-03-24']);
+		expect(
+			plano({ installmentCount: 2, installmentIntervalType: 'year', installmentInterval: 1 }).map(
+				(p) => p.dueDate,
+			),
+		).toEqual(['2027-03-10', '2028-03-10']);
+	});
+
+	it('recusa menos de duas e mais de cem parcelas', () => {
+		expect(() => plano({ installmentCount: 1 })).toThrow(NodeOperationError);
+		expect(() => plano({ installmentCount: 101 })).toThrow(NodeOperationError);
+	});
+
+	it('recusa dividir um total que não existe', () => {
+		expect(() => plano({ installmentCount: 3 }, 0)).toThrow(NodeOperationError);
+	});
+});
+
 describe('repeat — a tela', () => {
 	it('mostra Repeat nas duas famílias e esconde os filhos até haver resposta', () => {
 		const fields = repeatProperties(['creditSchedule', 'debitSchedule']);

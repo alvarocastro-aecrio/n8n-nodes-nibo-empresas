@@ -191,7 +191,7 @@ export function repeatPayload(
 	this: IExecuteFunctions,
 	itemIndex: number,
 	collected: IDataObject,
-	_total: number,
+	total: number,
 ): IDataObject {
 	const chosen = String(collected[REPEAT] ?? 'no');
 
@@ -200,10 +200,23 @@ export function repeatPayload(
 	}
 
 	if (chosen === 'installments') {
-		return { instalment: listed.call(this, itemIndex, collected) };
+		return { instalment: instalments.call(this, itemIndex, collected, total) };
 	}
 
 	return {};
+}
+
+function instalments(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	collected: IDataObject,
+	total: number,
+): IDataObject[] {
+	if (String(collected.installmentsAre ?? 'generated') === 'listed') {
+		return listed.call(this, itemIndex, collected);
+	}
+
+	return generated.call(this, itemIndex, collected, total);
 }
 
 /**
@@ -321,4 +334,103 @@ function recurrence(
 	}
 
 	return body;
+}
+
+/** O teto do parcelamento, declarado pela central de ajuda da Nibo */
+const MAX_INSTALLMENTS = 100;
+
+function generated(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	collected: IDataObject,
+	total: number,
+): IDataObject[] {
+	const count = Number(collected.installmentCount ?? 0);
+
+	if (!Number.isInteger(count) || count < 2 || count > MAX_INSTALLMENTS) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`${String(collected.installmentCount ?? '')} is not a number of installments`,
+			{
+				itemIndex,
+				description: `Number of Installments goes from 2 to ${MAX_INSTALLMENTS}. Splitting an amount into one part is not a split — leave Repeat on "Don't repeat" for that.`,
+			},
+		);
+	}
+
+	const split = String(collected.installmentAmount ?? 'split') === 'split';
+	const first = onlyTheDay(String(collected.dueDate ?? ''));
+
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(first)) {
+		throw new NodeOperationError(this.getNode(), 'The installments have no first due date', {
+			itemIndex,
+			description: 'The first parcel falls on the Due Date of the schedule, and that field is empty.',
+		});
+	}
+
+	if (!Number.isFinite(total) || total <= 0) {
+		throw new NodeOperationError(this.getNode(), 'There is no amount to split into installments', {
+			itemIndex,
+			description:
+				'The amount of a schedule is the sum of its lines under Categories — this API keeps no total of its own — and that sum is zero.',
+		});
+	}
+
+	const every = Number(collected.installmentInterval ?? 1);
+	const unit = String(collected.installmentIntervalType ?? 'month');
+	const amounts = split ? shareOut(total, count) : new Array<number>(count).fill(total);
+
+	// A descrição do agendamento, escrita em cada parcela: a API descarta a da
+	// raiz e guarda só a da linha, com o "X/Y" atrás — medido em 2026-08-02.
+	const detail = String(collected.description ?? '').trim();
+
+	return amounts.map((value, index) => ({
+		installmentNumber: index + 1,
+		dueDate: addInterval(first, unit, every * index),
+		value,
+		...(detail === '' ? {} : { description: detail }),
+	}));
+}
+
+/**
+ * O total repartido em centavos, e a sobra distribuída nas primeiras parcelas —
+ * um centavo em cada, não todos no primeiro. 100 em três é 33,34 / 33,33 / 33,33,
+ * e a soma fecha. Feito em inteiros porque `100 / 3` em ponto flutuante não fecha
+ * nunca, e uma parcela a mais ou a menos é a API recusando o plano inteiro.
+ */
+function shareOut(total: number, count: number): number[] {
+	const cents = Math.round(total * 100);
+	const base = Math.floor(cents / count);
+	const left = cents - base * count;
+
+	return Array.from({ length: count }, (_, index) => (base + (index < left ? 1 : 0)) / 100);
+}
+
+/**
+ * A data da parcela, andando pelo calendário e não por milissegundos.
+ *
+ * Mês é a parte que dói: 31/01 mais um mês não existe, e o que se faz é **grudar no
+ * último dia do mês de destino** — 28 ou 29 de fevereiro. E a parcela seguinte volta
+ * a ser 31, porque a conta é sempre feita a partir do **primeiro** vencimento, nunca
+ * do anterior: encadear encolheria o dia para sempre depois do primeiro fevereiro.
+ */
+function addInterval(first: string, unit: string, amount: number): string {
+	const [year, month, day] = first.split('-').map(Number);
+
+	if (unit === 'day' || unit === 'week') {
+		const moved = new Date(Date.UTC(year, month - 1, day + amount * (unit === 'week' ? 7 : 1)));
+		return iso(moved.getUTCFullYear(), moved.getUTCMonth() + 1, moved.getUTCDate());
+	}
+
+	const months = amount * (unit === 'year' ? 12 : 1);
+	const target = new Date(Date.UTC(year, month - 1 + months, 1));
+	const targetYear = target.getUTCFullYear();
+	const targetMonth = target.getUTCMonth() + 1;
+	const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+
+	return iso(targetYear, targetMonth, Math.min(day, lastDay));
+}
+
+function iso(year: number, month: number, day: number): string {
+	return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
