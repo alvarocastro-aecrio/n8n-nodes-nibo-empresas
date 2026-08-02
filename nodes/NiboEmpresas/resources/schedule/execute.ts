@@ -6,8 +6,10 @@ import { niboApiRequest } from '../../transport/request';
 import { niboCreate, niboSafeUpdate } from '../../transport/save';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
+import { automationPayload } from './automation';
 import { scheduleFilterFieldTypes } from './description';
 import { normalizeSchedule, onlyTheDay, scheduleComparable } from './normalize';
+import { repeatPayload } from './repeat';
 
 interface IScheduleCollection {
 	/** Where this kind is listed, created, updated and deleted */
@@ -128,6 +130,73 @@ export async function executeSchedule(
 					pairedItem: { item: i },
 				});
 			} else if (operation === 'create') {
+				const collected: IDataObject = {
+					// Handed over exactly as the field holds it: the payload builder
+					// is where either shape of it becomes an ID, on this operation
+					// and on the update alike.
+					stakeholderId: this.getNodeParameter('stakeholderId', i, ''),
+					dueDate: this.getNodeParameter('dueDate', i) as string,
+					scheduleDate: this.getNodeParameter('scheduleDate', i) as string,
+					accrualDate: this.getNodeParameter('accrualDate', i, '') as string,
+					categories: this.getNodeParameter('categories', i, {}) as IDataObject,
+					// On the screen since 0.7.1 rather than inside the menu below,
+					// so they are read from the body — a fallback each, because a
+					// node saved under 0.7.0 still carries them in the menu, and
+					// the spread underneath is what lets that one win.
+					description: this.getNodeParameter('description', i, '') as string,
+					isFlagged: this.getNodeParameter('isFlagged', i, false) as boolean,
+					// The apportionment, read from the body for the same reason: it
+					// is a field of the creation form rather than an entry of the
+					// menu below. Both are read even when untouched — with no line
+					// at all neither reaches the payload, which is what keeps a
+					// schedule written by 0.8.2 byte for byte the same.
+					apportionBy: this.getNodeParameter('apportionBy', i, 'percent') as string,
+					costCenters: this.getNodeParameter('costCenters', i, {}) as IDataObject,
+					...(this.getNodeParameter('additionalFields', i, {}) as IDataObject),
+				};
+
+				const body = writePayload.call(this, i, collected);
+
+				// Os blocos da 0.15.0. Lidos sempre, e mudos quando o gatilho está em
+				// "não" — um agendamento criado sem tocá-los sai igual ao da 0.14.2.
+				const repeat = repeatPayload.call(
+					this,
+					i,
+					{
+						dueDate: collected.dueDate,
+						// A descrição viaja junto porque a API descarta a da raiz
+						// quando há parcelas: cada linha precisa carregar a sua.
+						description: collected.description,
+						repeat: this.getNodeParameter('repeat', i, 'no'),
+						recurrenceInterval: this.getNodeParameter('recurrenceInterval', i, 1),
+						recurrenceIntervalType: this.getNodeParameter('recurrenceIntervalType', i, 'month'),
+						recurrenceEnds: this.getNodeParameter('recurrenceEnds', i, 'occurrences'),
+						recurrenceOccurrences: this.getNodeParameter('recurrenceOccurrences', i, 0),
+						recurrenceEndDate: this.getNodeParameter('recurrenceEndDate', i, ''),
+						installmentsAre: this.getNodeParameter('installmentsAre', i, 'generated'),
+						installmentCount: this.getNodeParameter('installmentCount', i, 0),
+						installmentInterval: this.getNodeParameter('installmentInterval', i, 1),
+						installmentIntervalType: this.getNodeParameter('installmentIntervalType', i, 'month'),
+						installmentAmount: this.getNodeParameter('installmentAmount', i, 'split'),
+						installments: this.getNodeParameter('installments', i, {}),
+					},
+					totalOfCategories(body.categories),
+				);
+
+				const automation =
+					resource === 'creditSchedule'
+						? automationPayload.call(this, i, {
+								generateBoleto: this.getNodeParameter('generateBoleto', i, 'no'),
+								boletoDaysBefore: this.getNodeParameter('boletoDaysBefore', i, 0),
+								boletoCollectionProfileId: this.getNodeParameter('boletoCollectionProfileId', i, ''),
+								boletoDeliveryType: this.getNodeParameter('boletoDeliveryType', i, 'default'),
+								issueInvoice: this.getNodeParameter('issueInvoice', i, 'no'),
+								invoiceDaysBefore: this.getNodeParameter('invoiceDaysBefore', i, 0),
+								invoiceServiceProfileId: this.getNodeParameter('invoiceServiceProfileId', i, ''),
+								invoiceFields: this.getNodeParameter('invoiceFields', i, {}),
+							})
+						: {};
+
 				// The POST answers a bare GUID on both kinds — there is no
 				// `/FormatType=json` here — so the record comes from a read-back, and
 				// that read-back cannot happen in the collection it was written to.
@@ -135,34 +204,14 @@ export async function executeSchedule(
 					this,
 					i,
 					endpoint,
-					writePayload.call(this, i, {
-						// Handed over exactly as the field holds it: the payload builder
-						// is where either shape of it becomes an ID, on this operation
-						// and on the update alike.
-						stakeholderId: this.getNodeParameter('stakeholderId', i, ''),
-						dueDate: this.getNodeParameter('dueDate', i) as string,
-						scheduleDate: this.getNodeParameter('scheduleDate', i) as string,
-						accrualDate: this.getNodeParameter('accrualDate', i, '') as string,
-						categories: this.getNodeParameter('categories', i, {}) as IDataObject,
-						// On the screen since 0.7.1 rather than inside the menu below,
-						// so they are read from the body — a fallback each, because a
-						// node saved under 0.7.0 still carries them in the menu, and
-						// the spread underneath is what lets that one win.
-						description: this.getNodeParameter('description', i, '') as string,
-						isFlagged: this.getNodeParameter('isFlagged', i, false) as boolean,
-						// The apportionment, read from the body for the same reason: it
-						// is a field of the creation form rather than an entry of the
-						// menu below. Both are read even when untouched — with no line
-						// at all neither reaches the payload, which is what keeps a
-						// schedule written by 0.8.2 byte for byte the same.
-						apportionBy: this.getNodeParameter('apportionBy', i, 'percent') as string,
-						costCenters: this.getNodeParameter('costCenters', i, {}) as IDataObject,
-						...(this.getNodeParameter('additionalFields', i, {}) as IDataObject),
-					}),
+					{ ...body, ...automation, ...repeat },
 					{ readEndpoint: READ_BY_ID },
 				);
 
-				returnData.push({ json: normalizeSchedule(created), pairedItem: { item: i } });
+				returnData.push({
+					json: await withTheSiblings.call(this, i, normalizeSchedule(created)),
+					pairedItem: { item: i },
+				});
 			} else if (operation === 'update') {
 				// Only what the user added travels: everything else keeps whatever is
 				// stored in Nibo, which is what the safe cycle in the transport is for.
@@ -591,4 +640,68 @@ function ofThisKind(
 	}
 
 	return record;
+}
+
+/** O valor de um agendamento é a soma das suas linhas: esta API não guarda total */
+function totalOfCategories(lines: unknown): number {
+	return Array.isArray(lines)
+		? lines.reduce((sum, line) => sum + Math.abs(Number((line as IDataObject)?.value ?? 0)), 0)
+		: 0;
+}
+
+/**
+ * O que a criação devolve, mais o que só existe depois dela.
+ *
+ * **As parcelas irmãs são lidas; as ocorrências de uma recorrência não.** Medido em
+ * 2026-08-01: `/installments/{id}` e `/installments/{id}/schedules` existem e
+ * `/recurrences` é 404 em toda forma. Então uma é lista e a outra é frase.
+ *
+ * O `installmentId` vive **aninhado** — `installment: {installmentId, parcelNumber}`,
+ * medido em 2026-08-02 — e o enriquecimento preserva o `parcelNumber` que o registro
+ * já trazia.
+ *
+ * A leitura é **enriquecimento, não confirmação** — se falhar, a criação continua
+ * tendo dado certo e o item sai sem a lista. Reprovar aqui mandaria o fluxo tentar
+ * de novo, e tentar de novo abre outro parcelamento.
+ */
+async function withTheSiblings(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	record: IDataObject,
+): Promise<IDataObject> {
+	if (record.hasRecurrence === true) {
+		return {
+			...record,
+			_niboRecurrenceNotListed:
+				'This creation answered with the first schedule alone — measured on 2026-08-02 — and this API has no route that lists the occurrences of a recurrence: /recurrences answers 404 in every form. Nibo writes the further occurrences itself, up to 36 months ahead. Read them with Schedule - Get Many, filtering by description or by due date.',
+		};
+	}
+
+	const nested = record.installment as IDataObject | undefined;
+	const group = String(nested?.installmentId ?? '').trim();
+	if (group === '') {
+		return record;
+	}
+
+	try {
+		const summary = (await niboApiRequest.call(
+			this,
+			itemIndex,
+			'GET',
+			`/installments/${encodeURIComponent(group)}`,
+		)) as IDataObject;
+
+		const answer = await niboApiRequest.call(
+			this,
+			itemIndex,
+			'GET',
+			`/installments/${encodeURIComponent(group)}/schedules`,
+		);
+		const schedules = Array.isArray(answer) ? answer : ((answer as IDataObject)?.items ?? []);
+
+		return { ...record, installment: { ...nested, ...summary, schedules } };
+	} catch {
+		// A criação deu certo. Uma leitura que falhou não pode transformá-la em erro.
+		return record;
+	}
 }

@@ -832,6 +832,107 @@ describe('executeSchedule — Create', () => {
  * in Nibo: the test company has the category split off and took two cost-centre
  * lines in the same run.
  */
+describe('create — os blocos novos', () => {
+	it('não muda o corpo de uma criação que não tocou em nada', async () => {
+		await executeSchedule.call(context({ ...CREATE_FORM }), 'creditSchedule', 'create');
+		const body = create.mock.calls[0][2] as IDataObject;
+
+		expect(body.collection).toBeUndefined();
+		expect(body.recurrence).toBeUndefined();
+		expect(body.instalment).toBeUndefined();
+		expect(body.autoGenerateNFSeType).toBeUndefined();
+	});
+
+	it('as parcelas geradas herdam a descrição do formulário', async () => {
+		await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				description: 'mensalidade',
+				repeat: 'installments',
+				installmentsAre: 'generated',
+				installmentCount: 2,
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		const body = create.mock.calls[0][2] as IDataObject;
+		expect((body.instalment as IDataObject[]).map((p) => p.description)).toEqual([
+			'mensalidade',
+			'mensalidade',
+		]);
+	});
+
+	it('lê as parcelas irmãs e as devolve dentro do item', async () => {
+		create.mockResolvedValue({
+			scheduleId: 'pai',
+			installment: { installmentId: 'grupo-1', parcelNumber: '1/3' },
+		});
+		apiRequest.mockImplementation(async (_i, _method, endpoint) =>
+			String(endpoint).endsWith('/schedules')
+				? [{ scheduleId: 'pai', installmentNumber: 1, value: 100, dueDate: '2027-03-10T00:00:00Z' }]
+				: { installmentId: 'grupo-1', totalOfInstallments: 3, totalValue: 300, divideTotalValue: true },
+		);
+
+		const out = await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				repeat: 'installments',
+				installmentsAre: 'generated',
+				installmentCount: 3,
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		const installment = out[0].json.installment as IDataObject;
+		expect(installment.totalOfInstallments).toBe(3);
+		expect(installment.schedules as IDataObject[]).toHaveLength(1);
+		// O parcelNumber que o registro já trazia sobrevive ao enriquecimento —
+		// medido em 2026-08-02: o installmentId vive aninhado em `installment`.
+		expect(installment.parcelNumber).toBe('1/3');
+	});
+
+	it('a leitura das irmãs falhando não reprova a criação', async () => {
+		create.mockResolvedValue({
+			scheduleId: 'pai',
+			installment: { installmentId: 'grupo-1', parcelNumber: '1/2' },
+		});
+		apiRequest.mockRejectedValue(new Error('500'));
+
+		const out = await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				repeat: 'installments',
+				installmentsAre: 'generated',
+				installmentCount: 2,
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(out[0].json.scheduleId).toBe('pai');
+		expect((out[0].json.installment as IDataObject).schedules).toBeUndefined();
+	});
+
+	it('avisa que as ocorrências da recorrência não são listáveis', async () => {
+		create.mockResolvedValue({ scheduleId: 'pai', hasRecurrence: true });
+
+		const out = await executeSchedule.call(
+			context({
+				...CREATE_FORM,
+				repeat: 'recurrence',
+				recurrenceEnds: 'occurrences',
+				recurrenceOccurrences: 3,
+			}),
+			'creditSchedule',
+			'create',
+		);
+
+		expect(String(out[0].json._niboRecurrenceNotListed)).toContain('no route');
+	});
+});
+
 describe('executeSchedule — the apportionment on a creation', () => {
 	function payloadSent(): IDataObject {
 		return create.mock.calls[0][2];
