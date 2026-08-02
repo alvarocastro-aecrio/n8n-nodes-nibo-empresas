@@ -28,6 +28,7 @@ export function repeatProperties(resources: string[]): INodeProperties[] {
 	const onCreate = { resource: resources, operation: ['create'] };
 	const onRecurrence = { ...onCreate, [REPEAT]: ['recurrence'] };
 	const onInstallments = { ...onCreate, [REPEAT]: ['installments'] };
+	const onGenerated = { ...onInstallments, installmentsAre: ['generated'] };
 
 	return [
 		{
@@ -133,6 +134,62 @@ export function repeatProperties(resources: string[]): INodeProperties[] {
 			description:
 				'How the parcels are told to the node. The API always wants them one by one; this is only who writes them out.',
 			displayOptions: { show: onInstallments },
+		},
+		// Os quatro campos do parcelamento calculado. `generated()` os lê desde a
+		// 0.15.0 e a tela nunca os declarou, então o modo — que é o **padrão** de
+		// `Installments Are` — chegava ao handler sem `installmentCount`, caía no
+		// fallback de 0 e morria em "0 is not a number of installments". A data da
+		// primeira parcela não está aqui de propósito: é o Due Date do agendamento,
+		// na tela desde a 0.1.0, e declará-la de novo seria dois campos com um nome.
+		{
+			displayName: 'Number of Installments',
+			name: 'installmentCount',
+			type: 'number',
+			typeOptions: { minValue: 2, maxValue: MAX_INSTALLMENTS },
+			default: 2,
+			description: `How many parcels, counting the first. Nibo allows up to ${MAX_INSTALLMENTS}.`,
+			displayOptions: { show: onGenerated },
+		},
+		{
+			displayName: 'Repeat Every',
+			name: 'installmentInterval',
+			type: 'number',
+			typeOptions: { minValue: 1 },
+			default: 1,
+			description: 'How far apart the parcels fall',
+			displayOptions: { show: onGenerated },
+		},
+		{
+			displayName: 'Interval',
+			name: 'installmentIntervalType',
+			type: 'options',
+			options: INTERVAL_OPTIONS,
+			default: 'month',
+			description:
+				'The unit the interval above counts in. On months the day is kept and clamped to the end of a short month — a plan starting on the 31st falls on the 28th in February and back on the 31st in March.',
+			displayOptions: { show: onGenerated },
+		},
+		{
+			displayName: 'Amount',
+			name: 'installmentAmount',
+			type: 'options',
+			options: [
+				{
+					name: 'Repeat the Amount on Every Installment',
+					value: 'repeat',
+					description: 'Each parcel is worth the whole sum of the lines under Categories',
+				},
+				{
+					name: 'Split the Total Across the Installments',
+					value: 'split',
+					description:
+						'The sum of the lines under Categories is divided, and the leftover cents go on the first parcels so the total closes',
+				},
+			],
+			default: 'split',
+			description:
+				'What the amount of each parcel is. "The total" is the sum of the lines under Categories: this API keeps no total of its own.',
+			displayOptions: { show: onGenerated },
 		},
 		{
 			displayName: 'Installments',

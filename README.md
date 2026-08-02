@@ -44,7 +44,12 @@ archived, and a stored file cannot be listed. Each is documented where you meet 
 - **generate the boleto** — immediately, or a number of days before the due date;
 - **issue the NFS-e** — immediately, on settlement, or when the boleto goes out;
 - **repeat** — as a recurrence (every N days, weeks, months or years, ending on a date, after
-  N occurrences or never), or split into **installments** listed parcel by parcel.
+  N occurrences or never), or split into **installments**.
+
+Installments come either way: say how many and how far apart and the node writes the parcels —
+dates clamped to short months, so a plan starting on the 31st falls on the 28th in February and
+returns to the 31st in March, and the leftover cents go on the first parcels so the sum closes —
+or list every parcel yourself, for a plan that is not regular.
 
 Each of the three defaults to *no*, so a workflow that ignores them writes a plain schedule.
 The created item comes back carrying its sibling parcels.

@@ -286,4 +286,46 @@ describe('repeat — a tela', () => {
 			}
 		}
 	});
+
+	/**
+	 * O vão por onde a 0.15.0 passou: os testes acima montam `collected` na mão e
+	 * provam a **função**, não o **formulário**. `generated()` lia quatro campos que
+	 * `repeatProperties()` nunca declarou, então a tela entregava `installmentCount`
+	 * indefinido, o handler caía no seu fallback de 0, e o modo padrão de um
+	 * parcelamento morria em "0 is not a number of installments".
+	 *
+	 * Este teste fecha o contrato pelo lado que o usuário vê: o que a tela entrega
+	 * com todo mundo no default tem de produzir um plano, não uma exceção.
+	 */
+	it('o parcelamento padrão funciona só com o que a tela entrega', () => {
+		const fromScreen = Object.fromEntries(
+			repeatProperties(['creditSchedule']).map((field) => [field.name, field.default]),
+		) as IDataObject;
+
+		const plano = payload(
+			{ ...fromScreen, repeat: 'installments', dueDate: '2027-03-10' },
+			300,
+		).instalment as IDataObject[];
+
+		expect(plano.length).toBeGreaterThanOrEqual(2);
+		expect(plano[0].dueDate).toBe('2027-03-10');
+	});
+
+	it('declara os quatro campos que o modo Generated consome', () => {
+		const fields = repeatProperties(['creditSchedule']);
+
+		for (const name of [
+			'installmentCount',
+			'installmentInterval',
+			'installmentIntervalType',
+			'installmentAmount',
+		]) {
+			const field = fields.find((one) => one.name === name);
+
+			expect(field).toBeDefined();
+			// Só aparecem no parcelamento calculado — nunca no listado, nunca na recorrência
+			expect(field?.displayOptions?.show?.repeat).toEqual(['installments']);
+			expect(field?.displayOptions?.show?.installmentsAre).toEqual(['generated']);
+		}
+	});
 });
