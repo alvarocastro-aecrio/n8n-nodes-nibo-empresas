@@ -336,44 +336,51 @@ export const serviceInvoiceFields: INodeProperties[] = [
 		},
 	},
 	{
-		displayName: 'Additional Fields',
-		name: 'additionalFields',
-		type: 'collection',
-		placeholder: 'Add field',
-		default: {},
+		displayName: 'City Where Service Was Provided',
+		name: 'cityWhereServiceWasProvided',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'Rio de Janeiro',
+		description:
+			'Where the service was provided. Required for every note this organization issues.',
 		displayOptions: {
 			show: {
 				resource: [SERVICE_INVOICE],
 				operation: ['issue'],
 			},
 		},
-		options: [
-			{
-				displayName: 'City Where Service Was Provided',
-				name: 'cityWhereServiceWasProvided',
-				type: 'string',
-				default: '',
-				placeholder: 'Rio de Janeiro',
-				description:
-					'Where the service was provided, when it was not where the company is. Left out, the key is not sent at all and Nibo decides — which is what a company issuing from its own address wants.',
+	},
+	{
+		displayName: 'Service Description',
+		name: 'additionalServiceDescription',
+		type: 'string',
+		required: true,
+		default: '',
+		description:
+			'The text that fills the description template of the profile — the {{Descricao}} it carries. Required for every note this organization issues.',
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['issue'],
 			},
-			{
-				displayName: 'Service Description',
-				name: 'additionalServiceDescription',
-				type: 'string',
-				default: '',
-				description:
-					'The text that fills the description template of the profile — the {{Descricao}} it carries. Left out, the key is not sent and the profile is left to resolve it on its own.',
+		},
+	},
+	{
+		displayName: 'State Where Service Was Provided',
+		name: 'stateWhereServiceWasProvided',
+		type: 'string',
+		required: true,
+		default: '',
+		placeholder: 'RJ',
+		description:
+			'The state of the city above, as the two-letter abbreviation. Required for every note this organization issues.',
+		displayOptions: {
+			show: {
+				resource: [SERVICE_INVOICE],
+				operation: ['issue'],
 			},
-			{
-				displayName: 'State Where Service Was Provided',
-				name: 'stateWhereServiceWasProvided',
-				type: 'string',
-				default: '',
-				placeholder: 'RJ',
-				description: 'The state of the city above, as the two-letter abbreviation',
-			},
-		],
+		},
 	},
 	{
 		displayName: CANCEL_NOTICE,

@@ -260,7 +260,6 @@ async function issueInvoice(
 	options: IDataObject,
 	interval: number,
 ): Promise<IDataObject> {
-	const extras = this.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
 	const scheduleId = recordId.call(this, 'scheduleId', itemIndex);
 
 	// 🔴 **The taker comes from the schedule, and the screen does not ask for
@@ -314,20 +313,21 @@ async function issueInvoice(
 		AccrualRpsDate: onlyTheDay(String(this.getNodeParameter('accrualDate', itemIndex, '') ?? '')),
 	};
 
-	// The three the API also takes, sent only when somebody filled them in. An
-	// empty string here is a value, not a silence — and what Nibo does when the
-	// key is absent is its own business, which is exactly what leaving it out
-	// asks for.
-	const optional: Array<[string, string]> = [
-		['additionalServiceDescription', 'AdditionalServiceDescription'],
-		['stateWhereServiceWasProvided', 'StateWhereServiceWasProvided'],
-		['cityWhereServiceWasProvided', 'CityWhereServiceWasProvided'],
+	// The three this organization fills on every note it issues — required on
+	// the screen since 0.15.1, and refused here too if left empty.
+	const required: Array<[string, string, string]> = [
+		['additionalServiceDescription', 'AdditionalServiceDescription', 'Service Description'],
+		['stateWhereServiceWasProvided', 'StateWhereServiceWasProvided', 'State Where Service Was Provided'],
+		['cityWhereServiceWasProvided', 'CityWhereServiceWasProvided', 'City Where Service Was Provided'],
 	];
-	for (const [name, key] of optional) {
-		const value = String(extras[name] ?? '').trim();
-		if (value !== '') {
-			body[key] = value;
-		}
+	for (const [name, key, label] of required) {
+		body[key] = requiredValue.call(
+			this,
+			itemIndex,
+			name,
+			`This item names no ${label}`,
+			`${label} is required for every note this organization issues.`,
+		);
 	}
 
 	const answer = await niboApiRequest.call(this, itemIndex, 'POST', INVOICES, {}, body);

@@ -460,12 +460,20 @@ describe('executeServiceInvoice — Issue', () => {
 		stakeholder: { id: CONTACT, name: 'Fulano de Tal', type: 'Customer' },
 	};
 
+	/** Os três campos que esta organização preenche em toda nota que emite */
+	const REQUIRED_FIELDS = {
+		additionalServiceDescription: 'Mensalidade Teste',
+		stateWhereServiceWasProvided: 'RJ',
+		cityWhereServiceWasProvided: 'Rio de Janeiro',
+	};
+
 	function issuing(parameters: IDataObject = {}) {
 		return executeServiceInvoice.call(
 			context({
 				scheduleId: SCHEDULE,
 				serviceProfileId: PROFILE,
 				accrualDate: '2026-07-29',
+				...REQUIRED_FIELDS,
 				...parameters,
 			}),
 			'serviceInvoice',
@@ -494,13 +502,7 @@ describe('executeServiceInvoice — Issue', () => {
 	it('posts to /nfse with the body in the PascalCase this API asks for here', async () => {
 		answersWith(AUTHORIZED);
 
-		await issuing({
-			additionalFields: {
-				additionalServiceDescription: 'Mensalidade Teste',
-				stateWhereServiceWasProvided: 'RJ',
-				cityWhereServiceWasProvided: 'Rio de Janeiro',
-			},
-		});
+		await issuing();
 
 		const [, method, endpoint, , body] = postCall() ?? [];
 		expect(method).toBe('POST');
@@ -533,7 +535,23 @@ describe('executeServiceInvoice — Issue', () => {
 			'ServiceProfileId',
 			'StakeholderId',
 			'AccrualRpsDate',
+			'AdditionalServiceDescription',
+			'StateWhereServiceWasProvided',
+			'CityWhereServiceWasProvided',
 		]);
+	});
+
+	it.each([
+		['additionalServiceDescription', 'Service Description'],
+		['stateWhereServiceWasProvided', 'State Where Service Was Provided'],
+		['cityWhereServiceWasProvided', 'City Where Service Was Provided'],
+	])('recusa emitir sem %s — são todos obrigatórios', async (campo) => {
+		answersWith();
+
+		const failure = issuing({ [campo]: '' });
+
+		await expect(failure).rejects.toBeInstanceOf(NodeOperationError);
+		expect(postCall()).toBeUndefined();
 	});
 
 	it('reads the bare GUID out of the quoted string the API answers', async () => {
