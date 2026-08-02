@@ -119,6 +119,63 @@ e **não** existem `collection` nem os campos de NFS-e.
 **Da central de ajuda:** a recorrência provisiona até **36 meses** à frente; o parcelamento vai
 até **100** parcelas.
 
+### 1.5 As respostas da sonda — 2026-08-02
+
+Sonda rodada na cobaia em 2026-08-02, quatro passadas (`sonda-0.15.0.mjs` a `-d.mjs`, fora do
+repo), cobaia zerada ao fim e conferida 10 segundos depois: 0 agendamentos, 0 clientes. As
+perguntas 2.6 e 2.7 dependem de perfil e ficam para a fatia 9, como o plano já dizia.
+
+**2.1 — A rota simples aceita os blocos.** `POST /schedules/credit` com `instalment` → 200;
+com `recurrence` → 200. Nenhuma variante `/FormatType=json` foi necessária. Boleto e nota não
+são prováveis na cobaia (perfis vazios) — ficam para a fatia 9.
+
+**2.2 — O POST devolve um GUID puro: o do primeiro agendamento.** Com `instalment` de 3, o
+corpo da resposta é `"21002295-…"`, que é exatamente o `firstScheduleId` que o grupo declara.
+O read-back do `niboCreate` serve como está.
+
+**2.3 — O `installmentId` existe, mas aninhado.** O registro criado com parcelas carrega
+`installment: { installmentId, parcelNumber }` — **não** há `installmentId` na raiz, e
+`parcelNumber` é a string `"1/3"`. As duas rotas do grupo respondem:
+
+- `GET /installments/{id}` → `{ installmentId, divideTotalValue, totalOfInstallments,
+  totalValue, sendNFSeActionType, firstScheduleId }`
+- `GET /installments/{id}/schedules` → **array puro** (não `{items}`), cada irmã com
+  `{ scheduleId, dueDate, scheduleDate, accrualDate, value, installmentNumber }` — sem descrição.
+
+**Consequência, aplicada na fatia 6:** `withTheSiblings` lê `record.installment?.installmentId`
+em vez de `record.installmentId`, e o merge preserva o `parcelNumber` que o registro já traz:
+`installment: { ...record.installment, ...summary, schedules }`. O mock do teste muda junto.
+
+**2.4 — O valor de cada parcela é soberano; a API aceita os dois modos.** Parcelas 300+300 com
+categoria de 300 → 200, cada agendamento nasce com `value` 300 e o grupo declara
+`totalValue: 600`. Parcelas 100/100/100 com categoria de 300 → cada agendamento nasce com 100 e
+a **linha de categoria de cada parcela é reescrita pela API** para o valor da parcela. *Split*
+e *Repeat* ficam ambos, como a tela desenha.
+
+**2.5 — Grafia confirmada nas parcelas: `instalment`, um "l".** Com dois "l" a API respondeu
+200, criou um agendamento simples de 300 e `hasInstallment` ficou `false` — aceitou-e-ignorou,
+como previsto. As maiúsculas do objeto `collection` só se provam na fatia 9.
+
+**2.8 — Uma recorrência cria UM agendamento.** `count` = 1 na hora e 12 segundos depois, com
+`hasRecurrence: true` nele. As ocorrências futuras não existem como agendamentos legíveis pela
+API no momento da criação — o provisionamento de 36 meses é do Nibo, não desta API.
+**Consequência, aplicada na fatia 6:** o aviso `_niboRecurrenceNotListed` não diz "Nibo created
+the occurrences"; diz que a criação devolve só o primeiro agendamento e que as ocorrências não
+são listáveis por esta API.
+
+**Medições que a sonda não previa, e que mudam desenho:**
+
+- **A descrição da raiz é descartada quando há parcelas.** Cada parcela nasce com a descrição
+  `"{descrição da linha} - X/Y"` — linha com "linha um" virou `"linha um - 1/2"`, linha sem
+  descrição virou `" - 2/2"`, e a raiz `"raiz"` não sobreviveu em lugar nenhum.
+  **Consequência, aplicada nas fatias 2, 3 e 6:** o node copia a descrição do agendamento para
+  cada linha que não tem a sua — nas geradas sempre, nas digitadas como default do campo
+  `Detail` vazio. Sem isso a descrição do usuário some em silêncio e as parcelas ficam
+  inencontráveis por descrição.
+- **Apagar uma parcela apaga só ela.** `DELETE /schedules/credit/{id}` numa parcela do meio →
+  204, o grupo continua com as outras. E a rota das irmãs mostra a parcela apagada por alguns
+  segundos — o atraso de lista desta API vale para ela também.
+
 ---
 
 ## 2. As oito perguntas que a Fatia 0 tem de responder
@@ -211,7 +268,7 @@ Os dois `*Payload` devolvem **`{}`** quando o bloco está em "não". `total` é 
 
 **Interfaces:** produz as respostas de 2.1 a 2.8, que as fatias seguintes consomem como fato.
 
-- [ ] **Passo 1: escrever a sonda**
+- [x] **Passo 1: escrever a sonda**
 
 ```js
 // <scratchpad>/sonda-0.15.0.mjs — roda com: node sonda-0.15.0.mjs
@@ -324,7 +381,7 @@ async function main() {
 main().catch((error) => { console.error(error); console.log('IDs criados:', JSON.stringify(criados)); });
 ```
 
-- [ ] **Passo 2: rodar**
+- [x] **Passo 2: rodar**
 
 Os dois IDs saem da própria cobaia, e uma empresa nova já tem as 22 categorias que o Nibo cria
 sozinho — o cliente é que costuma faltar, e aí se cria um com Contact - Customer antes:
@@ -352,19 +409,19 @@ node <scratchpad>/sonda-0.15.0.mjs 2>&1 | tee <scratchpad>/sonda-0.15.0.log
 Esperado: um número e um corpo para cada uma das perguntas 2.1 a 2.5 e 2.8. **Nenhuma delas tem
 resposta esperada** — é medição, não teste.
 
-- [ ] **Passo 3: limpar a cobaia**
+- [x] **Passo 3: limpar a cobaia**
 
 Apagar **todos** os IDs que a sonda imprimiu: `DELETE /schedules/credit/{id}` para cada um.
 Conferir a limpeza **alguns segundos depois** — a lista desta API atrasa depois de um DELETE, e
 conferir na hora mostra fantasma.
 
-- [ ] **Passo 4: escrever as respostas na seção 1 deste arquivo**
+- [x] **Passo 4: escrever as respostas na seção 1 deste arquivo**
 
 Cada pergunta de 2.1 a 2.8 vira uma subseção de 1.5 em diante, com o número e o corpo que a API
 respondeu. Onde a resposta contrariar a coluna "se a resposta for outra", **parar e ajustar o
 plano antes de continuar**.
 
-- [ ] **Passo 5: commit**
+- [x] **Passo 5: commit**
 
 ```bash
 git add PLAN-v0.15.0.md
