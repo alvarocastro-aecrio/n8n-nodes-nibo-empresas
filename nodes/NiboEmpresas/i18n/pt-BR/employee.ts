@@ -3,110 +3,110 @@ import type { Translations } from '../localize';
 /** Escopo `employee` — 28 entradas. */
 export const employee: Translations = {
 	"employee.operation": {
-		displayName: "Operation",
+		displayName: "Operação",
 	},
 	"employee.operation.create": {
-		name: "Create",
-		description: "Add an employee to the organization",
-		action: "Create an employee",
+		name: "Criar",
+		description: "Adiciona um funcionário à organização",
+		action: "Criar um funcionário",
 	},
 	"employee.operation.delete": {
-		name: "Delete",
-		description: "Remove an employee from the organization",
-		action: "Delete an employee",
+		name: "Excluir",
+		description: "Remove um funcionário da organização",
+		action: "Excluir um funcionário",
 	},
 	"employee.operation.get": {
-		name: "Get",
-		description: "Retrieve one employee by ID",
-		action: "Get an employee",
+		name: "Buscar",
+		description: "Busca um funcionário pelo ID",
+		action: "Buscar um funcionário",
 	},
 	"employee.operation.list": {
-		name: "Get Many",
-		description: "Retrieve employees of the organization",
-		action: "Get many employees",
+		name: "Buscar Várias",
+		description: "Busca os funcionários da organização",
+		action: "Buscar vários funcionários",
 	},
 	"employee.operation.update": {
-		name: "Update",
-		description: "Change the fields given below, leaving every other field of the employee as it is",
-		action: "Update an employee",
+		name: "Atualizar",
+		description: "Altera os campos indicados abaixo, deixando todos os outros campos do funcionário como estão",
+		action: "Atualizar um funcionário",
 	},
 	"employee.employeeId": {
-		displayName: "Employee ID",
-		description: "The ID of the employee to work on, as Nibo returns it in the ID field",
+		displayName: "ID do Funcionário",
+		description: "O ID do funcionário sobre o qual atuar, como o Nibo o devolve no campo ID",
 	},
 	"employee.documentType": {
-		displayName: "Document Type",
+		displayName: "Tipo de Documento",
 	},
 	"employee.documentType.CPF": {
 		name: "CPF",
 	},
 	"employee.updateFields": {
-		displayName: "Update Fields",
-		description: "The fields to change. A field left out is not touched: the contact keeps whatever is stored in Nibo. A field added and left empty is written empty, which is how a value is erased on purpose.",
-		placeholder: "Add Field",
+		displayName: "Campos a Atualizar",
+		description: "Os campos a alterar. Um campo omitido não é tocado: o contato mantém o que já está guardado no Nibo. Um campo adicionado e deixado vazio é gravado vazio, que é como se apaga um valor de propósito.",
+		placeholder: "Adicionar Campo",
 	},
 	"employee.updateFields.addressCity": {
-		displayName: "Address City",
+		displayName: "Cidade do Endereço",
 	},
 	"employee.updateFields.addressCountry": {
-		displayName: "Address Country",
+		displayName: "País do Endereço",
 	},
 	"employee.updateFields.addressDistrict": {
-		displayName: "Address District",
+		displayName: "Bairro do Endereço",
 	},
 	"employee.updateFields.addressLine1": {
-		displayName: "Address Line 1",
-		description: "Street name",
+		displayName: "Endereço Linha 1",
+		description: "Nome da rua",
 	},
 	"employee.updateFields.addressLine2": {
-		displayName: "Address Line 2",
-		description: "Whatever completes the address, such as a floor or a unit",
+		displayName: "Endereço Linha 2",
+		description: "O que completa o endereço, como um andar ou uma unidade",
 	},
 	"employee.updateFields.addressNumber": {
-		displayName: "Address Number",
-		description: "House or building number, which this API keeps as a number",
+		displayName: "Número do Endereço",
+		description: "Número da casa ou do prédio, que esta API guarda como um número",
 	},
 	"employee.updateFields.addressState": {
-		displayName: "Address State",
+		displayName: "Estado do Endereço",
 		placeholder: "RJ",
 	},
 	"employee.updateFields.addressZipCode": {
-		displayName: "Address Zip Code",
+		displayName: "CEP do Endereço",
 		placeholder: "20000000",
 	},
 	"employee.updateFields.cellPhone": {
-		displayName: "Cell Phone",
+		displayName: "Celular",
 	},
 	"employee.updateFields.companyName": {
-		displayName: "Company Name",
-		description: "The trading name, when it differs from the registered name",
+		displayName: "Nome da Empresa",
+		description: "O nome fantasia, quando for diferente do nome cadastrado",
 	},
 	"employee.updateFields.contactName": {
-		displayName: "Contact Name",
+		displayName: "Nome do Contato",
 	},
 	"employee.updateFields.documentNumber": {
-		displayName: "Document Number",
-		description: "Digits only, with no dots, slashes or dashes",
+		displayName: "Número do Documento",
+		description: "Somente dígitos, sem pontos, barras ou hífens",
 	},
 	"employee.updateFields.documentType": {
-		displayName: "Document Type",
+		displayName: "Tipo de Documento",
 	},
 	"employee.updateFields.documentType.CPF": {
 		name: "CPF",
 	},
 	"employee.updateFields.email": {
-		displayName: "Email",
-		description: "One string holding every address, separated by commas. This API keeps the e-mails of a contact in a single field, not in a list.",
+		displayName: "E-mail",
+		description: "Uma única string com todos os endereços, separados por vírgula. Esta API guarda os e-mails de um contato em um único campo, não em uma lista.",
 		placeholder: "billing@example.com,accounts@example.com",
 	},
 	"employee.updateFields.name": {
-		displayName: "Name",
-		description: "The registered name of the contact",
+		displayName: "Nome",
+		description: "O nome cadastrado do contato",
 	},
 	"employee.updateFields.phone": {
-		displayName: "Phone",
+		displayName: "Telefone",
 	},
 	"employee.updateFields.webSite": {
-		displayName: "Website",
+		displayName: "Site",
 	},
 };

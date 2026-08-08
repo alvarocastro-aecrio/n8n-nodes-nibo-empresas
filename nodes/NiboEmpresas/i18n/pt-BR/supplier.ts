@@ -3,35 +3,35 @@ import type { Translations } from '../localize';
 /** Escopo `supplier` — 7 entradas. */
 export const supplier: Translations = {
 	"supplier.operation": {
-		displayName: "Operation",
+		displayName: "Operação",
 	},
 	"supplier.operation.create": {
-		name: "Create",
-		description: "Add a supplier to the organization",
-		action: "Create a supplier",
+		name: "Criar",
+		description: "Adiciona um fornecedor à organização",
+		action: "Criar um fornecedor",
 	},
 	"supplier.operation.delete": {
-		name: "Delete",
-		description: "Remove a supplier from the organization",
-		action: "Delete a supplier",
+		name: "Excluir",
+		description: "Remove um fornecedor da organização",
+		action: "Excluir um fornecedor",
 	},
 	"supplier.operation.get": {
-		name: "Get",
-		description: "Retrieve one supplier by ID",
-		action: "Get a supplier",
+		name: "Buscar",
+		description: "Busca um fornecedor pelo ID",
+		action: "Buscar um fornecedor",
 	},
 	"supplier.operation.list": {
-		name: "Get Many",
-		description: "Retrieve suppliers of the organization",
-		action: "Get many suppliers",
+		name: "Buscar Várias",
+		description: "Busca os fornecedores da organização",
+		action: "Buscar vários fornecedores",
 	},
 	"supplier.operation.update": {
-		name: "Update",
-		description: "Change the fields given below, leaving every other field of the supplier as it is",
-		action: "Update a supplier",
+		name: "Atualizar",
+		description: "Altera os campos indicados abaixo, deixando todos os outros campos do fornecedor como estão",
+		action: "Atualizar um fornecedor",
 	},
 	"supplier.supplierId": {
-		displayName: "Supplier ID",
-		description: "The ID of the supplier to work on, as Nibo returns it in the ID field",
+		displayName: "ID do Fornecedor",
+		description: "O ID do fornecedor sobre o qual atuar, como o Nibo o devolve no campo ID",
 	},
 };

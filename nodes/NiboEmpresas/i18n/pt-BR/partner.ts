@@ -3,35 +3,35 @@ import type { Translations } from '../localize';
 /** Escopo `partner` — 7 entradas. */
 export const partner: Translations = {
 	"partner.operation": {
-		displayName: "Operation",
+		displayName: "Operação",
 	},
 	"partner.operation.create": {
-		name: "Create",
-		description: "Add a partner to the organization",
-		action: "Create a partner",
+		name: "Criar",
+		description: "Adiciona um sócio à organização",
+		action: "Criar um sócio",
 	},
 	"partner.operation.delete": {
-		name: "Delete",
-		description: "Remove a partner from the organization",
-		action: "Delete a partner",
+		name: "Excluir",
+		description: "Remove um sócio da organização",
+		action: "Excluir um sócio",
 	},
 	"partner.operation.get": {
-		name: "Get",
-		description: "Retrieve one partner by ID",
-		action: "Get a partner",
+		name: "Buscar",
+		description: "Busca um sócio pelo ID",
+		action: "Buscar um sócio",
 	},
 	"partner.operation.list": {
-		name: "Get Many",
-		description: "Retrieve partners of the organization",
-		action: "Get many partners",
+		name: "Buscar Várias",
+		description: "Busca os sócios da organização",
+		action: "Buscar vários sócios",
 	},
 	"partner.operation.update": {
-		name: "Update",
-		description: "Change the fields given below, leaving every other field of the partner as it is",
-		action: "Update a partner",
+		name: "Atualizar",
+		description: "Altera os campos indicados abaixo, deixando todos os outros campos do sócio como estão",
+		action: "Atualizar um sócio",
 	},
 	"partner.partnerId": {
-		displayName: "Partner ID",
-		description: "The ID of the partner to work on, as Nibo returns it in the ID field",
+		displayName: "ID do Sócio",
+		description: "O ID do sócio sobre o qual atuar, como o Nibo o devolve no campo ID",
 	},
 };

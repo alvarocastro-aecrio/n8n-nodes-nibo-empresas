@@ -3,43 +3,43 @@ import type { Translations } from '../localize';
 /** Escopo `customer` — 54 entradas. */
 export const customer: Translations = {
 	"customer.operation": {
-		displayName: "Operation",
+		displayName: "Operação",
 	},
 	"customer.operation.create": {
-		name: "Create",
-		description: "Add a customer to the organization",
-		action: "Create a customer",
+		name: "Criar",
+		description: "Adiciona um cliente à organização",
+		action: "Criar um cliente",
 	},
 	"customer.operation.delete": {
-		name: "Delete",
-		description: "Remove a customer from the organization",
-		action: "Delete a customer",
+		name: "Excluir",
+		description: "Remove um cliente da organização",
+		action: "Excluir um cliente",
 	},
 	"customer.operation.get": {
-		name: "Get",
-		description: "Retrieve one customer by ID",
-		action: "Get a customer",
+		name: "Buscar",
+		description: "Busca um cliente pelo ID",
+		action: "Buscar um cliente",
 	},
 	"customer.operation.list": {
-		name: "Get Many",
-		description: "Retrieve customers of the organization",
-		action: "Get many customers",
+		name: "Buscar Várias",
+		description: "Busca os clientes da organização",
+		action: "Buscar vários clientes",
 	},
 	"customer.operation.update": {
-		name: "Update",
-		description: "Change the fields given below, leaving every other field of the customer as it is",
-		action: "Update a customer",
+		name: "Atualizar",
+		description: "Altera os campos indicados abaixo, deixando todos os outros campos do cliente como estão",
+		action: "Atualizar um cliente",
 	},
 	"customer.customerId": {
-		displayName: "Customer ID",
-		description: "The ID of the customer to work on, as Nibo returns it in the ID field",
+		displayName: "ID do Cliente",
+		description: "O ID do cliente sobre o qual atuar, como o Nibo o devolve no campo ID",
 	},
 	"customer.name": {
-		displayName: "Name",
-		description: "The registered name of the contact",
+		displayName: "Nome",
+		description: "O nome cadastrado do contato",
 	},
 	"customer.documentType": {
-		displayName: "Document Type",
+		displayName: "Tipo de Documento",
 	},
 	"customer.documentType.CNPJ": {
 		name: "CNPJ",
@@ -48,114 +48,114 @@ export const customer: Translations = {
 		name: "CPF",
 	},
 	"customer.documentNumber": {
-		displayName: "Document Number",
-		description: "Digits only, with no dots, slashes or dashes. Optional: left empty, the contact is created with no document at all.",
+		displayName: "Número do Documento",
+		description: "Somente dígitos, sem pontos, barras ou hífens. Opcional: se deixado em branco, o contato é criado sem nenhum documento.",
 		placeholder: "00000000000000",
 	},
 	"customer.additionalFields": {
-		displayName: "Additional Fields",
-		placeholder: "Add Field",
+		displayName: "Campos Adicionais",
+		placeholder: "Adicionar Campo",
 	},
 	"customer.additionalFields.addressCity": {
-		displayName: "Address City",
+		displayName: "Cidade do Endereço",
 	},
 	"customer.additionalFields.addressCountry": {
-		displayName: "Address Country",
+		displayName: "País do Endereço",
 	},
 	"customer.additionalFields.addressDistrict": {
-		displayName: "Address District",
+		displayName: "Bairro do Endereço",
 	},
 	"customer.additionalFields.addressLine1": {
-		displayName: "Address Line 1",
-		description: "Street name",
+		displayName: "Endereço Linha 1",
+		description: "Nome da rua",
 	},
 	"customer.additionalFields.addressLine2": {
-		displayName: "Address Line 2",
-		description: "Whatever completes the address, such as a floor or a unit",
+		displayName: "Endereço Linha 2",
+		description: "O que completa o endereço, como um andar ou uma unidade",
 	},
 	"customer.additionalFields.addressNumber": {
-		displayName: "Address Number",
-		description: "House or building number, which this API keeps as a number",
+		displayName: "Número do Endereço",
+		description: "Número da casa ou do prédio, que esta API guarda como um número",
 	},
 	"customer.additionalFields.addressState": {
-		displayName: "Address State",
+		displayName: "Estado do Endereço",
 		placeholder: "RJ",
 	},
 	"customer.additionalFields.addressZipCode": {
-		displayName: "Address Zip Code",
+		displayName: "CEP do Endereço",
 		placeholder: "20000000",
 	},
 	"customer.additionalFields.cellPhone": {
-		displayName: "Cell Phone",
+		displayName: "Celular",
 	},
 	"customer.additionalFields.companyName": {
-		displayName: "Company Name",
-		description: "The trading name, when it differs from the registered name",
+		displayName: "Nome da Empresa",
+		description: "O nome fantasia, quando for diferente do nome cadastrado",
 	},
 	"customer.additionalFields.contactName": {
-		displayName: "Contact Name",
+		displayName: "Nome do Contato",
 	},
 	"customer.additionalFields.email": {
-		displayName: "Email",
-		description: "One string holding every address, separated by commas. This API keeps the e-mails of a contact in a single field, not in a list.",
+		displayName: "E-mail",
+		description: "Uma única string com todos os endereços, separados por vírgula. Esta API guarda os e-mails de um contato em um único campo, não em uma lista.",
 		placeholder: "billing@example.com,accounts@example.com",
 	},
 	"customer.additionalFields.phone": {
-		displayName: "Phone",
+		displayName: "Telefone",
 	},
 	"customer.additionalFields.webSite": {
-		displayName: "Website",
+		displayName: "Site",
 	},
 	"customer.updateFields": {
-		displayName: "Update Fields",
-		description: "The fields to change. A field left out is not touched: the contact keeps whatever is stored in Nibo. A field added and left empty is written empty, which is how a value is erased on purpose.",
-		placeholder: "Add Field",
+		displayName: "Campos a Atualizar",
+		description: "Os campos a alterar. Um campo omitido não é tocado: o contato mantém o que já está guardado no Nibo. Um campo adicionado e deixado vazio é gravado vazio, que é como se apaga um valor de propósito.",
+		placeholder: "Adicionar Campo",
 	},
 	"customer.updateFields.addressCity": {
-		displayName: "Address City",
+		displayName: "Cidade do Endereço",
 	},
 	"customer.updateFields.addressCountry": {
-		displayName: "Address Country",
+		displayName: "País do Endereço",
 	},
 	"customer.updateFields.addressDistrict": {
-		displayName: "Address District",
+		displayName: "Bairro do Endereço",
 	},
 	"customer.updateFields.addressLine1": {
-		displayName: "Address Line 1",
-		description: "Street name",
+		displayName: "Endereço Linha 1",
+		description: "Nome da rua",
 	},
 	"customer.updateFields.addressLine2": {
-		displayName: "Address Line 2",
-		description: "Whatever completes the address, such as a floor or a unit",
+		displayName: "Endereço Linha 2",
+		description: "O que completa o endereço, como um andar ou uma unidade",
 	},
 	"customer.updateFields.addressNumber": {
-		displayName: "Address Number",
-		description: "House or building number, which this API keeps as a number",
+		displayName: "Número do Endereço",
+		description: "Número da casa ou do prédio, que esta API guarda como um número",
 	},
 	"customer.updateFields.addressState": {
-		displayName: "Address State",
+		displayName: "Estado do Endereço",
 		placeholder: "RJ",
 	},
 	"customer.updateFields.addressZipCode": {
-		displayName: "Address Zip Code",
+		displayName: "CEP do Endereço",
 		placeholder: "20000000",
 	},
 	"customer.updateFields.cellPhone": {
-		displayName: "Cell Phone",
+		displayName: "Celular",
 	},
 	"customer.updateFields.companyName": {
-		displayName: "Company Name",
-		description: "The trading name, when it differs from the registered name",
+		displayName: "Nome da Empresa",
+		description: "O nome fantasia, quando for diferente do nome cadastrado",
 	},
 	"customer.updateFields.contactName": {
-		displayName: "Contact Name",
+		displayName: "Nome do Contato",
 	},
 	"customer.updateFields.documentNumber": {
-		displayName: "Document Number",
-		description: "Digits only, with no dots, slashes or dashes",
+		displayName: "Número do Documento",
+		description: "Somente dígitos, sem pontos, barras ou hífens",
 	},
 	"customer.updateFields.documentType": {
-		displayName: "Document Type",
+		displayName: "Tipo de Documento",
 	},
 	"customer.updateFields.documentType.CNPJ": {
 		name: "CNPJ",
@@ -164,47 +164,47 @@ export const customer: Translations = {
 		name: "CPF",
 	},
 	"customer.updateFields.email": {
-		displayName: "Email",
-		description: "One string holding every address, separated by commas. This API keeps the e-mails of a contact in a single field, not in a list.",
+		displayName: "E-mail",
+		description: "Uma única string com todos os endereços, separados por vírgula. Esta API guarda os e-mails de um contato em um único campo, não em uma lista.",
 		placeholder: "billing@example.com,accounts@example.com",
 	},
 	"customer.updateFields.name": {
-		displayName: "Name",
-		description: "The registered name of the contact",
+		displayName: "Nome",
+		description: "O nome cadastrado do contato",
 	},
 	"customer.updateFields.phone": {
-		displayName: "Phone",
+		displayName: "Telefone",
 	},
 	"customer.updateFields.webSite": {
-		displayName: "Website",
+		displayName: "Site",
 	},
 	"customer.returnAll": {
-		displayName: "Return All",
-		description: "Whether to return all results or only up to a given limit",
+		displayName: "Retornar Tudo",
+		description: "Se deve retornar todos os resultados ou apenas até um limite definido",
 	},
 	"customer.limit": {
-		displayName: "Limit",
-		description: "Max number of results to return",
-		hint: "The API caps every page at 500 records, so a higher limit is collected in several pages",
+		displayName: "Limite",
+		description: "Número máximo de resultados a retornar",
+		hint: "A API limita cada página a 500 registros, então um limite maior é reunido em várias páginas",
 	},
 	"customer.filters": {
-		displayName: "Filters",
-		description: "The conditions a record has to meet to be returned",
-		placeholder: "Add Condition",
+		displayName: "Filtros",
+		description: "As condições que um registro precisa atender para ser retornado",
+		placeholder: "Adicionar Condição",
 	},
 	"customer.filters.conditions": {
-		displayName: "Condition",
+		displayName: "Condição",
 	},
 	"customer.filterCombine": {
-		displayName: "Combine Conditions",
-		description: "How the conditions above are joined. One operator for all of them: a mix of the two, such as (A or B) and C, is what Filter (OData) under Options stays for.",
+		displayName: "Combinar Condições",
+		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A or B) and C, é para isso que existe o Filtro (OData) em Opções.",
 	},
 	"customer.filterCombine.and": {
-		name: "And",
-		description: "Return only the records that meet every condition",
+		name: "E",
+		description: "Retorna somente os registros que atendem a todas as condições",
 	},
 	"customer.filterCombine.or": {
-		name: "Or",
-		description: "Return the records that meet at least one of the conditions",
+		name: "Ou",
+		description: "Retorna os registros que atendem a pelo menos uma das condições",
 	},
 };
