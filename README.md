@@ -13,6 +13,42 @@ boletos with Pix, NFS-e service invoices, attachments and the chart of accounts 
 
 Zero runtime dependencies. Published with npm provenance. Usable as an **AI Agent tool**.
 
+> ### 🇧🇷 The node speaks Portuguese
+>
+> Every label the editor shows — resources, operations, fields, hints — is translated to
+> Brazilian Portuguese. English is the default; to switch, set this in your n8n:
+>
+> ```
+> NIBO_NODE_LOCALE=pt-BR
+> ```
+>
+> The language is read when n8n loads the node, so the change takes effect on the next
+> restart. **Nothing a workflow stores changes with the language** — the same flow runs
+> identically in either one, and switching is a restart rather than a migration.
+>
+> Do not use `N8N_DEFAULT_LOCALE`: on n8n 2.33.7 any value other than `en` brings down
+> the route that hands node descriptions to the editor (`ENOENT: scandir`), for native
+> and community nodes alike.
+>
+> ---
+>
+> ### 🇧🇷 O node fala português
+>
+> Todo rótulo que o editor mostra — recursos, operações, campos, dicas — está traduzido
+> para o português do Brasil. O padrão é inglês; para trocar, defina no seu n8n:
+>
+> ```
+> NIBO_NODE_LOCALE=pt-BR
+> ```
+>
+> O idioma é lido quando o n8n carrega o node, então a mudança vale a partir do próximo
+> reinício. **Nada do que um workflow guarda muda com o idioma** — o mesmo fluxo roda
+> igual nos dois, e trocar é um reinício, não uma migração.
+>
+> Não use `N8N_DEFAULT_LOCALE`: em n8n 2.33.7 qualquer valor diferente de `en` derruba a
+> rota que entrega as descrições dos nodes ao editor (`ENOENT: scandir`), para nodes
+> nativos e de comunidade igualmente.
+
 ---
 
 ## What it can do
@@ -70,20 +106,6 @@ The package has **no runtime dependencies** — nothing is pulled into your n8n 
 beyond the node itself. Every release is built in CI, gated on lint, the official n8n
 community rules and a unit-test suite, then published with **npm provenance** and scanned
 by `@n8n/scan-community-package`.
-
-## Idioma
-
-O node fala inglês por padrão. Para os rótulos em português, defina no seu n8n:
-
-    NIBO_NODE_LOCALE=pt-BR
-
-O idioma é lido quando o n8n carrega o node, então a mudança vale a partir do próximo
-reinício. Nada do que um workflow guarda muda com o idioma — o mesmo fluxo roda igual
-nos dois.
-
-Não use `N8N_DEFAULT_LOCALE`: em n8n 2.33.7 qualquer valor diferente de `en` derruba a
-rota que entrega as descrições dos nodes ao editor (`ENOENT: scandir`), para nodes
-nativos e de comunidade igualmente.
 
 ## Credentials
 
