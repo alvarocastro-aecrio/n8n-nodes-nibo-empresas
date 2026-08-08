@@ -3,35 +3,35 @@ import type { Translations } from '../localize';
 /** Escopo `debitSchedule` — 7 entradas. */
 export const debitSchedule: Translations = {
 	"debitSchedule.operation": {
-		displayName: "Operation",
+		displayName: "Operação",
 	},
 	"debitSchedule.operation.create": {
-		name: "Create",
-		description: "Schedule an amount to be paid on a date",
-		action: "Create a debit schedule",
+		name: "Criar",
+		description: "Programa um valor para ser pago em uma data",
+		action: "Criar uma conta a pagar",
 	},
 	"debitSchedule.operation.delete": {
-		name: "Delete",
-		description: "Remove a debit schedule from the organization",
-		action: "Delete a debit schedule",
+		name: "Excluir",
+		description: "Remove uma conta a pagar da organização",
+		action: "Excluir uma conta a pagar",
 	},
 	"debitSchedule.operation.get": {
-		name: "Get",
-		description: "Retrieve one debit schedule by ID",
-		action: "Get a debit schedule",
+		name: "Buscar",
+		description: "Busca uma conta a pagar pelo ID",
+		action: "Buscar uma conta a pagar",
 	},
 	"debitSchedule.operation.list": {
-		name: "Get Many",
-		description: "Retrieve debit schedules of the organization",
-		action: "Get many debit schedules",
+		name: "Buscar Várias",
+		description: "Busca as contas a pagar da organização",
+		action: "Buscar várias contas a pagar",
 	},
 	"debitSchedule.operation.update": {
-		name: "Update",
-		description: "Change the fields given below, leaving every other field of the debit schedule as it is",
-		action: "Update a debit schedule",
+		name: "Atualizar",
+		description: "Altera os campos indicados abaixo, deixando todos os outros campos da conta a pagar como estão",
+		action: "Atualizar uma conta a pagar",
 	},
 	"debitSchedule.debitScheduleId": {
-		displayName: "Debit Schedule ID",
-		description: "The ID of the debit schedule to work on, as Nibo returns it in the schedule ID field",
+		displayName: "ID da Conta a Pagar",
+		description: "O ID da conta a pagar em que trabalhar, como o Nibo o devolve no campo schedule ID",
 	},
 };

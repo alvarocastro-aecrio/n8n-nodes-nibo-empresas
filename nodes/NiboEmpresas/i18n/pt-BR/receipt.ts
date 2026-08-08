@@ -3,40 +3,40 @@ import type { Translations } from '../localize';
 /** Escopo `receipt` — 8 entradas. */
 export const receipt: Translations = {
 	"receipt.operation": {
-		displayName: "Operation",
+		displayName: "Operação",
 	},
 	"receipt.operation.create": {
-		name: "Create",
-		description: "Record an amount already received, creating the credit schedule and settling it in one go",
-		action: "Create a receipt",
+		name: "Criar",
+		description: "Registra um valor já recebido, criando a conta a receber e liquidando-a de uma vez",
+		action: "Criar um recebimento",
 	},
 	"receipt.operation.delete": {
-		name: "Delete",
-		description: "Remove the receipt, which puts the credit schedule it settled back to unpaid",
-		action: "Delete a receipt",
+		name: "Excluir",
+		description: "Remove o recebimento, o que devolve a conta a receber que ele liquidou para não paga",
+		action: "Excluir um recebimento",
 	},
 	"receipt.operation.get": {
-		name: "Get",
-		description: "Retrieve one receipt by ID",
-		action: "Get a receipt",
+		name: "Buscar",
+		description: "Busca um recebimento pelo ID",
+		action: "Buscar um recebimento",
 	},
 	"receipt.operation.list": {
-		name: "Get Many",
-		description: "Retrieve the receipts of the organization",
-		action: "Get many receipts",
+		name: "Buscar Várias",
+		description: "Busca os recebimentos da organização",
+		action: "Buscar vários recebimentos",
 	},
 	"receipt.operation.settle": {
-		name: "Settle",
-		description: "Record that a credit schedule that already exists has been received",
-		action: "Settle a credit schedule",
+		name: "Liquidar",
+		description: "Registra que uma conta a receber já existente foi recebida",
+		action: "Liquidar uma conta a receber",
 	},
 	"receipt.stakeholderId": {
-		displayName: "Stakeholder",
-		description: "The contact this receipt is for. The list offers only the kinds the API accepts on this side — measured on 2026-07-27, the same matrix the schedules follow, since a receipt creates a credit schedule underneath. Anything else is refused with \"Stakeholder is not compatible\".",
+		displayName: "Contato",
+		description: "O contato ao qual este recebimento se refere. A lista mostra apenas os tipos que a API aceita deste lado — medido em 27/07/2026, a mesma matriz que as contas seguem, já que um recebimento cria uma conta a receber por baixo. Qualquer outro tipo é recusado com \"Stakeholder is not compatible\".",
 	},
 	"receipt.scheduleId": {
-		displayName: "Schedule ID",
-		description: "The ID of the credit schedule to settle, as Nibo returns it in the scheduleId field. The node reads that schedule before writing anything: this API accepts a debit one through this same route and files the money on the wrong side of the cash book without a word.",
+		displayName: "ID da Conta a Receber",
+		description: "O ID da conta a receber a liquidar, como o Nibo o devolve no campo scheduleId. O node lê essa conta antes de escrever qualquer coisa: esta API aceita uma conta a pagar por essa mesma rota e lança o dinheiro no lado errado do caixa sem avisar.",
 		placeholder: "2efffcd0-8730-4348-86da-6d9a95be6149",
 	},
 };
