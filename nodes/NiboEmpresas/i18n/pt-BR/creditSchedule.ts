@@ -359,16 +359,16 @@ export const creditSchedule: Translations = {
 	},
 	"creditSchedule.returnAll": {
 		displayName: "Retornar Tudo",
-		description: "Se retorna todos os resultados ou só até um limite definido",
+		description: "Se deve retornar todos os resultados ou apenas até um limite definido",
 	},
 	"creditSchedule.limit": {
 		displayName: "Limite",
 		description: "Número máximo de resultados a retornar",
-		hint: "A API limita cada página a 500 registros, então um limite maior é coletado em várias páginas",
+		hint: "A API limita cada página a 500 registros, então um limite maior é reunido em várias páginas",
 	},
 	"creditSchedule.filters": {
 		displayName: "Filtros",
-		description: "As condições que um registro tem que atender para ser retornado",
+		description: "As condições que um registro precisa atender para ser retornado",
 		placeholder: "Adicionar Condição",
 	},
 	"creditSchedule.filters.conditions": {
@@ -376,11 +376,11 @@ export const creditSchedule: Translations = {
 	},
 	"creditSchedule.filterCombine": {
 		displayName: "Combinar Condições",
-		description: "Como as condições acima são combinadas. Um operador só para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que existe o Filtro (OData) em Opções.",
+		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que existe o Filtro (OData) em Opções.",
 	},
 	"creditSchedule.filterCombine.and": {
 		name: "E",
-		description: "Retorna só os registros que atendem a todas as condições",
+		description: "Retorna apenas os registros que atendem a todas as condições",
 	},
 	"creditSchedule.filterCombine.or": {
 		name: "Ou",

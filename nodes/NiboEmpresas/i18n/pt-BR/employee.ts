@@ -21,7 +21,7 @@ export const employee: Translations = {
 		action: "Buscar um funcionário",
 	},
 	"employee.operation.list": {
-		name: "Buscar Várias",
+		name: "Buscar Vários",
 		description: "Busca os funcionários da organização",
 		action: "Buscar vários funcionários",
 	},

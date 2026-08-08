@@ -55,7 +55,7 @@ export const bankTransfer: Translations = {
 	"bankTransfer.limit": {
 		displayName: "Limite",
 		description: "Número máximo de resultados a retornar",
-		hint: "A API limita cada página a 500 registros, então um limite maior é coletado em várias páginas",
+		hint: "A API limita cada página a 500 registros, então um limite maior é reunido em várias páginas",
 	},
 	"bankTransfer.filters": {
 		displayName: "Filtros",
@@ -67,7 +67,7 @@ export const bankTransfer: Translations = {
 	},
 	"bankTransfer.filterCombine": {
 		displayName: "Combinar Condições",
-		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que serve o Filter (OData) em Opções.",
+		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que existe o Filtro (OData) em Opções.",
 	},
 	"bankTransfer.filterCombine.and": {
 		name: "E",

@@ -21,7 +21,7 @@ export const receipt: Translations = {
 		action: "Buscar um recebimento",
 	},
 	"receipt.operation.list": {
-		name: "Buscar Várias",
+		name: "Buscar Vários",
 		description: "Busca os recebimentos da organização",
 		action: "Buscar vários recebimentos",
 	},

@@ -114,7 +114,7 @@ export const bankAccount: Translations = {
 	},
 	"bankAccount.filterCombine": {
 		displayName: "Combinar Condições",
-		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que serve o Filter (OData) em Opções.",
+		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que existe o Filtro (OData) em Opções.",
 	},
 	"bankAccount.filterCombine.and": {
 		name: "E",

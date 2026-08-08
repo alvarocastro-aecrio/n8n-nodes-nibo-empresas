@@ -86,18 +86,18 @@ export const serviceInvoice: Translations = {
 	"serviceInvoice.filters": {
 		displayName: "Filtros",
 		description: "As condições que um registro precisa atender para ser retornado",
-		placeholder: "Adicionar condição",
+		placeholder: "Adicionar Condição",
 	},
 	"serviceInvoice.filters.conditions": {
 		displayName: "Condição",
 	},
 	"serviceInvoice.filterCombine": {
 		displayName: "Combinar Condições",
-		description: "Como as condições acima são combinadas. Um operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que existe o Filtro (OData) em Opções.",
+		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que existe o Filtro (OData) em Opções.",
 	},
 	"serviceInvoice.filterCombine.and": {
 		name: "E",
-		description: "Retorna somente os registros que atendem a todas as condições",
+		description: "Retorna apenas os registros que atendem a todas as condições",
 	},
 	"serviceInvoice.filterCombine.or": {
 		name: "Ou",

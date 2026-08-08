@@ -7,7 +7,7 @@ export const scheduleFile: Translations = {
 	},
 	"scheduleFile.operation.attach": {
 		name: "Anexar",
-		description: "Coloca um documento já armazenado na Nibo numa conta, verificando primeiro que a conta existe e confirmando depois que o arquivo está nela",
+		description: "Coloca um documento já armazenado no Nibo numa conta, verificando primeiro que a conta existe e confirmando depois que o arquivo está nela",
 		action: "Anexar um arquivo a uma conta",
 	},
 	"scheduleFile.operation.delete": {
@@ -16,7 +16,7 @@ export const scheduleFile: Translations = {
 		action: "Excluir um arquivo de uma conta",
 	},
 	"scheduleFile.operation.listFiles": {
-		name: "Buscar Várias",
+		name: "Buscar Vários",
 		description: "Recupera os documentos anexados a uma conta",
 		action: "Buscar vários arquivos de uma conta",
 	},
@@ -27,7 +27,7 @@ export const scheduleFile: Translations = {
 		displayName: "Um documento pertence a uma conta por vez. Anexar um arquivo que já está em outra conta o move: ele desaparece da primeira. Para ter o mesmo documento em duas contas, envie-o duas vezes.",
 	},
 	"scheduleFile.deleteNotice": {
-		displayName: "Isto exclui o documento, não o vínculo entre ele e esta conta: o arquivo não pode ser anexado de novo em lugar nenhum, e a Nibo responde a qualquer tentativa com \"Arquivo não encontrado\". O arquivo armazenado em si também não é removido — um link para baixá-lo, obtido antes disso, ainda serve o documento depois.",
+		displayName: "Isto exclui o documento, não o vínculo entre ele e esta conta: o arquivo não pode ser anexado de novo em lugar nenhum, e o Nibo responde a qualquer tentativa com \"Arquivo não encontrado\". O arquivo armazenado em si também não é removido — um link para baixá-lo, obtido antes disso, ainda serve o documento depois.",
 	},
 	"scheduleFile.scheduleId": {
 		displayName: "ID da Conta",

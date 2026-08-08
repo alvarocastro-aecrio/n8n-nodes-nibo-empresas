@@ -21,7 +21,7 @@ export const customer: Translations = {
 		action: "Buscar um cliente",
 	},
 	"customer.operation.list": {
-		name: "Buscar Várias",
+		name: "Buscar Vários",
 		description: "Busca os clientes da organização",
 		action: "Buscar vários clientes",
 	},
@@ -197,11 +197,11 @@ export const customer: Translations = {
 	},
 	"customer.filterCombine": {
 		displayName: "Combinar Condições",
-		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A or B) and C, é para isso que existe o Filtro (OData) em Opções.",
+		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que existe o Filtro (OData) em Opções.",
 	},
 	"customer.filterCombine.and": {
 		name: "E",
-		description: "Retorna somente os registros que atendem a todas as condições",
+		description: "Retorna apenas os registros que atendem a todas as condições",
 	},
 	"customer.filterCombine.or": {
 		name: "Ou",

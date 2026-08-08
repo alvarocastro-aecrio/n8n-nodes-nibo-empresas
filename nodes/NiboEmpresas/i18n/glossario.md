@@ -56,12 +56,30 @@ manual. Traduza a frase toda, preservando o tom; não resuma.
 > `'Abre uma conta nova na organização — um ato que esta API não desfaz'`,
 > e **não** `'Cria conta'`.
 
+## Concordância
+
+**"Get Many" concorda com o recurso**, e não com a tabela: "Buscar Várias" para conta
+bancária, categoria, cobrança, conta a receber, conta a pagar, nota fiscal e
+transferência; "Buscar Vários" para cliente, fornecedor, sócio, funcionário, pagamento,
+recebimento, centro de custo e arquivo. O mesmo vale para "Sinalizada"/"Sinalizado" e
+qualquer outro adjetivo: o rótulo fica ao lado do nome do recurso, e tem de concordar
+com ele.
+
+**O Nibo é masculino**: "no Nibo", "do Nibo", "o Nibo devolve". É como o próprio sistema
+se trata.
+
+**O rótulo pode ser mais específico que o inglês** quando o contexto não deixa dúvida:
+`Schedule ID` vira "ID da Conta a Pagar" em Pagamento e "ID da Conta a Receber" em
+Recebimento, e fica "ID da Conta" onde a rota aceita as duas.
+
 ## Convenções de forma
 
 - `displayName` e `name` de opção usam Maiúsculas Em Cada Palavra Principal, como o
   original: `'Get Many'` → `'Buscar Várias'`.
-- `description` **não** termina com ponto final — é a convenção do n8n e o lint cobra.
-  (Ponto no meio da frase, quando o texto tem mais de um período, é normal.)
+- `description` de **uma só frase** não termina com ponto final — é a convenção do n8n e
+  o lint cobra. Descrição de várias frases termina com ponto, como o inglês deste repo
+  já faz: a regra do lint não alcança essas. Na dúvida, a pontuação do português
+  acompanha a do inglês, caractere por caractere.
 - Nunca se altera a CHAVE do objeto (a string à esquerda dos dois-pontos) nem o NOME do
   campo (`displayName`, `description`, `name`, `action`, `placeholder`, `hint`). As
   chaves saem do código, por `scripts/i18n-skeleton.js`; mudar uma quebra a tradução em

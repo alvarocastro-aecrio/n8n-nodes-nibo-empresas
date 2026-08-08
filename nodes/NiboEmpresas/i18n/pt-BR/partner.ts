@@ -21,7 +21,7 @@ export const partner: Translations = {
 		action: "Buscar um sócio",
 	},
 	"partner.operation.list": {
-		name: "Buscar Várias",
+		name: "Buscar Vários",
 		description: "Busca os sócios da organização",
 		action: "Buscar vários sócios",
 	},

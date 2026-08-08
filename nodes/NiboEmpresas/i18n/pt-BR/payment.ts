@@ -21,7 +21,7 @@ export const payment: Translations = {
 		action: "Buscar um pagamento",
 	},
 	"payment.operation.list": {
-		name: "Buscar Várias",
+		name: "Buscar Vários",
 		description: "Busca os pagamentos da organização",
 		action: "Buscar vários pagamentos",
 	},
@@ -63,7 +63,7 @@ export const payment: Translations = {
 	},
 	"payment.additionalFields.reference": {
 		displayName: "Referência",
-		description: "Uma referência livre, sua, como um número de nota fiscal ou de contrato",
+		description: "Uma referência livre, sua, como um número de fatura ou de contrato",
 	},
 	"payment.scheduleId": {
 		displayName: "ID da Conta a Pagar",
@@ -94,11 +94,11 @@ export const payment: Translations = {
 	"payment.limit": {
 		displayName: "Limite",
 		description: "Número máximo de resultados a retornar",
-		hint: "A API limita cada página a 500 registros, então um limite maior é obtido em várias páginas",
+		hint: "A API limita cada página a 500 registros, então um limite maior é reunido em várias páginas",
 	},
 	"payment.filters": {
 		displayName: "Filtros",
-		description: "As condições que um registro precisa cumprir para ser retornado",
+		description: "As condições que um registro precisa atender para ser retornado",
 		placeholder: "Adicionar Condição",
 	},
 	"payment.filters.conditions": {
@@ -106,14 +106,14 @@ export const payment: Translations = {
 	},
 	"payment.filterCombine": {
 		displayName: "Combinar Condições",
-		description: "Como as condições acima são combinadas. Um operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que o Filtro (OData) em Opções serve.",
+		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que existe o Filtro (OData) em Opções.",
 	},
 	"payment.filterCombine.and": {
 		name: "E",
-		description: "Retorna apenas os registros que cumprem todas as condições",
+		description: "Retorna apenas os registros que atendem a todas as condições",
 	},
 	"payment.filterCombine.or": {
 		name: "Ou",
-		description: "Retorna os registros que cumprem pelo menos uma das condições",
+		description: "Retorna os registros que atendem a pelo menos uma das condições",
 	},
 };

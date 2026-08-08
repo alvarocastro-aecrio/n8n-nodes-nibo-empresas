@@ -12,7 +12,7 @@ export const collection: Translations = {
 	},
 	"collection.operation.create": {
 		name: "Criar",
-		description: "Emite uma cobrança a partir de uma conta a receber, escolhendo se a Nibo a envia ao pagador ou a retém para revisão",
+		description: "Emite uma cobrança a partir de uma conta a receber, escolhendo se o Nibo a envia ao pagador ou a retém para revisão",
 		action: "Criar uma cobrança",
 	},
 	"collection.operation.get": {
@@ -31,10 +31,10 @@ export const collection: Translations = {
 		action: "Buscar vários perfis de cobrança",
 	},
 	"collection.createNotice": {
-		displayName: "Os dois tipos de envio mandam a cobrança — a escolha é por qual caminho ela sai, não se sai. Por E-Mail sai pelo lado financeiro da Nibo; Pelo Contador entrega a cobrança ao módulo do contador, onde ela chega ao pagador no portal do cliente junto com o restante do tráfego daquele módulo. Nada nesta tela retém uma cobrança, e o node não consegue acompanhá-la dentro do módulo do contador para contar o que aconteceu lá.",
+		displayName: "Os dois tipos de envio mandam a cobrança — a escolha é por qual caminho ela sai, não se sai. Por E-Mail sai pelo lado financeiro do Nibo; Pelo Contador entrega a cobrança ao módulo do contador, onde ela chega ao pagador no portal do cliente junto com o restante do tráfego daquele módulo. Nada nesta tela retém uma cobrança, e o node não consegue acompanhá-la dentro do módulo do contador para contar o que aconteceu lá.",
 	},
 	"collection.scheduleId": {
-		displayName: "ID da Conta",
+		displayName: "ID da Conta a Receber",
 		description: "A conta a receber para a qual cobrar. O valor e a descrição da cobrança vêm dela — não são perguntados aqui. Uma conta carrega no máximo uma cobrança: o node verifica antes de emitir e nomeia a que já existe.",
 		placeholder: "04a6a2a9-ef71-4733-9ac7-33737ac4d40c",
 	},
@@ -48,19 +48,19 @@ export const collection: Translations = {
 	},
 	"collection.deliveryType": {
 		displayName: "Tipo de Envio",
-		description: "Por qual caminho a cobrança sai: por e-mail a partir do módulo financeiro da Nibo, ou pelo módulo do contador e o portal do cliente. Os dois entregam. É somente de escrita — o valor nunca volta — mas o efeito dele fica: leia accountantIntegrationStatus para ver qual caminho uma cobrança tomou. ⚠️ Pelo Contador só faz sentido para uma organização cuja Nibo está integrada ao módulo do contador; sem isso, o roteamento não tem onde pousar, e uma cobrança da amostra fica em \"Não foi possível criar o item de conferência no Nibo Obrigações\".",
+		description: "Por qual caminho a cobrança sai: por e-mail a partir do módulo financeiro do Nibo, ou pelo módulo do contador e o portal do cliente. Os dois entregam. É somente de escrita — o valor nunca volta — mas o efeito dele fica: leia accountantIntegrationStatus para ver qual caminho uma cobrança tomou. ⚠️ Pelo Contador só faz sentido para uma organização cuja Nibo está integrada ao módulo do contador; sem isso, o roteamento não tem onde pousar, e uma cobrança da amostra fica em \"Não foi possível criar o item de conferência no Nibo Obrigações\".",
 	},
 	"collection.deliveryType.0": {
 		name: "Por E-Mail",
 		description: "A Nibo envia o boleto ao pagador pelo lado da gestão financeira. Medido: accountantIntegrationStatus permanece \"Não definida\".",
 	},
 	"collection.deliveryType.default": {
-		name: "Deixar para a Nibo",
-		description: "O campo não é enviado de forma alguma, então a Nibo roteia como faz por padrão",
+		name: "Deixar para o Nibo",
+		description: "O campo não é enviado de forma alguma, então o Nibo roteia como faz por padrão",
 	},
 	"collection.deliveryType.1": {
 		name: "Pelo Contador",
-		description: "A cobrança é entregue ao módulo do contador da Nibo e chega ao pagador no portal do cliente por lá. Medido: accountantIntegrationStatus passa a \"Habilitada\" — o que registra o pedido, não o resultado.",
+		description: "A cobrança é entregue ao módulo do contador do Nibo e chega ao pagador no portal do cliente por lá. Medido: accountantIntegrationStatus passa a \"Habilitada\" — o que registra o pedido, não o resultado.",
 	},
 	"collection.listNotice": {
 		displayName: "A url de cada um desses registros é pública: quem a tiver abre a página de pagamento sem token. Trate-a como a própria cobrança, não como uma referência a ela.",
@@ -92,11 +92,11 @@ export const collection: Translations = {
 	},
 	"collection.filterCombine": {
 		displayName: "Combinar Condições",
-		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que Filtro (OData), em Opções, continua existindo.",
+		description: "Como as condições acima são combinadas. Um único operador para todas elas: uma mistura dos dois, como (A ou B) e C, é para isso que existe o Filtro (OData) em Opções.",
 	},
 	"collection.filterCombine.and": {
 		name: "E",
-		description: "Retorna somente os registros que atendem a todas as condições",
+		description: "Retorna apenas os registros que atendem a todas as condições",
 	},
 	"collection.filterCombine.or": {
 		name: "Ou",

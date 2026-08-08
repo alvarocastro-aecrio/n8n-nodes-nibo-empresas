@@ -21,7 +21,7 @@ export const supplier: Translations = {
 		action: "Buscar um fornecedor",
 	},
 	"supplier.operation.list": {
-		name: "Buscar Várias",
+		name: "Buscar Vários",
 		description: "Busca os fornecedores da organização",
 		action: "Buscar vários fornecedores",
 	},
