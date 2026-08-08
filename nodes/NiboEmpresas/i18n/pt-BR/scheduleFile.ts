@@ -3,49 +3,49 @@ import type { Translations } from '../localize';
 /** Escopo `scheduleFile` — 11 entradas. */
 export const scheduleFile: Translations = {
 	"scheduleFile.operation": {
-		displayName: "Operation",
+		displayName: "Operação",
 	},
 	"scheduleFile.operation.attach": {
-		name: "Attach",
-		description: "Put a document that is already stored in Nibo onto a schedule, checking first that the schedule exists and confirming afterwards that the file is on it",
-		action: "Attach a file to a schedule",
+		name: "Anexar",
+		description: "Coloca um documento já armazenado na Nibo numa conta, verificando primeiro que a conta existe e confirmando depois que o arquivo está nela",
+		action: "Anexar um arquivo a uma conta",
 	},
 	"scheduleFile.operation.delete": {
-		name: "Delete",
-		description: "Delete the document itself, which is more than taking it off this schedule: it can never be attached anywhere again",
-		action: "Delete a file from a schedule",
+		name: "Excluir",
+		description: "Exclui o próprio documento, o que é mais do que tirá-lo desta conta: ele nunca mais pode ser anexado em lugar nenhum",
+		action: "Excluir um arquivo de uma conta",
 	},
 	"scheduleFile.operation.listFiles": {
-		name: "Get Many",
-		description: "Retrieve the documents attached to one schedule",
-		action: "Get many files of a schedule",
+		name: "Buscar Várias",
+		description: "Recupera os documentos anexados a uma conta",
+		action: "Buscar vários arquivos de uma conta",
 	},
 	"scheduleFile.listNotice": {
-		displayName: "The url on each of these records is public: anyone holding it downloads the document without a token. Treat it as the document itself, not as a reference to it.",
+		displayName: "A url de cada um desses registros é pública: quem a tiver baixa o documento sem token. Trate-o como o próprio documento, não como uma referência a ele.",
 	},
 	"scheduleFile.attachNotice": {
-		displayName: "A document belongs to one schedule at a time. Attaching a file that is already on another schedule moves it: it disappears from the first one. To have the same document on two schedules, upload it twice.",
+		displayName: "Um documento pertence a uma conta por vez. Anexar um arquivo que já está em outra conta o move: ele desaparece da primeira. Para ter o mesmo documento em duas contas, envie-o duas vezes.",
 	},
 	"scheduleFile.deleteNotice": {
-		displayName: "This deletes the document, not the link between it and this schedule: the file cannot be attached again anywhere, and Nibo answers any attempt with \"Arquivo não encontrado\". The stored file itself is not removed either — a download link handed out before this still serves the document afterwards.",
+		displayName: "Isto exclui o documento, não o vínculo entre ele e esta conta: o arquivo não pode ser anexado de novo em lugar nenhum, e a Nibo responde a qualquer tentativa com \"Arquivo não encontrado\". O arquivo armazenado em si também não é removido — um link para baixá-lo, obtido antes disso, ainda serve o documento depois.",
 	},
 	"scheduleFile.scheduleId": {
-		displayName: "Schedule ID",
-		description: "The schedule the documents belong to. A credit or a debit schedule alike: this API has a single route for both, and it is the credit one — asking the debit path answers 404 whatever the ID is.",
+		displayName: "ID da Conta",
+		description: "A conta a que os documentos pertencem. Uma conta a receber ou a pagar tanto faz: esta API tem uma única rota para as duas, e é a de contas a receber — perguntar pelo caminho de contas a pagar responde 404 seja qual for o ID.",
 		placeholder: "b4d0a1e7-08bd-4a44-9f1e-6c2f7d3e5a90",
 	},
 	"scheduleFile.fileId": {
-		displayName: "File ID",
-		description: "The document, as File · Upload returned it or as Get Many lists it here. Nibo checks this ID and never checks the schedule it is being attached to, which is why the node asks for the schedule first.",
+		displayName: "ID do Arquivo",
+		description: "O documento, como Arquivo · Enviar o retornou ou como Buscar Várias o lista aqui. A Nibo verifica este ID e nunca verifica a conta a que ele está sendo anexado, motivo pelo qual o node pergunta pela conta primeiro.",
 		placeholder: "5a0ab0ec-6f26-4f4e-9b7f-0e02f6a2c4d1",
 	},
 	"scheduleFile.returnAll": {
-		displayName: "Return All",
-		description: "Whether to return all results or only up to a given limit",
+		displayName: "Retornar Tudo",
+		description: "Se deve retornar todos os resultados ou apenas até um limite definido",
 	},
 	"scheduleFile.limit": {
-		displayName: "Limit",
-		description: "Max number of results to return",
-		hint: "A schedule carries a handful of documents, so this collection is read in a single call and the limit is applied to what came back",
+		displayName: "Limite",
+		description: "Número máximo de resultados a retornar",
+		hint: "Uma conta carrega um punhado de documentos, então esta coleção é lida numa única chamada e o limite é aplicado ao que voltou",
 	},
 };
