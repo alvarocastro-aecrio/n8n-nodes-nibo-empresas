@@ -3,23 +3,23 @@ import type { Translations } from '../localize';
 /** Escopo `annotation` — 5 entradas. */
 export const annotation: Translations = {
 	"annotation.operation": {
-		displayName: "Operation",
+		displayName: "Operação",
 	},
 	"annotation.operation.create": {
-		name: "Create",
-		description: "Write a note on a schedule, after checking that the schedule exists — which is the only moment it can be checked",
-		action: "Create an annotation on a schedule",
+		name: "Criar",
+		description: "Escreve uma anotação numa conta, depois de checar que a conta existe — o único momento em que isso pode ser checado",
+		action: "Criar uma anotação numa conta",
 	},
 	"annotation.createNotice": {
-		displayName: "An annotation cannot be read back, edited or deleted: this API only writes them, and the ID it returns opens nothing. It also does not deduplicate — running the same item again writes the note a second time, and there is no way to remove either copy. Whether an item is processed twice is entirely up to the workflow around this node.",
+		displayName: "Uma anotação não pode ser lida de volta, editada ou excluída: esta API só as escreve, e o ID que ela retorna não abre nada. Ela também não deduplica — rodar o mesmo item de novo escreve a anotação uma segunda vez, e não há como remover nenhuma das cópias. Se um item é processado duas vezes é inteiramente responsabilidade do workflow em torno deste node.",
 	},
 	"annotation.scheduleId": {
-		displayName: "Schedule ID",
-		description: "The schedule the note is written on, credit or debit alike — one route serves both, and it is the credit one. The node reads the schedule before writing: this API accepts an annotation on a schedule that does not exist, answering 200 with an ID, and such a note can never be found again.",
+		displayName: "ID da Conta",
+		description: "A conta em que a anotação é escrita, a receber ou a pagar — uma única rota atende as duas, e é a de contas a receber. O node lê a conta antes de escrever: esta API aceita uma anotação numa conta que não existe, respondendo 200 com um ID, e essa anotação nunca mais pode ser encontrada.",
 		placeholder: "b4d0a1e7-08bd-4a44-9f1e-6c2f7d3e5a90",
 	},
 	"annotation.body": {
-		displayName: "Text",
-		description: "What the note says. Accents and URLs go through untouched. An empty text is refused here rather than by the API, which answers it with HTTP 500 \"Informe uma anotação.\".",
+		displayName: "Texto",
+		description: "O que a anotação diz. Acentos e URLs passam sem alteração. Um texto vazio é recusado aqui em vez de pela API, que responde com HTTP 500 \"Informe uma anotação.\".",
 	},
 };
