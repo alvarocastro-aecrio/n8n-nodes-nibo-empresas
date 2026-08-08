@@ -71,6 +71,20 @@ beyond the node itself. Every release is built in CI, gated on lint, the officia
 community rules and a unit-test suite, then published with **npm provenance** and scanned
 by `@n8n/scan-community-package`.
 
+## Idioma
+
+O node fala inglês por padrão. Para os rótulos em português, defina no seu n8n:
+
+    NIBO_NODE_LOCALE=pt-BR
+
+O idioma é lido quando o n8n carrega o node, então a mudança vale a partir do próximo
+reinício. Nada do que um workflow guarda muda com o idioma — o mesmo fluxo roda igual
+nos dois.
+
+Não use `N8N_DEFAULT_LOCALE`: em n8n 2.33.7 qualquer valor diferente de `en` derruba a
+rota que entrega as descrições dos nodes ao editor (`ENOENT: scandir`), para nodes
+nativos e de comunidade igualmente.
+
 ## Credentials
 
 You need an organization **API token** from Nibo:

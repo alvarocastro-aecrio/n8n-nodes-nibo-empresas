@@ -18,6 +18,10 @@ services:
       - N8N_SECURE_COOKIE=false # plain-HTTP access through the SSH tunnel
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_PERSONALIZATION_ENABLED=false
+      # Our variable, not n8n's: it swaps the node's labels before n8n ever sees them.
+      # NEVER use N8N_DEFAULT_LOCALE — any value other than `en` makes POST
+      # /rest/node-types answer 500 (`ENOENT: scandir`), for native nodes too.
+      - NIBO_NODE_LOCALE=pt-BR
     volumes:
       - n8ndev_data:/home/node/.n8n # named volume: disposable, no host paths
     mem_limit: 1536m # hard cap: this container must never squeeze the host
