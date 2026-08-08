@@ -158,14 +158,14 @@ describe('NiboEmpresas — the node as the editor receives it', () => {
 		expect(list?.action).toBe('Get many bank accounts');
 	});
 
-	it.skip('speaks Portuguese when NIBO_NODE_LOCALE asks for it', () => {
+	it('speaks Portuguese when NIBO_NODE_LOCALE asks for it', () => {
 		process.env.NIBO_NODE_LOCALE = 'pt-BR';
 		jest.resetModules();
 
 		const list = operationOptions('bankAccount').find((option) => option.value === 'list');
 
 		expect(list?.name).toBe('Buscar Várias');
-		expect(list?.action).toBe('Buscar contas bancárias');
+		expect(list?.action).toBe('Buscar várias contas bancárias');
 		expect(list?.value).toBe('list');
 	});
 });
