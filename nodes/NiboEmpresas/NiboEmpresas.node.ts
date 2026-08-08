@@ -19,6 +19,7 @@ const MAIN_CONNECTION: MainConnection = NodeConnectionTypes
 
 import type { INodePropertyOptions } from 'n8n-workflow';
 
+import { activeTranslations, localizeProperties } from './i18n';
 import {
 	annotationFields,
 	annotationOperations,
@@ -405,6 +406,27 @@ export class NiboEmpresas implements INodeType {
 			},
 		],
 	};
+
+	/**
+	 * The labels above are written in English, and swapped here when the
+	 * instance asks for another language through `NIBO_NODE_LOCALE`. It happens
+	 * once, when n8n builds the class, and it touches labels only: `name` and
+	 * `value` — everything a saved workflow stores — are left exactly as
+	 * written, so the same workflow runs identically in either language.
+	 *
+	 * Doing it here rather than around the literal keeps the parameter list
+	 * readable, and nothing is mutated: `localizeProperties` returns new objects
+	 * for what it translates and the original reference for what it does not.
+	 *
+	 * n8n has a translation mechanism of its own for exactly this, and it is
+	 * unusable — see the note in `i18n/locale.ts`.
+	 */
+	constructor() {
+		this.description.properties = localizeProperties(
+			this.description.properties,
+			activeTranslations(),
+		);
+	}
 
 	/**
 	 * The lists the editor fills in by asking the API, rather than from a literal

@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-nibo-empresas",
-  "version": "0.15.2",
+  "version": "0.16.0",
   "description": "n8n community node for the Nibo Empresas API (Brazilian financial management platform)",
   "keywords": [
     "n8n-community-node-package",
@@ -22,7 +22,8 @@
     "node": ">=20.15"
   },
   "scripts": {
-    "build": "tsc && gulp build:icons",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc && gulp build:icons",
     "dev": "tsc --watch",
     "format": "prettier nodes credentials --write",
     "lint": "eslint nodes credentials package.json",
