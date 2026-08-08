@@ -99,3 +99,65 @@ function translateFields<T>(
 
 	return (copy ?? source) as unknown as T;
 }
+
+/**
+ * Todo caminho traduzível da árvore, com o texto em inglês no valor — o inventário
+ * de onde os esqueletos saem e contra o qual as chaves do dicionário são conferidas.
+ * Anda pela mesma trilha de `localizeProperties`: uma divergência entre as duas
+ * significaria chaves que ninguém consulta.
+ */
+export function collectTranslatableEntries(properties: INodeProperties[]): Translations {
+	const entries: Translations = {};
+
+	for (const property of properties) {
+		collectProperty(property, `${scopeOf(property)}.${property.name}`, entries);
+	}
+
+	return entries;
+}
+
+function collectProperty(property: INodeProperties, path: string, entries: Translations): void {
+	record(property, PROPERTY_FIELDS, path, entries);
+
+	if (!Array.isArray(property.options)) return;
+
+	for (const entry of property.options) {
+		if (isDropdownEntry(entry)) {
+			record(entry, OPTION_FIELDS, `${path}.${String(entry.value)}`, entries);
+		} else {
+			collectProperty(entry as INodeProperties, `${path}.${entry.name}`, entries);
+		}
+	}
+}
+
+function record(
+	target: unknown,
+	fields: readonly string[],
+	path: string,
+	entries: Translations,
+): void {
+	const source = target as Record<string, unknown>;
+	const found: Record<string, string> = {};
+
+	for (const field of fields) {
+		if (typeof source[field] === 'string') found[field] = source[field] as string;
+	}
+
+	if (Object.keys(found).length === 0) return;
+
+	const previous = entries[path];
+
+	if (previous === undefined) {
+		entries[path] = found;
+		return;
+	}
+
+	// O mesmo caminho aparecer duas vezes é normal: os campos de filtro vêm de uma
+	// fábrica compartilhada e o recurso a usa em mais de uma operação. Com o texto
+	// igual nas duas, uma entrada de dicionário traduz ambas — que é o que se quer.
+	// Texto DIFERENTE no mesmo caminho, esse sim, tornaria a entrada ambígua:
+	// traduziria uma ocorrência e estragaria a outra. Só isso estoura.
+	if (JSON.stringify(previous) !== JSON.stringify(found)) {
+		throw new Error(`Caminho de tradução ambíguo, com textos diferentes: ${path}`);
+	}
+}

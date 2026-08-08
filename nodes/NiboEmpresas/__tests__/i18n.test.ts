@@ -1,7 +1,7 @@
 import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 
 import { resolveLocale } from '../i18n/locale';
-import { localizeProperties } from '../i18n/localize';
+import { collectTranslatableEntries, localizeProperties } from '../i18n/localize';
 import type { Translations } from '../i18n/localize';
 
 /**
@@ -167,5 +167,54 @@ describe('NiboEmpresas — the node as the editor receives it', () => {
 		expect(list?.name).toBe('Buscar Várias');
 		expect(list?.action).toBe('Buscar contas bancárias');
 		expect(list?.value).toBe('list');
+	});
+});
+
+describe('collectTranslatableEntries — o inventário do que dá para traduzir', () => {
+	const properties: INodeProperties[] = [
+		{
+			displayName: 'Operation',
+			name: 'operation',
+			type: 'options',
+			displayOptions: { show: { resource: ['bankAccount'] } },
+			options: [{ name: 'Get Many', value: 'list', action: 'Get many bank accounts' }],
+			default: 'list',
+		},
+	];
+
+	it('devolve o caminho de cada rótulo, com o inglês no valor', () => {
+		expect(collectTranslatableEntries(properties)).toEqual({
+			'bankAccount.operation': { displayName: 'Operation' },
+			'bankAccount.operation.list': { name: 'Get Many', action: 'Get many bank accounts' },
+		});
+	});
+
+	it('aceita o mesmo caminho duas vezes quando o texto é o mesmo', () => {
+		const repeated = [properties[0], { ...properties[0] }];
+
+		expect(() => collectTranslatableEntries(repeated)).not.toThrow();
+		expect(Object.keys(collectTranslatableEntries(repeated))).toHaveLength(2);
+	});
+
+	it('estoura quando o mesmo caminho carrega textos diferentes', () => {
+		const ambiguous = [properties[0], { ...properties[0], displayName: 'Operação' }];
+
+		expect(() => collectTranslatableEntries(ambiguous)).toThrow(/ambíguo/);
+	});
+
+	it('usa exatamente as chaves que localizeProperties consulta', () => {
+		const inventory = collectTranslatableEntries(properties);
+		const dictionary = Object.fromEntries(
+			Object.entries(inventory).map(([key, fields]) => [
+				key,
+				Object.fromEntries(Object.keys(fields).map((field) => [field, `PT:${field}`])),
+			]),
+		);
+		const translated = localizeProperties(properties, dictionary);
+		const option = (translated[0].options as INodePropertyOptions[])[0];
+
+		expect(translated[0].displayName).toBe('PT:displayName');
+		expect(option.name).toBe('PT:name');
+		expect(option.action).toBe('PT:action');
 	});
 });
