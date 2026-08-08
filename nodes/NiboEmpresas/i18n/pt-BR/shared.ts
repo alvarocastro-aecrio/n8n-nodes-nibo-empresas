@@ -3,114 +3,114 @@ import type { Translations } from '../localize';
 /** Escopo `_` — 29 entradas. */
 export const shared: Translations = {
 	"_.authMode": {
-		displayName: "Authentication",
+		displayName: "Autenticação",
 	},
 	"_.authMode.credential": {
-		name: "Credential",
-		description: "Use one stored credential for the whole node",
+		name: "Credencial",
+		description: "Usa uma credencial salva para o node inteiro",
 	},
 	"_.authMode.field": {
-		name: "API Token (Per Item)",
-		description: "Read the token from the field below, resolved for each input item",
+		name: "API Token (Por Item)",
+		description: "Lê o token do campo abaixo, resolvido para cada item de entrada",
 	},
 	"_.apiToken": {
 		displayName: "API Token",
-		description: "The organization API token to use for this item. Normally an expression reading it from the incoming item, which is what lets a single node walk a whole portfolio of organizations. In this API the token is the organization: each item reads the books of its own token.",
+		description: "O API Token da organização a usar para este item. Normalmente uma expressão que o lê do item de entrada, o que é o que permite a um único node percorrer uma carteira inteira de organizações. Nesta API o token é a organização: cada item lê os livros do seu próprio token.",
 	},
 	"_.resource": {
-		displayName: "Resource",
+		displayName: "Recurso",
 	},
 	"_.resource.bankAccount": {
-		name: "Bank Account",
-		description: "An account of the organization, which a settled entry has to name",
+		name: "Conta Bancária",
+		description: "Uma conta da organização, que um lançamento liquidado tem que apontar",
 	},
 	"_.resource.bankTransfer": {
-		name: "Bank Transfer",
-		description: "Money moved from one account of the organization to another",
+		name: "Transferência Bancária",
+		description: "Dinheiro movido de uma conta da organização para outra",
 	},
 	"_.resource.category": {
-		name: "Category",
-		description: "A line of the chart of accounts, which a schedule is filed under",
+		name: "Categoria",
+		description: "Uma linha do plano de contas, sob a qual uma conta é arquivada",
 	},
 	"_.resource.collection": {
-		name: "Collection",
-		description: "A charge — boleto and Pix — issued from a receivable",
+		name: "Cobrança",
+		description: "Uma cobrança — boleto e Pix — emitida a partir de uma conta a receber",
 	},
 	"_.resource.customer": {
-		name: "Contact - Customer",
+		name: "Contato - Cliente",
 	},
 	"_.resource.employee": {
-		name: "Contact - Employee",
+		name: "Contato - Funcionário",
 	},
 	"_.resource.partner": {
-		name: "Contact - Partner",
+		name: "Contato - Sócio",
 	},
 	"_.resource.supplier": {
-		name: "Contact - Supplier",
+		name: "Contato - Fornecedor",
 	},
 	"_.resource.costCenter": {
-		name: "Cost Center",
-		description: "A part of the company an amount is attributed to, on its own or shared",
+		name: "Centro de Custo",
+		description: "Uma parte da empresa a que um valor é atribuído, sozinha ou compartilhada",
 	},
 	"_.resource.file": {
-		name: "File",
-		description: "A document stored in Nibo, before and after it belongs to a schedule",
+		name: "Arquivo",
+		description: "Um documento armazenado no Nibo, antes e depois de pertencer a uma conta",
 	},
 	"_.resource.annotation": {
-		name: "Schedule - Annotation",
-		description: "A note written on a schedule, which this API can write but never read back",
+		name: "Conta - Anotação",
+		description: "Uma nota escrita numa conta, que esta API consegue escrever mas nunca ler de volta",
 	},
 	"_.resource.creditSchedule": {
-		name: "Schedule - Credit",
-		description: "An entry of accounts receivable, due on a date and split into categories",
+		name: "Conta - A Receber",
+		description: "Um lançamento de contas a receber, com vencimento numa data e dividido em categorias",
 	},
 	"_.resource.debitSchedule": {
-		name: "Schedule - Debit",
-		description: "An entry of accounts payable, due on a date and split into categories",
+		name: "Conta - A Pagar",
+		description: "Um lançamento de contas a pagar, com vencimento numa data e dividido em categorias",
 	},
 	"_.resource.scheduleFile": {
-		name: "Schedule - File",
-		description: "The documents attached to one schedule",
+		name: "Conta - Anexo",
+		description: "Os documentos anexados a uma conta",
 	},
 	"_.resource.serviceInvoice": {
-		name: "Service Invoice",
-		description: "A Brazilian service invoice — NFS-e — issued from a receivable",
+		name: "Nota Fiscal de Serviço",
+		description: "Uma nota fiscal de serviço brasileira — NFS-e — emitida a partir de uma conta a receber",
 	},
 	"_.resource.payment": {
-		name: "Transaction - Payment",
-		description: "a settled account payable — the debit schedule after the money has moved",
+		name: "Lançamento - Pagamento",
+		description: "uma conta a pagar liquidada — a conta a pagar depois de o dinheiro ter se movido",
 	},
 	"_.resource.receipt": {
-		name: "Transaction - Receipt",
-		description: "a settled account receivable — the credit schedule after the money has moved",
+		name: "Lançamento - Recebimento",
+		description: "uma conta a receber liquidada — a conta a receber depois de o dinheiro ter se movido",
 	},
 	"_.options": {
-		displayName: "Options",
-		placeholder: "Add option",
+		displayName: "Opções",
+		placeholder: "Adicionar opção",
 	},
 	"_.options.allowMovingLockBack": {
-		displayName: "Allow Moving the Lock Back",
-		description: "Whether a Balance Lock Date earlier than the current one may be sent. Moving the lock back unlocks an accounting period that was closed, so the node refuses it unless this is on.",
+		displayName: "Permitir Voltar o Bloqueio",
+		description: "Se uma Data de Bloqueio de Saldo anterior à atual pode ser enviada. Voltar o bloqueio destranca um período contábil que estava fechado, então o node recusa a menos que isto esteja ligado.",
 	},
 	"_.options.authorizationTimeout": {
-		displayName: "Authorization Timeout",
-		description: "How long to follow a note before handing it back, in seconds. It is a ceiling, not a wait: the node returns as soon as the city hall answers, so a generous number costs nothing on a note that authorizes in five seconds. Reached, the node returns the record as it stands, saying the note was issued and is not authorized yet — never that anything failed.",
+		displayName: "Timeout de Autorização",
+		description: "Por quanto tempo acompanhar uma nota antes de devolvê-la, em segundos. É um teto, não uma espera: o node retorna assim que a prefeitura responde, então um número generoso não custa nada numa nota que autoriza em cinco segundos. Atingido, o node retorna o registro como está, dizendo que a nota foi emitida e ainda não está autorizada — nunca que algo falhou.",
 	},
 	"_.options.failOnIncomplete": {
-		displayName: "Fail on Incomplete Results",
-		description: "Whether to fail when the result may be incomplete, instead of returning the records with a warning on the last item. Records written while the pages are being read can slip past the cursor, which shows up as a record count that changes mid-scan or as fewer records than the server reported. Left out, the scan fails: a list that may have lost records is the sort of thing a workflow deletes by.",
+		displayName: "Falhar em Resultados Incompletos",
+		description: "Se deve falhar quando o resultado pode estar incompleto, em vez de retornar os registros com um aviso no último item. Registros gravados enquanto as páginas são lidas podem escapar do cursor, o que aparece como uma contagem de registros que muda no meio da varredura ou como menos registros do que o servidor informou. Deixado de fora, a varredura falha: uma lista que pode ter perdido registros é o tipo de coisa que faz um workflow ser descartado.",
 	},
 	"_.options.filter": {
-		displayName: "Filter (OData)",
-		description: "OData expression sent as $filter, written by hand, for what the conditions cannot say — a nested group such as (A or B) and C. Fill it in and it becomes the whole filter: the conditions leave the screen and leave the request with them. Accented text needs no special treatment, e.g. contains(name,'SERVIÇOS'). An apostrophe does: it has to be doubled, as in contains(name,'D''ALESSANDRO'), which is exactly what the conditions do for you.",
+		displayName: "Filtro (OData)",
+		description: "Expressão OData enviada como $filter, escrita à mão, para o que as condições não conseguem dizer — um grupo aninhado como (A or B) and C. Preencha e ela vira o filtro inteiro: as condições saem da tela e saem da requisição junto. Texto acentuado não precisa de tratamento especial, ex. contains(name,'SERVIÇOS'). Apóstrofo precisa: tem que ser dobrado, como em contains(name,'D''ALESSANDRO'), que é exatamente o que as condições fazem por você.",
 		placeholder: "contains(name,'LTDA')",
 	},
 	"_.options.requestInterval": {
-		displayName: "Interval Between Requests",
-		description: "How long to wait, in milliseconds, between two calls to the API. It applies between input items and between the pages of one scan, never before the first call. Leave it out and the node waits a second; set it to 0 to send the calls back to back.",
+		displayName: "Intervalo Entre Requisições",
+		description: "Quanto tempo esperar, em milissegundos, entre duas chamadas à API. Aplica-se entre itens de entrada e entre as páginas de uma varredura, nunca antes da primeira chamada. Deixe de fora e o node espera um segundo; ajuste para 0 para enviar as chamadas uma logo após a outra.",
 	},
 	"_.options.waitForAuthorization": {
-		displayName: "Wait for Authorization",
-		description: "Whether to follow a note until the city hall has answered and hand back the final record — with its number, its PDF and its XML when authorized. Switched off, the node returns the note as it was born, usually still queued.",
+		displayName: "Aguardar Autorização",
+		description: "Se deve acompanhar uma nota até a prefeitura responder e devolver o registro final — com seu número, seu PDF e seu XML quando autorizada. Desligado, o node retorna a nota como ela nasceu, geralmente ainda na fila.",
 	},
 };
