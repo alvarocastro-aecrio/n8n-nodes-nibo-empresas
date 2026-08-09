@@ -17,9 +17,20 @@ export default [
 	{
 		...n8nCommunityNodesPlugin.configs.recommended,
 		files: ['package.json', 'nodes/**/*.ts', 'credentials/**/*.ts'],
-		// Tests never reach the published tarball, which is what the official
-		// scanner actually inspects — keep the two passes looking at the same
-		// set of files.
+		// This pass and the official scanner do NOT look at the same files, and
+		// the difference is deliberate. Measured against v0.16.0's scan:
+		//
+		//   - the scanner analyses TWO trees, not one: a checkout of this repo
+		//     (`{nodes,credentials}/**/*.{js,ts,json}` — `__tests__` included)
+		//     AND the published tarball (`**/*.js`, i.e. dist);
+		//   - it runs with `allowInlineConfig: false`, so every `eslint-disable`
+		//     in this repo is invisible to it. A suppression can never make the
+		//     scanner pass — only removing the code can.
+		//
+		// Tests are ignored here because a finding in a test file cannot reach a
+		// user, and because this pass has one job: stop a bad PUBLISH, which the
+		// scanner cannot do (it runs after). Findings the scanner reports about
+		// test files are read, not gated on.
 		ignores: ['**/__tests__/**'],
 		languageOptions: {
 			parser: tsParser,

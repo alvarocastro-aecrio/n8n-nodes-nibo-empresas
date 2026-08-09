@@ -176,6 +176,10 @@ describe('collectTranslatableEntries — o inventário do que dá para traduzir'
 			displayName: 'Operation',
 			name: 'operation',
 			type: 'options',
+			// Carried by every real operation parameter in this node, and the
+			// official scanner reads test files too — a fixture that drifts from
+			// the shape it stands for shows up as a finding against the package.
+			noDataExpression: true,
 			displayOptions: { show: { resource: ['bankAccount'] } },
 			options: [{ name: 'Get Many', value: 'list', action: 'Get many bank accounts' }],
 			default: 'list',

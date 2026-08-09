@@ -27,6 +27,14 @@ export function activeTranslations(): Translations {
 	// `@n8n/community-nodes/no-restricted-globals`, a rule only the
 	// `lint:community` pass loads — naming it makes the other two passes fail
 	// with "Definition for rule was not found", since neither knows that plugin.
+	//
+	// It buys exactly one thing: the pre-publish gate. The official scanner runs
+	// with `allowInlineConfig: false` and reads both this file and its compiled
+	// `dist` twin, so it reports this line whatever we write above it — and it
+	// did, on v0.16.0. That is a known, accepted red seal, not an oversight:
+	// there is no environment-free way to tell a node its language at construction
+	// time, and the alternatives are a Portuguese-only build or a second node
+	// class. Decided 2026-08-09; revisit before any n8n Cloud submission.
 	// eslint-disable-next-line
 	return resolveLocale(process.env.NIBO_NODE_LOCALE) === 'pt-BR' ? ptBR : {};
 }
