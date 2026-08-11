@@ -342,6 +342,34 @@ async function settle(
 	);
 
 	if (record === undefined) {
+		// The list is slow, so the schedule is asked instead — see scheduleBehind.
+		// Here `isPaid` cannot be the test the creation uses: a part of the amount
+		// is a real settlement and leaves the schedule open. What moved is what is
+		// compared, against the reading already made for the kind check.
+		const before = amountPaid(schedule);
+		const after = await scheduleBehind.call(this, itemIndex, scheduleId);
+
+		if (after !== undefined && amountPaid(after) > before) {
+			// A confirmed write is never reported as a failure.
+			return {
+				...after,
+				entryId,
+				scheduleId,
+				_niboReadBackPending: `The settlement went through — Nibo shows ${amountPaid(after)} paid on this ${collection.schedule}, against ${before} before it — but the settled-entry collection had not caught up in time to hand back the entry itself. **Do not send it again**: settling twice records the money twice. The entry is "${entryId}"; read it with the ${collection.noun} resource, filtering by that ID, if the full record is needed.`,
+			};
+		}
+
+		if (after !== undefined) {
+			throw new NodeOperationError(
+				this.getNode(),
+				`This settlement did not settle anything: nothing moved on the ${collection.schedule}`,
+				{
+					itemIndex,
+					description: `Nibo answered the settlement with the ID "${entryId}", but reading the schedule "${scheduleId}" back shows the same ${before} paid as before it was sent. The API answers this route 200 whether or not it applies anything. Check the schedule in Nibo before sending it again.`,
+				},
+			);
+		}
+
 		// The wording is the whole point of this branch. The write went through —
 		// the API answered with the ID of what it created. What failed is only the
 		// reading back, on a collection measured to take a few seconds to catch up.
@@ -350,12 +378,56 @@ async function settle(
 			`The ${collection.schedule} was settled, but the entry could not be read back`,
 			{
 				itemIndex,
-				description: `Nibo answered the settlement with the ID "${entryId}", so it did go through — this collection is eventually consistent and had not caught up after several tries. **Do not send it again**: settling twice records the money twice. Read the entry with the ${collection.noun} resource, filtering by that ID.`,
+				description: `Nibo answered the settlement with the ID "${entryId}", so it did go through — this collection is eventually consistent and had not caught up after several tries, and the schedule itself could not be read either. **Do not send it again**: settling twice records the money twice. Read the entry with the ${collection.noun} resource, filtering by that ID.`,
 			},
 		);
 	}
 
 	return record;
+}
+
+/** How much of a schedule has been paid, out of whatever the API answered */
+function amountPaid(schedule: unknown): number {
+	const paid = (schedule as IDataObject | undefined)?.paidValue;
+	return typeof paid === 'number' ? paid : Number(paid ?? 0) || 0;
+}
+
+/**
+ * The cheap proof that a write landed, for when the collection has not caught up.
+ *
+ * Measured on 2026-08-11, against a write made a moment before: the list of
+ * settled entries took **1,1 to 2,6 seconds** to show it — and in production it
+ * has taken more than **seven** — while `GET /schedules/credit/{id}` answered in
+ * **38 to 67 ms**, every time, on thirteen readings. Two routes onto the same
+ * fact, one of them forty times faster and without the lag.
+ *
+ * And its answer separates the two things that can have happened, which is what
+ * the old failure could not do: `isPaid` is `true` on a schedule the settlement
+ * closed, and `false` on one that was created and left open — the shape a
+ * `POST` without an account produces while answering 200.
+ *
+ * `undefined` when the route did not answer. That is not a failure of its own:
+ * the caller keeps the sentence it already had, which is the safe one.
+ */
+async function scheduleBehind(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	scheduleId: string,
+): Promise<IDataObject | undefined> {
+	try {
+		const answer = await niboApiRequest.call(
+			this,
+			itemIndex,
+			'GET',
+			`${READ_SCHEDULE_BY_ID}/${encodeURIComponent(scheduleId)}`,
+		);
+
+		return typeof answer === 'object' && answer !== null && !Array.isArray(answer)
+			? (answer as IDataObject)
+			: undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 /**
@@ -477,12 +549,40 @@ async function createEntry(
 	);
 
 	if (record === undefined) {
+		// The list is slow, so the schedule is asked instead — see scheduleBehind.
+		const schedule = await scheduleBehind.call(this, itemIndex, scheduleId);
+
+		if (schedule?.isPaid === true) {
+			// A confirmed write is never reported as a failure. It used to be, and
+			// the cost was measured on 2026-08-10: a batch of 66 stopped on the
+			// third, having recorded three, with the other 63 never sent.
+			return {
+				...schedule,
+				scheduleId,
+				_niboReadBackPending: `The ${collection.noun} exists and Nibo confirms it is settled, but the settled-entry collection had not caught up in time to hand back the entry itself. **Do not send it again**: it would record the money twice. What is here came from the schedule "${scheduleId}"; read the entry with this resource, filtering by that Schedule ID, if the full record is needed.`,
+			};
+		}
+
+		if (schedule !== undefined) {
+			// Answered, and not settled — the failure the old wording could not tell
+			// apart from the lag above, and the one that actually matters: this route
+			// answers 200 either way.
+			throw new NodeOperationError(
+				this.getNode(),
+				`This ${collection.noun} came out as an open schedule, and the money was not recorded as moved`,
+				{
+					itemIndex,
+					description: `Nibo created the schedule "${scheduleId}" and left it unsettled — it says isPaid false. So there is a receivable or payable in Nibo now, and no ${collection.noun}. **Do not simply send it again**: that would leave two open schedules. Settle this one with the Settle operation, or delete it with the Schedule resource and send it again.`,
+				},
+			);
+		}
+
 		throw new NodeOperationError(
 			this.getNode(),
 			`The ${collection.noun} was created, but it could not be read back`,
 			{
 				itemIndex,
-				description: `Nibo answered with the schedule ID "${scheduleId}", so it did go through — this collection is eventually consistent and had not caught up after several tries. **Do not send it again**: it would record the money twice. Read it with this resource, filtering by that Schedule ID.`,
+				description: `Nibo answered with the schedule ID "${scheduleId}", so it did go through — this collection is eventually consistent and had not caught up after several tries, and the schedule itself could not be read either. **Do not send it again**: it would record the money twice. Read it with this resource, filtering by that Schedule ID.`,
 			},
 		);
 	}

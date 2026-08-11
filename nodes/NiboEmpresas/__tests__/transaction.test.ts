@@ -528,6 +528,63 @@ describe('executeTransaction — Settle', () => {
 			description: expect.stringMatching(/again|twice/i),
 		});
 	});
+
+	/**
+	 * The same cheap proof the creation uses, except that here `isPaid` cannot be
+	 * the test: a part of the amount is a **real** settlement and leaves the
+	 * schedule open. What is compared is how much has been paid — and the reading
+	 * to compare against is already being made, for the kind check.
+	 */
+	describe('when the entry cannot be read back', () => {
+		beforeEach(() => {
+			readBack.mockResolvedValue(undefined);
+		});
+
+		function paidGoingFrom(before: number | undefined, after: number) {
+			apiRequest.mockReset();
+			apiRequest
+				.mockResolvedValueOnce({ scheduleId: SCHEDULE, type: 'debit', paidValue: before })
+				.mockResolvedValueOnce(GUID)
+				.mockResolvedValueOnce({ scheduleId: SCHEDULE, type: 'debit', paidValue: after });
+		}
+
+		it('hands back what it knows, with a warning, when more has been paid than before', async () => {
+			paidGoingFrom(0, 250);
+
+			const items = await executeTransaction.call(settling(), 'payment', 'settle');
+
+			expect(items[0].json.entryId).toBe(GUID);
+			expect(items[0].json._niboReadBackPending).toEqual(expect.stringContaining(GUID));
+		});
+
+		it('counts a part of the amount as settled, which isPaid alone would not', async () => {
+			paidGoingFrom(0, 100);
+
+			const items = await executeTransaction.call(settling({ value: 100 }), 'payment', 'settle');
+
+			expect(items[0].json._niboReadBackPending).toEqual(expect.any(String));
+		});
+
+		it('fails, and says nothing moved, when the same amount is paid as before', async () => {
+			paidGoingFrom(250, 250);
+
+			const failure = executeTransaction.call(settling(), 'payment', 'settle');
+
+			await expect(failure).rejects.toThrow(/did not settle|nothing moved/i);
+		});
+
+		it('keeps the old refusal when the schedule cannot be read a second time', async () => {
+			apiRequest.mockReset();
+			apiRequest
+				.mockResolvedValueOnce({ scheduleId: SCHEDULE, type: 'debit' })
+				.mockResolvedValueOnce(GUID)
+				.mockRejectedValueOnce(new Error('boom'));
+
+			const failure = executeTransaction.call(settling(), 'payment', 'settle');
+
+			await expect(failure).rejects.toThrow(/was settled/i);
+		});
+	});
 });
 
 /**
@@ -656,16 +713,78 @@ describe('executeTransaction — Create', () => {
 		await expect(failure).rejects.toThrow(/no category line/i);
 	});
 
-	it('says it was created when it cannot be read back, never that it failed', async () => {
-		const ctx = creating();
-		readBack.mockResolvedValue(undefined);
-
-		const failure = executeTransaction.call(ctx, 'payment', 'create');
-
-		await expect(failure).rejects.toThrow(/was created/i);
-		await expect(failure).rejects.toMatchObject({
-			description: expect.stringMatching(/twice|again/i),
+	/**
+	 * The three branches the schedule answers for, and the reason this operation
+	 * stopped being able to abort a batch over a slow list.
+	 *
+	 * Measured on 2026-08-11: `GET /schedules/credit/{id}` answers in 38–67 ms
+	 * right after the POST, where the list of settled entries takes seconds — and
+	 * its `isPaid` says which of the two things happened.
+	 */
+	describe('when the entry cannot be read back', () => {
+		beforeEach(() => {
+			readBack.mockResolvedValue(undefined);
 		});
+
+		const scheduleSaying = (isPaid: boolean) => {
+			apiRequest.mockReset();
+			apiRequest.mockResolvedValueOnce(SCHEDULE);
+			apiRequest.mockResolvedValueOnce({ scheduleId: SCHEDULE, isPaid, value: 15 });
+		};
+
+		it('hands back what it knows, with a warning, when the schedule says it was settled', async () => {
+			scheduleSaying(true);
+
+			const items = await executeTransaction.call(creating(), 'receipt', 'create');
+
+			expect(items[0].json.scheduleId).toBe(SCHEDULE);
+			expect(items[0].json._niboReadBackPending).toEqual(expect.stringContaining(SCHEDULE));
+			expect(items[0].pairedItem).toEqual({ item: 0 });
+		});
+
+		it('asks the schedule by ID, which is the route measured to answer at once', async () => {
+			scheduleSaying(true);
+
+			await executeTransaction.call(creating(), 'receipt', 'create');
+
+			expect(apiRequest.mock.calls[1][1]).toBe('GET');
+			expect(apiRequest.mock.calls[1][2]).toBe(`/schedules/credit/${SCHEDULE}`);
+		});
+
+		/**
+		 * The case the old throw existed for, and could not name: without an account
+		 * this route answers 200 and creates an **open** schedule. The money was not
+		 * recorded as moved, and saying "do not send it again" would be wrong here.
+		 */
+		it('fails, and says the money did not move, when the schedule came out open', async () => {
+			scheduleSaying(false);
+
+			const failure = executeTransaction.call(creating(), 'receipt', 'create');
+
+			await expect(failure).rejects.toThrow(/open schedule|was not settled/i);
+			await expect(failure).rejects.toMatchObject({
+				description: expect.stringContaining(SCHEDULE),
+			});
+		});
+
+		it('keeps the old refusal when the schedule cannot be read either', async () => {
+			apiRequest.mockReset();
+			apiRequest.mockResolvedValueOnce(SCHEDULE);
+			apiRequest.mockRejectedValueOnce(new Error('boom'));
+
+			const failure = executeTransaction.call(creating(), 'receipt', 'create');
+
+			await expect(failure).rejects.toThrow(/was created/i);
+			await expect(failure).rejects.toMatchObject({
+				description: expect.stringMatching(/twice|again/i),
+			});
+		});
+	});
+
+	it('never asks the schedule when the list answered', async () => {
+		await executeTransaction.call(creating(), 'receipt', 'create');
+
+		expect(apiRequest).toHaveBeenCalledTimes(1);
 	});
 
 	/**
