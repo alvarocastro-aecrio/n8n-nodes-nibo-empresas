@@ -4,6 +4,7 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
 import { niboCreate, niboSafeUpdate } from '../../transport/save';
+import { failedItem } from '../shared/failure';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { automationPayload } from './automation';
@@ -263,7 +264,7 @@ export async function executeSchedule(
 		} catch (error) {
 			if (this.continueOnFail()) {
 				returnData.push({
-					json: { error: (error as Error).message },
+					json: failedItem(error),
 					pairedItem: { item: i },
 				});
 				continue;

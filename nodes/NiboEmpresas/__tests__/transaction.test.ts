@@ -37,13 +37,13 @@ const NODE: INode = {
 /** A GUID with the shape this API's ID columns compare against */
 const GUID = '2efffcd0-8730-4348-86da-6d9a95be6149';
 
-function context(parameters: IDataObject, itemCount = 1) {
+function context(parameters: IDataObject, itemCount = 1, keepGoing = false) {
 	return {
 		getInputData: () => Array.from({ length: itemCount }, () => ({ json: {} })),
 		getNodeParameter: (name: string, _index: number, fallback?: unknown) =>
 			parameters[name] ?? fallback,
 		getNode: () => NODE,
-		continueOnFail: () => false,
+		continueOnFail: () => keepGoing,
 	} as unknown as IExecuteFunctions;
 }
 
@@ -543,17 +543,21 @@ describe('executeTransaction — Create', () => {
 	const SCHEDULE = 'f0d1ba25-a132-4dd3-a832-9efadcae3ad1';
 	const CATEGORY = '188d0f6b-16df-410a-b8f5-9ee29b391e11';
 
-	function creating(parameters: IDataObject = {}) {
-		return context({
-			accountId: ACCOUNT,
-			stakeholderId: { __rl: true, mode: 'list', value: 'a-contact' },
-			date: '2026-07-27T00:00:00.000-03:00',
-			description: 'Água',
-			isFlagged: false,
-			categories: { category: [{ categoryId: CATEGORY, value: 15 }] },
-			additionalFields: {},
-			...parameters,
-		});
+	function creating(parameters: IDataObject = {}, keepGoing = false) {
+		return context(
+			{
+				accountId: ACCOUNT,
+				stakeholderId: { __rl: true, mode: 'list', value: 'a-contact' },
+				date: '2026-07-27T00:00:00.000-03:00',
+				description: 'Água',
+				isFlagged: false,
+				categories: { category: [{ categoryId: CATEGORY, value: 15 }] },
+				additionalFields: {},
+				...parameters,
+			},
+			1,
+			keepGoing,
+		);
 	}
 
 	function bodySent(): IDataObject {
@@ -662,6 +666,23 @@ describe('executeTransaction — Create', () => {
 		await expect(failure).rejects.toMatchObject({
 			description: expect.stringMatching(/twice|again/i),
 		});
+	});
+
+	/**
+	 * The option exists so one bad item does not cost the rest of the batch — and
+	 * until now it threw away the one thing that proves the money is already in.
+	 * The schedule ID lives inside the description, and the description was the
+	 * half the catch dropped. Whoever turned the option on to keep the batch was
+	 * left holding a sentence about not sending it again, without the ID that
+	 * says which one.
+	 */
+	it('keeps the description, and the ID inside it, when continueOnFail swallows the failure', async () => {
+		readBack.mockResolvedValue(undefined);
+
+		const items = await executeTransaction.call(creating({}, true), 'receipt', 'create');
+
+		expect(items[0].json.error).toMatch(/was created/i);
+		expect(items[0].json.errorDescription).toEqual(expect.stringContaining(SCHEDULE));
 	});
 });
 

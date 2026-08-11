@@ -4,6 +4,7 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
 import { onlyTheDay } from '../schedule/normalize';
+import { failedItem } from '../shared/failure';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { bankTransferFilterFieldTypes } from './description';
@@ -122,7 +123,7 @@ export async function executeBankTransfer(
 		} catch (error) {
 			if (this.continueOnFail()) {
 				returnData.push({
-					json: { error: (error as Error).message },
+					json: failedItem(error),
 					pairedItem: { item: i },
 				});
 				continue;

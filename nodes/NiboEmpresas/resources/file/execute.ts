@@ -4,6 +4,7 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 import type { INiboUpload } from '../../transport/request';
 import { niboDownloadRequest, niboUploadRequest } from '../../transport/request';
 import { attachStoredFile } from '../scheduleFile/execute';
+import { failedItem } from '../shared/failure';
 import { recordId, requestInterval } from '../shared/options';
 import { requireSchedule } from '../shared/schedule';
 
@@ -78,7 +79,7 @@ export async function executeFile(
 		} catch (error) {
 			if (this.continueOnFail()) {
 				returnData.push({
-					json: { error: (error as Error).message },
+					json: failedItem(error),
 					pairedItem: { item: i },
 				});
 				continue;

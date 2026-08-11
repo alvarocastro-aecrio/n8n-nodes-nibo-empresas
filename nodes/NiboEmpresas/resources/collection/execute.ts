@@ -3,6 +3,7 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
+import { failedItem } from '../shared/failure';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { onlyTheDay } from '../schedule/normalize';
@@ -118,7 +119,7 @@ export async function executeCollection(
 		} catch (error) {
 			if (this.continueOnFail()) {
 				returnData.push({
-					json: { error: (error as Error).message },
+					json: failedItem(error),
 					pairedItem: { item: i },
 				});
 				continue;

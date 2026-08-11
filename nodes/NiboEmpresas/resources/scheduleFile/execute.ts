@@ -2,6 +2,7 @@ import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-wor
 import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboApiRequest } from '../../transport/request';
+import { failedItem } from '../shared/failure';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { requireSchedule, schedulePath } from '../shared/schedule';
 
@@ -122,7 +123,7 @@ export async function executeScheduleFile(
 		} catch (error) {
 			if (this.continueOnFail()) {
 				returnData.push({
-					json: { error: (error as Error).message },
+					json: failedItem(error),
 					pairedItem: { item: i },
 				});
 				continue;

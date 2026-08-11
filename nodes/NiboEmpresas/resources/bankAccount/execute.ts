@@ -5,6 +5,7 @@ import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
 import { niboReadBack } from '../../transport/save';
 import { onlyTheDay } from '../schedule/normalize';
+import { failedItem } from '../shared/failure';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { bankAccountBalanceFilterFieldTypes, bankAccountFilterFieldTypes } from './description';
@@ -69,7 +70,7 @@ export async function executeBankAccount(
 			return [{ json: await importBankStatement.call(this) }];
 		} catch (error) {
 			if (this.continueOnFail()) {
-				return [{ json: { error: (error as Error).message } }];
+				return [{ json: failedItem(error) }];
 			}
 			throw error instanceof NodeApiError
 				? error
@@ -147,7 +148,7 @@ export async function executeBankAccount(
 		} catch (error) {
 			if (this.continueOnFail()) {
 				returnData.push({
-					json: { error: (error as Error).message },
+					json: failedItem(error),
 					pairedItem: { item: i },
 				});
 				continue;

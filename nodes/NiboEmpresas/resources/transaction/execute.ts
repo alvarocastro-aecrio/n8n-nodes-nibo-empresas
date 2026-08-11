@@ -5,6 +5,7 @@ import { niboListRequest } from '../../transport/paginate';
 import { niboApiRequest } from '../../transport/request';
 import { niboReadBack } from '../../transport/save';
 import { onlyTheDay } from '../schedule/normalize';
+import { failedItem } from '../shared/failure';
 import { listFilter } from '../shared/filter';
 import { failOnIncomplete, recordId, requestInterval } from '../shared/options';
 import { transactionFilterFieldTypes } from './description';
@@ -190,7 +191,7 @@ export async function executeTransaction(
 		} catch (error) {
 			if (this.continueOnFail()) {
 				returnData.push({
-					json: { error: (error as Error).message },
+					json: failedItem(error),
 					pairedItem: { item: i },
 				});
 				continue;
