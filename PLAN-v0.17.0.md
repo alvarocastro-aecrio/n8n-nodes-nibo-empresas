@@ -200,98 +200,81 @@ outro desenho, decisão 2.
 
 ---
 
-## 5. Fatias, com teste antes do código
+## 5. Fatias — o que foi feito
 
-### Fatia 0 — A sonda: responder 2.1 a 2.5
+Executadas em 2026-08-11. Cada uma com teste antes do código, e o portão
+`npx jest && npm run lint && npm run build` antes do commit.
 
-**Arquivos:** criar `<scratchpad>/sonda-0.17.0.mjs` — fora do repo, sonda não é código do
-pacote.
+### Fatia 0 ✅ — A sonda
 
-- [ ] **Passo 1: token da cobaia válido.** O de `~/.config/nibo/cobaia.env` respondeu
-      `401 — Api token expirado` em 2026-08-10. Renovar antes de qualquer coisa.
-- [ ] **Passo 2: descobrir os IDs da cobaia** — uma categoria de receita
-      (`$filter=type eq 'In'`), um cliente, uma conta bancária. Sem `accountId` a criação
-      não é um recebimento (é o caso 2.5).
-- [ ] **Passo 3: escrever e rodar a sonda**, no molde da 0.15.0: `fetch` direto contra
-      `https://api.nibo.com.br/empresas/v1`, header `ApiToken`, todo ID criado empilhado
-      **na hora** num array de limpeza.
-- [ ] **Passo 4: apagar tudo** com `DELETE /schedules/credit/{id}`, conferindo alguns
-      segundos depois.
-- [ ] **Passo 5: escrever as respostas na seção 1**, com número e corpo. Medição, não
-      teste — nenhuma delas tem resposta esperada.
+`<scratchpad>/sonda-0.17.0.mjs`, fora do repo. Token da cobaia renovado; empresa nova, sem
+cliente e sem conta, então a sonda cria um de cada antes de medir. Respostas na seção 1.4
+a 1.6. Limpeza: 15 `DELETE /schedules/credit/{id}`, todos 204, conferidos 8 s depois —
+`count: 0` em agendamentos e em recebimentos. **A conta bancária fica**: esta API não apaga
+conta, e a sonda cria uma só, reutilizável.
 
-### Fatia 1 — O read-back devolve o motivo, não só `undefined`
+### Fatia 1 ❌ — Cancelada, e vale dizer por quê
 
-**Arquivos:** `nodes/NiboEmpresas/transport/save.ts`, `nodes/NiboEmpresas/__tests__/readback.test.ts`
+Era para `niboReadBack` devolver quantas vezes tentou, para o aviso poder citar o número.
+Com 1.4 na mão o aviso passou a citar coisa melhor — o que o **schedule** responde, com
+`isPaid` e `paidValue` de verdade — e o número de tentativas virou detalhe interno. Uma
+fatia inteira que a medição tornou desnecessária.
 
-Hoje `niboReadBack` devolve `IDataObject | undefined` e quem chama não sabe quantas vezes
-tentou nem por quanto tempo. O aviso da fatia 3 precisa desse número para ser honesto.
+### Fatia 2 + 3 ✅ — A confirmação pela rota barata, e o aviso no lugar do `throw`
 
-- [ ] **Teste primeiro:** o retorno carrega as tentativas gastas e o tempo somado quando
-      não achou; o caminho feliz continua devolvendo o registro sem mudança de forma para
-      quem já usa.
-- [ ] **Código:** ajustar o retorno sem mexer em `READ_BACK_WAITS` — a janela é decisão da
-      fatia 4, com o número de 2.1/2.2 na mão.
-- [ ] `npx jest && npm run lint && npm run build` · commit.
+**Arquivos:** `resources/transaction/execute.ts`, `__tests__/transaction.test.ts`
 
-### Fatia 2 — A confirmação pela rota forte-consistente
+`scheduleBehind()` lê `GET /schedules/credit/{id}` e engole a própria falha — uma
+confirmação que não responde não é falha nova, o chamador ainda tem a frase antiga.
 
-**Arquivos:** `nodes/NiboEmpresas/resources/transaction/execute.ts`, `nodes/NiboEmpresas/__tests__/transaction.test.ts`
+Três saídas no `create`, e são três frases diferentes onde antes havia uma:
 
-Só existe se 2.3 e 2.4 responderem sim. Se responderem não, esta fatia é apagada e a 3
-segue sozinha, com o aviso dizendo que não verificou (decisão 2).
+| o schedule responde | o node faz |
+|---|---|
+| `isPaid: true` | devolve os campos dele + `scheduleId` + `_niboReadBackPending` |
+| `isPaid: false` | **erro novo** — nasceu agendamento em aberto, o dinheiro não foi registrado como movimentado |
+| não responde | o erro de antes, com o "não reenvie" intacto |
 
-- [ ] **Teste primeiro:** com a lista vazia e o schedule respondendo liquidado → sucesso
-      com aviso; com a lista vazia e o schedule respondendo **em aberto** → erro, e um
-      erro que diz que o dinheiro não foi registrado como movimentado; com a lista vazia e
-      o schedule irrespondível → o erro de hoje, com o "não reenvie" intacto.
-- [ ] **Código:** reusar `READ_SCHEDULE_BY_ID` (`transaction/execute.ts:54`), que o
-      `settle` já usa — é a mesma rota, não uma nova.
-- [ ] `npx jest && npm run lint && npm run build` · commit.
+**No `settle` o teste é outro, e o próprio suíte foi quem avisou:** liquidação parcial é
+legítima e deixa `isPaid: false`. Então ali o que se compara é **quanto foi pago**, contra
+a leitura que já estava sendo feita para a checagem de tipo. `paidValue` subiu → liquidou;
+igual → não liquidou, e isso é erro.
 
-### Fatia 3 — O aviso, no lugar do `throw`
+### Fatia 4 ✅ — O `continueOnFail` para de perder a prova · janela **não** mexida
 
-**Arquivos:** `nodes/NiboEmpresas/resources/transaction/execute.ts`, `nodes/NiboEmpresas/__tests__/transaction.test.ts`
+**Arquivos:** `resources/shared/failure.ts` (novo), os 13 pontos de captura dos 12
+resources.
 
-A convenção já existe na casa: `serviceInvoice/execute.ts:342-359` devolve o registro com
-`_niboAuthorizationPending` quando o poll estoura, em vez de lançar. O `createEntry` é a
-exceção, não a regra.
+`failedItem(error)` mantém `error` com nome e conteúdo idênticos — workflow lê `$json.error`
+desde a 0.1.0 — e acrescenta `errorDescription` quando existe.
 
-- [ ] **Teste primeiro:** a saída carrega `scheduleId` **em campo** e
-      `_niboReadBackPending` com uma frase que diz o que aconteceu, quantas vezes foi
-      perguntado e o que fazer; `pairedItem` preservado; a rajada **segue** para o item
-      seguinte.
-- [ ] **Código:** aplicar o mesmo tratamento ao `settle` (`transaction/execute.ts:343-355`),
-      que tem o defeito idêntico com `entryId`.
-- [ ] `npx jest && npm run lint && npm run build` · commit.
+**`READ_BACK_WAITS` fica como está, de propósito.** Calibrá-la pelos 1,1–2,6 s da cobaia
+seria repetir o erro de julho: medir numa empresa vazia e concluir para todas (1.3). A
+janela deixou de ser a única prova, que era o problema.
 
-### Fatia 4 — `continueOnFail` para de perder a prova, e a janela é recalibrada
+### Fatia 5 ✅ — Aceite contra a API real
 
-**Arquivos:** `nodes/NiboEmpresas/resources/transaction/execute.ts` (e os demais `execute.ts`
-que repetem o bloco), `nodes/NiboEmpresas/transport/save.ts`
+`<scratchpad>/aceite-0.17.0.mjs`: dirige os handlers de `dist/` com um `IExecuteFunctions`
+de verdade, no modo *API Token (Per Item)*, **com o read-back forçado a desistir de
+primeira** — sem isso o caminho feliz venceria sempre na cobaia e o ramo novo nunca rodaria.
 
-- [ ] **Teste primeiro:** com `continueOnFail` ligado, o item de erro carrega também a
-      `description` e o `scheduleId` quando houver.
-- [ ] **Código:** o bloco do catch é copiado em ~13 resources; mudar todos ou nenhum, para
-      não ficarem discordando entre si.
-- [ ] **Janela:** ajustar `READ_BACK_WAITS` com o número de 2.1/2.2, ou registrar na
-      seção 1 por que ficou como está.
-- [ ] `npx jest && npm run lint && npm run build` · commit.
+```
+1. criação com conta, read-back impossível → NÃO lançou
+   isPaid true · paidValue 77 · openValue 0 · _niboReadBackPending presente
+2. POST /receipts sem conta            → isPaid false · openValue 77
+   (o caso que o ramo novo passa a chamar de falha, e que hoje passa batido)
+3. rajada de 8, todas com read-back impossível → 8/8 sobreviveram
+   antes da 0.17.0: 0/8
+```
 
-### Fatia 5 — Aceite e versão
-
-- [ ] Rajada de verdade na cobaia — 20 recebimentos seguidos pelo node instalado da `.tgz`,
-      na instância descartável do `docker-compose.dev.yml`. **Aceite só fecha se nenhum
-      item abortar a rajada** e se os que saírem com aviso estiverem, de fato, na Nibo.
-- [ ] Limpar a cobaia.
-- [ ] `package.json` para `0.17.0`, linha no `CHANGELOG.md`, README se mudar algo visível.
-- [ ] `npx jest && npm run lint && npm run build` · commit `aceite:` · tag `v0.17.0`.
+Limpeza: 10 `DELETE`, todos 204; `count: 0` em agendamentos e recebimentos.
 
 ---
 
 ## 6. O que fica decidido
 
-- Escrita aceita e não relida é **aviso**, não falha — em `create` e em `settle`.
-- O `scheduleId` (e o `entryId`) saem em campo, e sobrevivem ao `continueOnFail`.
-- O erro que sobrar passa a ser o caso **em aberto**, que é falha de verdade e merece
-  sentença própria.
+- Escrita aceita e confirmada é **aviso**, não falha — em `create` e em `settle`.
+- O `scheduleId` e o `entryId` saem em campo, e sobrevivem ao `continueOnFail`.
+- O caso **em aberto** deixa de passar batido: vira erro com sentença própria.
+- A janela de espera não é prova de nada, e não foi recalibrada por isso.
+- Os cinco lugares de 1.7 que sofrem do mesmo defeito ficam para a 0.17.1.
