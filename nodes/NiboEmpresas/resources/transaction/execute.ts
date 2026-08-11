@@ -347,9 +347,14 @@ async function settle(
 		// is a real settlement and leaves the schedule open. What moved is what is
 		// compared, against the reading already made for the kind check.
 		const before = amountPaid(schedule);
-		const after = await scheduleBehind.call(this, itemIndex, scheduleId);
+		const { schedule: after, settled } = await confirmedSchedule.call(
+			this,
+			itemIndex,
+			scheduleId,
+			(candidate) => amountPaid(candidate) > before,
+		);
 
-		if (after !== undefined && amountPaid(after) > before) {
+		if (settled && after !== undefined) {
 			// A confirmed write is never reported as a failure.
 			return {
 				...after,
@@ -390,6 +395,61 @@ async function settle(
 function amountPaid(schedule: unknown): number {
 	const paid = (schedule as IDataObject | undefined)?.paidValue;
 	return typeof paid === 'number' ? paid : Number(paid ?? 0) || 0;
+}
+
+/**
+ * How many times the schedule is asked before its answer is taken as final, and
+ * the breathing before each ask.
+ *
+ * **One `false` is never the answer**, and that is the whole reason this loop
+ * exists rather than a single read. A schedule can be readable a moment before
+ * its paid flag catches up — the same eventual consistency that made the entry
+ * unreadable in the first place. Calling that an open schedule would tell an
+ * operator the money did not move when it did, and the sentence sends them to
+ * settle it again: the money recorded twice, which is the exact harm the old
+ * failure existed to prevent.
+ *
+ * A second between asks, never less. This API answers 429 above roughly fourteen
+ * calls a second and tightens that during business hours, and nothing downstream
+ * of a write that already needs explaining is waiting on the millisecond.
+ */
+const CONFIRM_TRIES = 3;
+const CONFIRM_WAIT = 1000;
+
+/**
+ * The schedule behind a write, asked until it confirms or until the asks run out.
+ *
+ * `settled` is what confirmation means here, and it is not the same question on
+ * the two ends of this family: a creation asks whether the schedule is paid, and
+ * a settlement asks whether **more** of it is paid than before — because a part
+ * of the amount is a real settlement and leaves the schedule open.
+ *
+ * The last schedule read comes back either way, so the caller can tell "answered
+ * and not settled" from "never answered". They are different failures.
+ */
+async function confirmedSchedule(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	scheduleId: string,
+	settled: (schedule: IDataObject) => boolean,
+): Promise<{ schedule?: IDataObject; settled: boolean }> {
+	let last: IDataObject | undefined;
+
+	for (let attempt = 0; attempt < CONFIRM_TRIES; attempt++) {
+		await sleep(CONFIRM_WAIT);
+
+		const schedule = await scheduleBehind.call(this, itemIndex, scheduleId);
+		if (schedule === undefined) {
+			continue;
+		}
+
+		last = schedule;
+		if (settled(schedule)) {
+			return { schedule, settled: true };
+		}
+	}
+
+	return { schedule: last, settled: false };
 }
 
 /**
@@ -550,9 +610,14 @@ async function createEntry(
 
 	if (record === undefined) {
 		// The list is slow, so the schedule is asked instead — see scheduleBehind.
-		const schedule = await scheduleBehind.call(this, itemIndex, scheduleId);
+		const { schedule, settled } = await confirmedSchedule.call(
+			this,
+			itemIndex,
+			scheduleId,
+			(candidate) => candidate.isPaid === true,
+		);
 
-		if (schedule?.isPaid === true) {
+		if (settled && schedule !== undefined) {
 			// A confirmed write is never reported as a failure. It used to be, and
 			// the cost was measured on 2026-08-10: a batch of 66 stopped on the
 			// third, having recorded three, with the other 63 never sent.

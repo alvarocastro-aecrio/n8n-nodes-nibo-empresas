@@ -1,12 +1,18 @@
 import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeOperationError, sleep } from 'n8n-workflow';
 
 import { niboCreate, niboSafeUpdate } from '../transport/save';
 import { niboApiRequest } from '../transport/request';
 
 jest.mock('../transport/request');
+// Only `sleep` is replaced: the errors thrown below are real n8n classes.
+jest.mock('n8n-workflow', () => ({
+	...jest.requireActual('n8n-workflow'),
+	sleep: jest.fn().mockResolvedValue(undefined),
+}));
 
 const apiRequest = niboApiRequest as jest.MockedFunction<typeof niboApiRequest>;
+const waited = sleep as jest.MockedFunction<typeof sleep>;
 
 const NODE: INode = {
 	id: 'test-node',
@@ -39,6 +45,51 @@ const STORED: IDataObject = {
 
 beforeEach(() => {
 	apiRequest.mockReset();
+	waited.mockClear();
+});
+
+/**
+ * The pause between two calls of one operation.
+ *
+ * These cycles used to fire their calls back to back — `POST` then `GET`, or
+ * `GET`/`PUT`/`GET` with nothing in between. This API answers 429 above roughly
+ * fourteen calls a second and tightens that during business hours, and a node
+ * that walks a portfolio spends that budget in bursts. Nothing here is waiting
+ * on the millisecond; a call refused for going too fast costs far more than a
+ * second.
+ */
+describe('the second of breathing between two calls of one operation', () => {
+	it('waits between the write and the read that confirms it', async () => {
+		apiRequest.mockResolvedValueOnce('an-id').mockResolvedValueOnce(STORED);
+
+		await niboCreate.call(context(), 0, '/employees', { name: 'X' });
+
+		expect(waited).toHaveBeenCalledTimes(1);
+		expect(waited.mock.calls[0][0]).toBeGreaterThanOrEqual(1000);
+	});
+
+	it('waits between each of the three calls of the safe update', async () => {
+		apiRequest
+			.mockResolvedValueOnce(STORED)
+			.mockResolvedValueOnce('')
+			.mockResolvedValueOnce({ ...STORED, name: 'CHANGED' });
+
+		await niboSafeUpdate.call(context(), 0, '/customers', 'not-a-real-id', { name: 'CHANGED' });
+
+		expect(waited).toHaveBeenCalledTimes(2);
+		for (const [ms] of waited.mock.calls) {
+			expect(ms).toBeGreaterThanOrEqual(1000);
+		}
+	});
+
+	// One call is one call: nothing to pace against.
+	it('does not wait when the creation answers with the record and reads nothing back', async () => {
+		apiRequest.mockResolvedValue({ id: 'not-a-real-id', name: 'ACME LTDA' });
+
+		await niboCreate.call(context(), 0, '/customers', { name: 'X' }, { answersWithTheRecord: true });
+
+		expect(waited).not.toHaveBeenCalled();
+	});
 });
 
 describe('niboCreate', () => {

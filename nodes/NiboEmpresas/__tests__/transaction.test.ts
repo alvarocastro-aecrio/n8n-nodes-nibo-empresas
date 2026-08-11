@@ -770,7 +770,7 @@ describe('executeTransaction — Create', () => {
 		it('keeps the old refusal when the schedule cannot be read either', async () => {
 			apiRequest.mockReset();
 			apiRequest.mockResolvedValueOnce(SCHEDULE);
-			apiRequest.mockRejectedValueOnce(new Error('boom'));
+			apiRequest.mockRejectedValue(new Error('boom'));
 
 			const failure = executeTransaction.call(creating(), 'receipt', 'create');
 
@@ -778,6 +778,48 @@ describe('executeTransaction — Create', () => {
 			await expect(failure).rejects.toMatchObject({
 				description: expect.stringMatching(/twice|again/i),
 			});
+		});
+
+		/**
+		 * The hazard this branch would otherwise carry, and it is worse than the
+		 * one it replaces. A schedule can be readable a moment before its paid flag
+		 * has caught up — the same eventual consistency that makes this branch run
+		 * at all. Calling that an open schedule tells an operator the money did not
+		 * move when it did, and the sentence sends them to Settle: the money would
+		 * be recorded twice. So a single `false` is never the answer.
+		 */
+		it('asks again before calling it open, because the flag can lag the record', async () => {
+			apiRequest.mockReset();
+			apiRequest
+				.mockResolvedValueOnce(SCHEDULE)
+				.mockResolvedValueOnce({ scheduleId: SCHEDULE, isPaid: false })
+				.mockResolvedValueOnce({ scheduleId: SCHEDULE, isPaid: true, value: 15 });
+
+			const items = await executeTransaction.call(creating(), 'receipt', 'create');
+
+			expect(items[0].json._niboReadBackPending).toEqual(expect.any(String));
+		});
+
+		it('breathes at least a second before every one of those asks', async () => {
+			const waited = sleep as jest.MockedFunction<typeof sleep>;
+			apiRequest.mockReset();
+			apiRequest.mockResolvedValueOnce(SCHEDULE).mockResolvedValue({ scheduleId: SCHEDULE, isPaid: false });
+
+			await executeTransaction.call(creating(), 'receipt', 'create').catch(() => undefined);
+
+			expect(waited.mock.calls.length).toBeGreaterThanOrEqual(2);
+			for (const [ms] of waited.mock.calls) {
+				expect(ms).toBeGreaterThanOrEqual(1000);
+			}
+		});
+
+		it('still calls it open when the flag stays false through every ask', async () => {
+			apiRequest.mockReset();
+			apiRequest.mockResolvedValueOnce(SCHEDULE).mockResolvedValue({ scheduleId: SCHEDULE, isPaid: false });
+
+			const failure = executeTransaction.call(creating(), 'receipt', 'create');
+
+			await expect(failure).rejects.toThrow(/open schedule|was not settled/i);
 		});
 	});
 

@@ -5,6 +5,23 @@ import { deepMerge } from './merge';
 import { niboListRequest } from './paginate';
 import { niboApiRequest } from './request';
 
+/**
+ * The pause between two calls of one operation, and the floor under every wait
+ * in this file.
+ *
+ * These cycles used to fire their calls back to back — `POST` then `GET`, or
+ * `GET`/`PUT`/`GET` with nothing in between — and the read-back asked its first
+ * question the instant the write returned. This API answers **429 above roughly
+ * fourteen calls a second**, and tightens that during business hours; a node
+ * that walks a portfolio spends that budget in bursts, exactly when it is
+ * scarcest.
+ *
+ * Nothing downstream of these operations is waiting on the millisecond. A call
+ * refused for going too fast costs far more than a second, and an answer read a
+ * second later is the same answer.
+ */
+export const BREATH = 1000;
+
 /** A leaf of the change: where it goes and what should end up there */
 interface IChangedPath {
 	path: string[];
@@ -106,6 +123,7 @@ export async function niboCreate(
 
 	// The id alone would make Create answer one shape here and another there,
 	// depending on which collection the workflow happened to write to.
+	await sleep(BREATH);
 	const created = asRecord(
 		await niboApiRequest.call(
 			this,
@@ -169,6 +187,7 @@ export async function niboSafeUpdate(
 
 	const writeBody = options.writeBody ?? ((record: IDataObject) => record);
 
+	await sleep(BREATH);
 	const answer = await niboApiRequest.call(
 		this,
 		itemIndex,
@@ -187,6 +206,7 @@ export async function niboSafeUpdate(
 		});
 	}
 
+	await sleep(BREATH);
 	const confirmed = asRecord(await niboApiRequest.call(this, itemIndex, 'GET', readable));
 	if (confirmed === undefined) {
 		throw new NodeOperationError(this.getNode(), 'The update could not be confirmed', {
@@ -218,12 +238,22 @@ export interface INiboReadBackOptions {
 }
 
 /**
- * How long the read-back keeps asking, and it is a measurement rather than a
- * guess: on 2026-07-27 a settled entry took about **three seconds** to appear in
- * its collection. These waits add up to six, which is twice what was seen,
- * spread over four questions rather than a long sleep.
+ * How long the read-back breathes before each ask — one wait per ask, the first
+ * one included, and never under a second.
+ *
+ * **The first ask used to go out instantly, and it could not succeed.** The
+ * fastest this collection has ever handed back a record it had just taken is
+ * **1.162 ms**, over thirteen readings on 2026-08-11; in production it has taken
+ * more than **seven seconds**. An ask at zero was a request spent to be told no,
+ * on an API that answers 429 above roughly fourteen calls a second and tightens
+ * that during business hours. Precision is worth more here than speed: nothing
+ * downstream of this node is waiting on the millisecond, and a wasted call costs
+ * budget that a later, useful call may need.
+ *
+ * Twelve seconds across five asks, where it used to be six across five — and
+ * the two asks that were thrown away are now spent where a record can be.
  */
-const READ_BACK_WAITS = [500, 1000, 2000, 2500];
+const READ_BACK_WAITS = [1000, 1000, 2000, 3000, 5000];
 
 /**
  * Reads a record back through the list filtered by its ID, tolerating a
@@ -252,12 +282,11 @@ export async function niboReadBack(
 	filter: string,
 	options: INiboReadBackOptions = {},
 ): Promise<IDataObject | undefined> {
-	const tries = Math.max(1, options.tries ?? READ_BACK_WAITS.length + 1);
+	const tries = Math.max(1, options.tries ?? READ_BACK_WAITS.length);
 
 	for (let attempt = 0; attempt < tries; attempt++) {
-		if (attempt > 0) {
-			await sleep(READ_BACK_WAITS[Math.min(attempt - 1, READ_BACK_WAITS.length - 1)]);
-		}
+		// Before every ask, the first one included — see the note on the waits.
+		await sleep(READ_BACK_WAITS[Math.min(attempt, READ_BACK_WAITS.length - 1)]);
 
 		const { records } = await niboListRequest.call(this, itemIndex, endpoint, orderBy, {
 			returnAll: false,

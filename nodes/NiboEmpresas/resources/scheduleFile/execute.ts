@@ -26,12 +26,18 @@ function scheduleFiles(scheduleId: string): string {
 const EVERYTHING = 500;
 
 /**
- * How long the read-back keeps asking after an attach. Insurance rather than the
- * expected path: the listing was measured to show the attachment on the first
- * try, immediately. It exists because the alternative is telling somebody their
- * schedule does not exist when what happened was a moment of lag.
+ * How long the read-back breathes before each ask after an attach — one wait per
+ * ask, the first one included, and never under a second.
+ *
+ * The listing was measured showing the attachment on the first try, immediately,
+ * and that reading stands. It is also a single isolated call, which is exactly
+ * the method that put the settled-entry window at six seconds and was found
+ * short by production on 2026-08-10. The attach answers HTTP 204 and says
+ * nothing about what it did, so this reading is the only account of it — and
+ * asking before the answer can exist spends budget on an API that answers 429
+ * above roughly fourteen calls a second, tighter during business hours.
  */
-const READ_BACK_WAITS = [500, 1000];
+const READ_BACK_WAITS = [1000, 1000, 2000];
 
 interface IFileListEnvelope {
 	items?: IDataObject[];
@@ -247,10 +253,9 @@ export async function attachStoredFile(
 		[fileId] as unknown as IDataObject,
 	);
 
-	for (let attempt = 0; attempt <= READ_BACK_WAITS.length; attempt++) {
-		if (attempt > 0) {
-			await sleep(READ_BACK_WAITS[attempt - 1]);
-		}
+	for (let attempt = 0; attempt < READ_BACK_WAITS.length; attempt++) {
+		// Before every ask, the first one included — see the note on the waits.
+		await sleep(READ_BACK_WAITS[attempt]);
 
 		const { records } = await listFiles.call(this, itemIndex, scheduleId, {
 			returnAll: true,

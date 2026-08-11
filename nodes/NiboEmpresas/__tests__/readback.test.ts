@@ -52,7 +52,36 @@ describe('niboReadBack — the collection that has not caught up yet', () => {
 
 		expect(record).toEqual({ entryId: 'a' });
 		expect(listRequest).toHaveBeenCalledTimes(1);
-		expect(waited).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * The first ask used to go out the instant the write returned, and it could
+	 * not succeed: the fastest this collection has ever produced a record is
+	 * **1.162 ms**, measured over thirteen readings on 2026-08-11, and in
+	 * production it has taken more than seven seconds. So that request was never
+	 * an answer — it was a request spent to be told no, against an API that rate
+	 * limits by the hour of the day.
+	 */
+	it('breathes before the very first ask, which no record has ever beaten', async () => {
+		listRequest.mockResolvedValue({ records: [{ entryId: 'a' }], count: 1 });
+
+		await niboReadBack.call(context(), 0, '/payments', 'entryId', 'entryId eq a');
+
+		expect(waited).toHaveBeenCalledTimes(1);
+		expect(waited.mock.invocationCallOrder[0]).toBeLessThan(
+			listRequest.mock.invocationCallOrder[0],
+		);
+	});
+
+	it('never breathes for less than a second, at any point in the window', async () => {
+		listRequest.mockResolvedValue({ records: [], count: 0 });
+
+		await niboReadBack.call(context(), 0, '/payments', 'entryId', 'entryId eq a');
+
+		expect(waited.mock.calls.length).toBeGreaterThan(0);
+		for (const [ms] of waited.mock.calls) {
+			expect(ms).toBeGreaterThanOrEqual(1000);
+		}
 	});
 
 	it('asks again when the collection is still empty, and waits between tries', async () => {
@@ -65,7 +94,7 @@ describe('niboReadBack — the collection that has not caught up yet', () => {
 
 		expect(record).toEqual({ entryId: 'a' });
 		expect(listRequest).toHaveBeenCalledTimes(3);
-		expect(waited).toHaveBeenCalledTimes(2);
+		expect(waited).toHaveBeenCalledTimes(3);
 	});
 
 	// Every try asks the same question — the filter is what identifies the record.
@@ -119,6 +148,7 @@ describe('niboReadBack — the collection that has not caught up yet', () => {
 		await niboReadBack.call(context(), 0, '/payments', 'entryId', 'entryId eq a', { tries: 1 });
 
 		expect(listRequest).toHaveBeenCalledTimes(1);
-		expect(waited).not.toHaveBeenCalled();
+		// One ask, and still the second of breathing before it.
+		expect(waited).toHaveBeenCalledTimes(1);
 	});
 });

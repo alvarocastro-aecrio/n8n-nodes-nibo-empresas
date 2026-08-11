@@ -252,6 +252,36 @@ desde a 0.1.0 — e acrescenta `errorDescription` quando existe.
 seria repetir o erro de julho: medir numa empresa vazia e concluir para todas (1.3). A
 janela deixou de ser a única prova, que era o problema.
 
+### Fatia 6 ✅ — Um segundo de respiro antes de toda chamada de um mesmo ciclo
+
+**Arquivos:** `transport/save.ts`, `resources/transaction/execute.ts`,
+`resources/bankTransfer/execute.ts`, `resources/scheduleFile/execute.ts` e os testes de cada.
+
+A Nibo responde 429 acima de ~14 chamadas por segundo e aperta isso em horário comercial.
+Os ciclos deste node disparavam chamadas coladas — `POST` e `GET` sem nada entre eles — e
+**todo read-back perguntava a primeira vez no instante em que a escrita voltava.** Essa
+pergunta não podia acertar: o menor lag já medido nesta coleção é **1.162 ms** (1.3). Era
+requisição gasta para ouvir não, contra um orçamento que uma chamada útil depois pode
+precisar.
+
+| onde | antes | agora |
+|---|---|---|
+| `niboReadBack` | ask em 0, depois 500·1000·2000·2500 | 1000·1000·2000·3000·5000, **uma espera por ask** |
+| `niboCreate` | `POST` → `GET` colados | 1 s entre eles |
+| `niboSafeUpdate` | `GET`→`PUT`→`GET` colados | 1 s entre cada |
+| `bankTransfer` | ask em 0, depois 500·1000 | 1000·1000·2000 |
+| `scheduleFile` | ask em 0, depois 500·1000 | 1000·1000·2000 |
+| reconferência do `isPaid` | não existia | 3 asks, 1 s entre eles |
+
+A constante mora em `transport/save.ts` como `BREATH`, com o porquê no lugar. **A janela
+do read-back dobrou de 6 s para 12 s e ainda assim gasta menos requisição**, porque as duas
+que iam para o vazio agora vão para onde um registro pode estar.
+
+**E a reconferência do `isPaid` é uma correção de risco, não de desempenho.** Uma única
+leitura `false` viraria o erro *"nasceu agendamento em aberto"* numa escrita boa cujo flag
+ainda não tinha alcançado — e a frase manda liquidar de novo, ou seja, dinheiro em dobro.
+Três leituras com um segundo entre elas, e só então a acusação.
+
 ### Fatia 5 ✅ — Aceite contra a API real
 
 `<scratchpad>/aceite-0.17.0.mjs`: dirige os handlers de `dist/` com um `IExecuteFunctions`
@@ -265,9 +295,19 @@ primeira** — sem isso o caminho feliz venceria sempre na cobaia e o ramo novo 
    (o caso que o ramo novo passa a chamar de falha, e que hoje passa batido)
 3. rajada de 8, todas com read-back impossível → 8/8 sobreviveram
    antes da 0.17.0: 0/8
+4. caminho normal, read-back de verdade → 1862 · 2327 · 1873 ms
+   três entryId distintos, nenhum aviso — o caminho feliz segue sendo o caminho feliz
 ```
 
-Limpeza: 10 `DELETE`, todos 204; `count: 0` em agendamentos e recebimentos.
+Limpeza: 13 `DELETE`, todos 204; `count: 0` em agendamentos e recebimentos.
+
+⚠️ **O arnês mediu a si mesmo antes de medir o node, e vale registrar.** A primeira rodada
+da parte 4 devolveu o **mesmo `entryId` três vezes**. Não era o node: `qs` é opção separada
+de `IHttpRequestOptions` e quem a serializa é o n8n, então o `fetch` do arnês mandava todo
+read-back **sem `$filter`** e recebia sempre o primeiro registro da coleção. Uma sonda
+separada provou que `scheduleId eq <guid>` filtra certo — três schedules, três entradas,
+uma cada. Corrigido o arnês, os três `entryId` saíram distintos. **Um arnês escrito à mão
+é código sem teste**, e este errou exatamente onde ninguém olharia.
 
 ---
 

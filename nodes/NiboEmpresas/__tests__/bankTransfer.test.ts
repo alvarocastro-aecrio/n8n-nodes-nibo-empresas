@@ -313,6 +313,26 @@ describe('executeBankTransfer — Create', () => {
 
 	beforeEach(() => collectionGoes([], [NEW_RECORD]));
 
+	/**
+	 * The look that used to go out the instant the POST returned. The window here
+	 * was three tries over a second and a half, justified by one isolated reading
+	 * of 335 ms — the same method that calibrated the settled-entry window at six
+	 * seconds and was measured wrong by production on 2026-08-10. This API answers
+	 * 429 above roughly fourteen calls a second, tighter in business hours, and a
+	 * look that cannot succeed yet is budget spent to be told no.
+	 */
+	it('breathes for at least a second before every look, the first one included', async () => {
+		const waited = sleep as jest.MockedFunction<typeof sleep>;
+		waited.mockClear();
+
+		await executeBankTransfer.call(creating(), 'bankTransfer', 'create');
+
+		expect(waited.mock.calls.length).toBeGreaterThanOrEqual(1);
+		for (const [ms] of waited.mock.calls) {
+			expect(ms).toBeGreaterThanOrEqual(1000);
+		}
+	});
+
 	it('posts the body the API was measured to take', async () => {
 		await executeBankTransfer.call(creating(), 'bankTransfer', 'create');
 

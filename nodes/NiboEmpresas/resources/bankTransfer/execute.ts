@@ -138,13 +138,21 @@ export async function executeBankTransfer(
 }
 
 /**
- * How long the read-back keeps asking. Short on purpose: `/accounts/transfer` is
- * the one collection of this API that answers **immediately** — 335 ms, first
- * try, measured on 2026-07-27 — where `/payments` and `/receipts` take about
- * three seconds and the reconciliation queue takes minutes. These waits are
- * insurance, not the expected path.
+ * How long the read-back breathes before each look — one wait per look, the
+ * first one included, and never under a second.
+ *
+ * `/accounts/transfer` was measured answering **immediately**, 335 ms on the
+ * first try, on 2026-07-27. That reading stands, and it is also a single
+ * isolated call: the same method put the settled-entry window at six seconds,
+ * and production went past seven on 2026-08-10. So the look no longer goes out
+ * the instant the `POST` returns.
+ *
+ * The cost of waiting is a second on an operation nothing is timing. The cost of
+ * not waiting is a request spent against an API that answers 429 above roughly
+ * fourteen calls a second and tightens that during business hours — and, when it
+ * runs out, a transfer reported as failed after the money moved.
  */
-const READ_BACK_WAITS = [500, 1000];
+const READ_BACK_WAITS = [1000, 1000, 2000];
 
 /**
  * The shape a GUID column compares against. A date that is not a date would
@@ -236,10 +244,9 @@ async function createTransfer(
 
 	await niboApiRequest.call(this, itemIndex, 'POST', TRANSFERS, {}, body);
 
-	for (let attempt = 0; attempt <= READ_BACK_WAITS.length; attempt++) {
-		if (attempt > 0) {
-			await sleep(READ_BACK_WAITS[attempt - 1]);
-		}
+	for (let attempt = 0; attempt < READ_BACK_WAITS.length; attempt++) {
+		// Before every look, the first one included — see the note on the waits.
+		await sleep(READ_BACK_WAITS[attempt]);
 
 		const fresh = (await transfersMatching.call(this, itemIndex, filter)).filter(
 			(record) => !seen.has(identifierOf(record)),
