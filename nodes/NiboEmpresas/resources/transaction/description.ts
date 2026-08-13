@@ -137,7 +137,9 @@ export const transactionOperations: INodeProperties[] = TYPES.map((type) => ({
 }));
 
 /**
- * The menu is closed, and every path in it answered HTTP 200 on 2026-07-27.
+ * The menu is closed, and every path in it answered HTTP 200 on 2026-07-27, with
+ * two more added on 2026-08-13 after a workflow needed to tell one settlement
+ * from another by the bank account it moved through and found no way to.
  *
  * Four absences, each a 500 measured rather than assumed:
  *
@@ -148,6 +150,18 @@ export const transactionOperations: INodeProperties[] = TYPES.map((type) => ({
  *   this view. A settled entry has no due date and is not "paid or not": it is
  *   the payment itself.
  *
+ * A fifth absence from the same trap as `isFlag`: **`accountId`** is the name
+ * the **write** side takes — Create and Settle both require it — and the read
+ * side has no such property, *"Could not find a property named 'accountId' on
+ * type '...ScheduleEntryDto'"*. What the read side carries is a nested `account`
+ * object, `{ id, name, isDeleted, type }`, exactly as `stakeholder` and
+ * `category` are nested here too — so the path is `account/id`, bare like every
+ * other GUID column in this file, and `account/name` filters the same way
+ * `stakeholder/name` does. Both measured on `/payments` and `/receipts` alike on
+ * 2026-08-13, narrowing correctly rather than merely answering 200: one
+ * account's ID returned only that account's entries, a made-up one returned
+ * none.
+ *
  * And two presences worth naming: **`entryId`** and **`scheduleId`** compare as
  * IDs, bare — quoting either is the 500 about `Edm.Guid` and `Edm.String` that
  * the 0.9.0 filter type was written for. `scheduleId` is what finds the
@@ -156,6 +170,8 @@ export const transactionOperations: INodeProperties[] = TYPES.map((type) => ({
  * Alphabetical by label, as the editor shows and the linter requires.
  */
 const FILTER_FIELDS: IFilterField[] = [
+	{ label: 'Account ID', path: 'account/id', type: 'guid' },
+	{ label: 'Account Name', path: 'account/name', type: 'text' },
 	{ label: 'Accrual Date', path: 'accrualDate', type: 'date' },
 	{ label: 'Date', path: 'date', type: 'date' },
 	{ label: 'Description', path: 'description', type: 'text' },

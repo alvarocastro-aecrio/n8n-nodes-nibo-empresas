@@ -245,6 +245,26 @@ describe('executeTransaction — the filter it sends', () => {
 		expect(filterSent()).toBe(`scheduleId eq ${GUID}`);
 	});
 
+	it('finds the entries of a bank account, unquoted, through the nested path the read side answers', async () => {
+		await executeTransaction.call(
+			withConditions([{ field: 'account/id', operator: 'eq', guidValue: GUID }]),
+			'payment',
+			'list',
+		);
+
+		expect(filterSent()).toBe(`account/id eq ${GUID}`);
+	});
+
+	it('searches the account name ignoring case', async () => {
+		await executeTransaction.call(
+			withConditions([{ field: 'account/name', operator: 'containsIgnoreCase', value: 'Itaú' }]),
+			'payment',
+			'list',
+		);
+
+		expect(filterSent()).toBe("contains(tolower(account/name),'itaú')");
+	});
+
 	/**
 	 * The flag is the sharpest trap of this collection: the API takes `isFlag`
 	 * on a **write** and answers `isFlagged` on a **read**, and filtering by the
@@ -261,7 +281,7 @@ describe('executeTransaction — the filter it sends', () => {
 		expect(filterSent()).toBe('isFlagged eq true');
 	});
 
-	it.each(['isFlag', 'isDeleted', 'dueDate', 'isPaid'])(
+	it.each(['isFlag', 'isDeleted', 'dueDate', 'isPaid', 'accountId'])(
 		'fails the item on "%s", which is a 500 on this view',
 		async (field) => {
 			const failure = executeTransaction.call(
@@ -363,19 +383,30 @@ describe('NiboEmpresas — the two transaction resources on the screen', () => {
 		const field = conditionFields().find((one) => one.name === 'field');
 
 		expect(optionValues(field).sort()).toEqual(
-			['accrualDate', 'date', 'description', 'entryId', 'isFlagged', 'scheduleId', 'stakeholder/name', 'value'].sort(),
+			[
+				'account/id',
+				'account/name',
+				'accrualDate',
+				'date',
+				'description',
+				'entryId',
+				'isFlagged',
+				'scheduleId',
+				'stakeholder/name',
+				'value',
+			].sort(),
 		);
 	});
 
-	it.each(['isFlag', 'isDeleted', 'dueDate', 'isPaid'])('never offers %s', (field) => {
+	it.each(['isFlag', 'isDeleted', 'dueDate', 'isPaid', 'accountId'])('never offers %s', (field) => {
 		expect(optionValues(conditionFields().find((one) => one.name === 'field'))).not.toContain(
 			field,
 		);
 	});
 
 	// The bare-GUID literal the 0.9.0 transport learned, reused here unchanged.
-	it('collects the two ID fields in the box that never quotes them', () => {
-		for (const path of ['entryId', 'scheduleId']) {
+	it('collects the three ID fields in the box that never quotes them', () => {
+		for (const path of ['entryId', 'scheduleId', 'account/id']) {
 			const box = conditionFields().find(
 				(one) =>
 					one.name === 'guidValue' &&
