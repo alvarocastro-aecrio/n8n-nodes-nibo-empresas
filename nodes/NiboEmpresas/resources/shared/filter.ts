@@ -257,6 +257,7 @@ function conditionFields(menu: IFilterMenu): INodeProperties[] {
 				options: [
 					{ name: 'After', value: 'gt' },
 					{ name: 'Before', value: 'lt' },
+					{ name: 'Equals', value: 'eq' },
 					{ name: 'On or After', value: 'ge' },
 					{ name: 'On or Before', value: 'le' },
 				],

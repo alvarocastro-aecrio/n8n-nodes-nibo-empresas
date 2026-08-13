@@ -118,6 +118,33 @@ describe('buildODataFilter — one literal per type', () => {
 		).toBe('updateDate ge 2026-07-01');
 	});
 
+	// Added on 2026-08-13: `dueDate eq …` answers 200 and narrows to the exact
+	// day, measured against the API to return the same set as the `ge …and…lt`
+	// range it replaces.
+	it('writes a date compared for equality, the same bare literal every other date operator takes', () => {
+		expect(
+			buildODataFilter(
+				[{ field: 'dueDate', operator: 'eq', value: '2026-08-13', type: 'date' }],
+				'and',
+			),
+		).toBe('dueDate eq 2026-08-13');
+	});
+
+	/**
+	 * `ne` is deliberately not offered for a date, and this is why: measured on
+	 * 2026-08-13 against a real, large `/schedules/debit`, `dueDate ne <day>`
+	 * answered HTTP 500 *"Execution Timeout Expired"* on the first try and took
+	 * 14–30 s even when it did not — where the equivalent `gt` on the same broad
+	 * range answered in 4–12 s, every time. A "not equal" on a date apparently
+	 * cannot take the index seek the other five comparisons take, so it is left
+	 * off the menu rather than shipped as an occasional, unexplained timeout.
+	 */
+	it('refuses "ne" for a date, which this API was measured to answer with an occasional timeout rather than a row', () => {
+		expect(() =>
+			buildODataFilter([{ field: 'dueDate', operator: 'ne', value: '2026-08-13', type: 'date' }], 'and'),
+		).toThrow(/ne/);
+	});
+
 	// Every form the editor's date field can produce was measured against the
 	// API on 2026-07-25 — with milliseconds, with a Z, with an offset — and all
 	// of them answer 200. So the value travels as it came, only trimmed.

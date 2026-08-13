@@ -174,6 +174,16 @@ describe('executeSchedule — the filter it sends', () => {
 		expect(filterSent()).toBe('value gt 100.5');
 	});
 
+	it('compares a due date for equality, bare, now that the API is measured to take "eq" too', async () => {
+		await executeSchedule.call(
+			withConditions([{ field: 'dueDate', operator: 'eq', dateValue: '2026-08-13' }]),
+			'debitSchedule',
+			'list',
+		);
+
+		expect(filterSent()).toBe('dueDate eq 2026-08-13');
+	});
+
 	it('joins the two questions a schedule is usually asked', async () => {
 		await executeSchedule.call(
 			withConditions([

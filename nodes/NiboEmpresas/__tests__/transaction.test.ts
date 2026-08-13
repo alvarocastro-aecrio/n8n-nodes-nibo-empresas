@@ -235,6 +235,16 @@ describe('executeTransaction — the filter it sends', () => {
 		expect(filterSent()).toBe('date ge 2026-01-01');
 	});
 
+	it('compares the date for equality, bare, now that the API is measured to take "eq" too', async () => {
+		await executeTransaction.call(
+			withConditions([{ field: 'date', operator: 'eq', dateValue: '2026-08-13' }]),
+			'payment',
+			'list',
+		);
+
+		expect(filterSent()).toBe('date eq 2026-08-13');
+	});
+
 	it('finds the settlement of a schedule by the schedule ID, unquoted', async () => {
 		await executeTransaction.call(
 			withConditions([{ field: 'scheduleId', operator: 'eq', guidValue: GUID }]),

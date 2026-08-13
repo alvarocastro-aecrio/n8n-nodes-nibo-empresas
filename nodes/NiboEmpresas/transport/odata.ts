@@ -85,7 +85,18 @@ const OPERATORS_OF: Record<ODataFieldType, string[]> = {
 	// the first column of this API that is both. Two operators, like `options`
 	// and like `guid`: a handful of named states has nothing to be greater than.
 	code: ['eq', 'ne'],
-	date: ['gt', 'ge', 'lt', 'le'],
+	// `eq` joined the other four on 2026-08-13: `dueDate`, `scheduleDate` and
+	// `accrualDate` are day-only since 0.7.6, so "on this exact day" is an
+	// ordinary question, and it measures like the rest — bare, HTTP 200, the
+	// same set of records `ge …and… lt` already had to build in two conditions.
+	// `ne` stays off, and that is measurement too, not an oversight: on a real,
+	// large `/schedules/debit`, `dueDate ne <day>` answered HTTP 500 *"Execution
+	// Timeout Expired"* on the first attempt and took 14–30 s even when it
+	// didn't, where `gt` over the same broad range answered in 4–12 s every
+	// time. A "not equal" on a date apparently cannot take the index seek the
+	// other five comparisons take, so it is left off rather than shipped as an
+	// occasional, unexplained timeout.
+	date: ['eq', 'gt', 'ge', 'lt', 'le'],
 	// Two, and no more: an identifier is the same one or a different one. There
 	// is nothing to be greater than and no substring worth looking for.
 	guid: ['eq', 'ne'],

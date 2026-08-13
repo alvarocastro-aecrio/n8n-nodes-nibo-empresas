@@ -588,8 +588,8 @@ describe('NiboEmpresas — the assisted filter', () => {
 		expect(operatorsFor('isCompany').sort()).toEqual(['eq', 'ne']);
 	});
 
-	it('offers a date field only the four comparisons', () => {
-		expect(operatorsFor('updateDate').sort()).toEqual(['ge', 'gt', 'le', 'lt'].sort());
+	it('offers a date field the four comparisons and equality, but not "not equal"', () => {
+		expect(operatorsFor('updateDate').sort()).toEqual(['eq', 'ge', 'gt', 'le', 'lt'].sort());
 	});
 
 	// A text operator on a date is an expression the API answers 500 to, so the
@@ -598,6 +598,13 @@ describe('NiboEmpresas — the assisted filter', () => {
 		for (const path of ['updateDate', 'isCompany', 'isArchived']) {
 			expect(operatorsFor(path)).not.toContain('contains');
 		}
+	});
+
+	// Measured on 2026-08-13: unlike `eq`, `ne` on a date risked an occasional
+	// HTTP 500 timeout rather than a row, on a real, large collection. Left off
+	// the menu on purpose.
+	it('never offers "not equal" for a date', () => {
+		expect(operatorsFor('updateDate')).not.toContain('ne');
 	});
 
 	/** Which value box is drawn for a given field path */
