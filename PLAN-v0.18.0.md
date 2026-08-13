@@ -102,7 +102,7 @@ e `entryId` já são neste mesmo menu, e `account/name` do tipo `text`, como
 
 ### Fatia 1 — Os dois campos no filtro, com teste antes do código
 
-- [ ] **Passo 1: escrever o teste que falha**
+- [x] **Passo 1: escrever o teste que falha**
 
   Em `nodes/NiboEmpresas/__tests__/transaction.test.ts`:
 
@@ -131,12 +131,12 @@ e `entryId` já são neste mesmo menu, e `account/name` do tipo `text`, como
     (linha ~217): condição de texto sobre `account/name` com `containsIgnoreCase`,
     afirmando `contains(tolower(account/name),'...')`.
 
-- [ ] **Passo 2: rodar e ver falhar**
+- [x] **Passo 2: rodar e ver falhar**
 
   `npm test -- transaction.test.ts` — as asserções tocadas devem falhar (o campo ainda
   não existe no menu, ou ainda não está na lista de "nunca oferecidos").
 
-- [ ] **Passo 3: escrever o mínimo que passa**
+- [x] **Passo 3: escrever o mínimo que passa**
 
   Em `nodes/NiboEmpresas/resources/transaction/description.ts`:
 
@@ -151,27 +151,27 @@ e `entryId` já são neste mesmo menu, e `account/name` do tipo `text`, como
     mesma forma que `isFlag`/`isFlagged` já documentada ali — e citar `account/name`
     (§1.4), no mesmo tom de "medido em AAAA-MM-DD" que o resto do bloco usa.
 
-- [ ] **Passo 4: rodar e ver passar**
+- [x] **Passo 4: rodar e ver passar**
 
   `npm test -- transaction.test.ts` — tudo verde, resto do arquivo inalterado.
 
-- [ ] **Passo 5: rodar o pacote inteiro e o lint**
+- [x] **Passo 5: rodar o pacote inteiro e o lint**
 
   `npm test && npm run lint` — nada mais deve quebrar: nenhum outro arquivo de teste
   referencia a lista de `FILTER_FIELDS` de transaction.
 
-- [ ] **Passo 6: commit**
+- [x] **Passo 6: commit**
 
   Uma mudança, um commit — código e teste juntos.
 
 ### Fatia 2 — CHANGELOG e versão
 
-- [ ] **Passo 1:** `package.json` → `"version": "0.18.0"`.
-- [ ] **Passo 2:** nova linha em `CHANGELOG.md`, no mesmo tom das anteriores — o que
+- [x] **Passo 1:** `package.json` → `"version": "0.18.0"`.
+- [x] **Passo 2:** nova linha em `CHANGELOG.md`, no mesmo tom das anteriores — o que
   faltava (filtrar Get Many de pagamento/recebimento pela conta), por que faltava (o
   nome que a escrita usa, `accountId`, não existe na leitura — é `account/id`, aninhado),
   o que passou a existir (`Account ID` e `Account Name` no menu do filtro).
-- [ ] **Passo 3:** commit.
+- [x] **Passo 3:** commit.
 
 ---
 
