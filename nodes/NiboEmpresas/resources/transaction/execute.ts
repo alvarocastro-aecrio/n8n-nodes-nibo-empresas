@@ -74,6 +74,29 @@ const TRANSACTION_ORDER_BY = 'entryId';
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * Every settled entry, minus the transfers this collection also carries.
+ *
+ * A transfer between two accounts of the organization answers on this same
+ * collection, flagged `isTransfer: true` — reported by Alvaro on 2026-08-14
+ * against a live `/payments` scan, where entries like that carried no
+ * `scheduleId`, no `stakeholder` and no `category`: nothing this resource's own
+ * description promises a payment or a receipt has. It is the origin or
+ * destination leg a Bank Transfer writes, and it cannot even be removed from
+ * here — Delete on this resource takes a `scheduleId`, which a transfer has
+ * none of, and its own ID belongs to the Bank Transfer resource instead. So it
+ * never belonged in this list, and every read here excludes it before anything
+ * the caller asked for is applied.
+ *
+ * ANDed onto whatever filter the caller already built, parenthesized so an
+ * "or" between the caller's own conditions is not pulled apart by it — the
+ * same grouping the raw `Filter (OData)` escape hatch already assumes this API
+ * accepts.
+ */
+function excludingTransfers(filter: string): string {
+	return filter === '' ? 'isTransfer eq false' : `isTransfer eq false and (${filter})`;
+}
+
+/**
  * No normalizer: what the API answers here needs no repairing.
  *
  * One asymmetry is deliberately **not** repaired, and it is worth naming: a
@@ -114,7 +137,9 @@ export async function executeTransaction(
 					{
 						returnAll,
 						limit: returnAll ? 0 : (this.getNodeParameter('limit', i) as number),
-						filter: listFilter.call(this, i, options, transactionFilterFieldTypes),
+						filter: excludingTransfers(
+							listFilter.call(this, i, options, transactionFilterFieldTypes),
+						),
 						failOnIncomplete: failOnIncomplete.call(this, i, options),
 						interval,
 					},
@@ -239,7 +264,7 @@ async function oneEntry(
 			returnAll: false,
 			limit: 1,
 			// Bare — see the note on GUID above.
-			filter: `entryId eq ${id}`,
+			filter: excludingTransfers(`entryId eq ${id}`),
 			// One record cannot be an incomplete scan of a collection.
 			failOnIncomplete: false,
 			interval,

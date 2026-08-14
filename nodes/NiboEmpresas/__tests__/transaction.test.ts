@@ -92,6 +92,21 @@ describe('executeTransaction — Get Many', () => {
 		expect(listRequest.mock.calls[0][2]).not.toBe('id');
 	});
 
+	/**
+	 * A transfer between two accounts of the organization answers on this same
+	 * collection, flagged `isTransfer: true` — reported on 2026-08-14 against a
+	 * live `/payments` scan, where entries like that carried no `scheduleId`, no
+	 * `stakeholder` and no `category`. Excluded on every read, whether or not the
+	 * caller filtered by anything else.
+	 */
+	it.each(['payment', 'receipt'])('excludes transfers even with no filter of its own', async (resource) => {
+		await executeTransaction.call(context({ returnAll: true }), resource, 'list');
+
+		expect((listRequest.mock.calls[0][3] as unknown as IDataObject).filter).toBe(
+			'isTransfer eq false',
+		);
+	});
+
 	it('forwards Return All, the limit and the strict scan like every other scan', async () => {
 		await executeTransaction.call(context({ returnAll: false, limit: 9 }), 'payment', 'list');
 
@@ -181,7 +196,7 @@ describe('executeTransaction — Get', () => {
 
 		await executeTransaction.call(context({ entryId: GUID }), 'payment', 'get');
 
-		expect(optionsSentToTransport().filter).toBe(`entryId eq ${GUID}`);
+		expect(optionsSentToTransport().filter).toBe(`isTransfer eq false and (entryId eq ${GUID})`);
 	});
 
 	it('refuses an ID that is not a GUID instead of sending a filter the API answers 500 to', async () => {
@@ -221,7 +236,7 @@ describe('executeTransaction — the filter it sends', () => {
 			'list',
 		);
 
-		expect(filterSent()).toBe("contains(tolower(description),'água')");
+		expect(filterSent()).toBe("isTransfer eq false and (contains(tolower(description),'água'))");
 	});
 
 	// The one a report actually wants: everything settled since a date.
@@ -232,7 +247,7 @@ describe('executeTransaction — the filter it sends', () => {
 			'list',
 		);
 
-		expect(filterSent()).toBe('date ge 2026-01-01');
+		expect(filterSent()).toBe('isTransfer eq false and (date ge 2026-01-01)');
 	});
 
 	it('compares the date for equality, bare, now that the API is measured to take "eq" too', async () => {
@@ -242,7 +257,7 @@ describe('executeTransaction — the filter it sends', () => {
 			'list',
 		);
 
-		expect(filterSent()).toBe('date eq 2026-08-13');
+		expect(filterSent()).toBe('isTransfer eq false and (date eq 2026-08-13)');
 	});
 
 	it('finds the settlement of a schedule by the schedule ID, unquoted', async () => {
@@ -252,7 +267,7 @@ describe('executeTransaction — the filter it sends', () => {
 			'list',
 		);
 
-		expect(filterSent()).toBe(`scheduleId eq ${GUID}`);
+		expect(filterSent()).toBe(`isTransfer eq false and (scheduleId eq ${GUID})`);
 	});
 
 	it('finds the entries of a bank account, unquoted, through the nested path the read side answers', async () => {
@@ -262,7 +277,7 @@ describe('executeTransaction — the filter it sends', () => {
 			'list',
 		);
 
-		expect(filterSent()).toBe(`account/id eq ${GUID}`);
+		expect(filterSent()).toBe(`isTransfer eq false and (account/id eq ${GUID})`);
 	});
 
 	it('searches the account name ignoring case', async () => {
@@ -272,7 +287,7 @@ describe('executeTransaction — the filter it sends', () => {
 			'list',
 		);
 
-		expect(filterSent()).toBe("contains(tolower(account/name),'itaú')");
+		expect(filterSent()).toBe("isTransfer eq false and (contains(tolower(account/name),'itaú'))");
 	});
 
 	/**
@@ -288,7 +303,7 @@ describe('executeTransaction — the filter it sends', () => {
 			'list',
 		);
 
-		expect(filterSent()).toBe('isFlagged eq true');
+		expect(filterSent()).toBe('isTransfer eq false and (isFlagged eq true)');
 	});
 
 	it.each(['isFlag', 'isDeleted', 'dueDate', 'isPaid', 'accountId'])(
